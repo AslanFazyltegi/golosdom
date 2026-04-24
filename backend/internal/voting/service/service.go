@@ -1,53 +1,31 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
+	"time"
 
 	"golosdom-backend/internal/voting/model"
+	"golosdom-backend/internal/voting/repository"
 )
 
 type Service struct {
-	mu      sync.RWMutex
-	votings map[string]model.Voting
-	counter int
+	repo *repository.Repository
 }
 
-func New() *Service {
-	s := &Service{
-		votings: make(map[string]model.Voting),
-	}
-
-	s.votings["voting-1"] = model.Voting{
-		ID:          "voting-1",
-		Title:       "Утверждение сметы ОСИ на 2026 год",
-		Description: "Голосование по утверждению годовой сметы расходов.",
-		Status:      "active",
-		CreatedBy:   "system",
-		Questions: []model.Question{
-			{
-				ID:      "question-1",
-				Text:    "Вы согласны утвердить смету?",
-				Options: []string{"Да", "Нет", "Воздержался"},
-			},
-		},
-	}
-
-	return s
+func New(repo *repository.Repository) *Service {
+	return &Service{repo: repo}
 }
 
 func (s *Service) List() []model.Voting {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	result := make([]model.Voting, 0, len(s.votings))
-	for _, voting := range s.votings {
-		result = append(result, voting)
+	votings, err := s.repo.List(context.Background())
+	if err != nil {
+		return []model.Voting{}
 	}
 
-	return result
+	return votings
 }
 
 func (s *Service) Create(createdBy, title, description, question string, options []string) (model.Voting, error) {
@@ -66,11 +44,9 @@ func (s *Service) Create(createdBy, title, description, question string, options
 		return model.Voting{}, errors.New("at least 2 options are required")
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.counter++
-	id := fmt.Sprintf("voting-%d", s.counter+1)
+	now := time.Now().UnixNano()
+	id := fmt.Sprintf("voting-%d", now)
+	questionID := fmt.Sprintf("%s-question-1", id)
 
 	voting := model.Voting{
 		ID:          id,
@@ -80,14 +56,16 @@ func (s *Service) Create(createdBy, title, description, question string, options
 		CreatedBy:   createdBy,
 		Questions: []model.Question{
 			{
-				ID:      fmt.Sprintf("%s-question-1", id),
+				ID:      questionID,
 				Text:    question,
 				Options: options,
 			},
 		},
 	}
 
-	s.votings[id] = voting
+	if err := s.repo.Create(context.Background(), voting); err != nil {
+		return model.Voting{}, err
+	}
 
 	return voting, nil
 }

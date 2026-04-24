@@ -12,6 +12,7 @@ import (
 	authService "golosdom-backend/internal/auth/service"
 	"golosdom-backend/internal/common/response"
 	votingHandler "golosdom-backend/internal/voting/handler"
+	votingRepo "golosdom-backend/internal/voting/repository"
 	votingService "golosdom-backend/internal/voting/service"
 )
 
@@ -22,7 +23,8 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 	authSvc := authService.New(authRepo)
 	authH := authHandler.New(authSvc)
 
-	votingSvc := votingService.New()
+	votingRepo := votingRepo.New(dbPool)
+	votingSvc := votingService.New(votingRepo)
 	votingH := votingHandler.New(votingSvc)
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
