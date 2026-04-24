@@ -1,24 +1,20 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"strings"
-	"sync"
 
 	"golosdom-backend/internal/auth/model"
+	"golosdom-backend/internal/auth/repository"
 )
 
 type Service struct {
-	mu      sync.RWMutex
-	users   map[string]model.User
-	byEmail map[string]string
+	repo *repository.Repository
 }
 
-func New() *Service {
-	return &Service{
-		users:   make(map[string]model.User),
-		byEmail: make(map[string]string),
-	}
+func New(repo *repository.Repository) *Service {
+	return &Service{repo: repo}
 }
 
 func (s *Service) Register(email, password, fullName string) (model.User, error) {
@@ -29,64 +25,58 @@ func (s *Service) Register(email, password, fullName string) (model.User, error)
 		return model.User{}, errors.New("email, password and full_name are required")
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, exists := s.byEmail[email]; exists {
-		return model.User{}, errors.New("user already exists")
-	}
-
-	id := email
-
-	roles := []string{"OWNER"}
-
-	// временное правило для теста:
-	// если email содержит chairman, добавляем роль председателя
-	if strings.Contains(email, "chairman") {
-		roles = append(roles, "CHAIRMAN")
-	}
-
 	user := model.User{
-		ID:       id,
+		ID:       email,
 		Email:    email,
 		Password: password,
 		FullName: fullName,
-		Roles:    roles,
+		Roles:    []string{"OWNER"},
 	}
 
-	s.users[id] = user
-	s.byEmail[email] = id
+	if strings.Contains(email, "chairman") {
+		user.Roles = append(user.Roles, "CHAIRMAN")
+	}
+
+	err := s.repo.Create(context.Background(), user)
+	if err != nil {
+		return model.User{}, err
+	}
 
 	return user, nil
 }
 
 func (s *Service) Login(email, password string) (model.User, error) {
-	email = strings.TrimSpace(strings.ToLower(email))
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	id, exists := s.byEmail[email]
-	if !exists {
+	user, err := s.repo.GetByEmail(context.Background(), email)
+	if err != nil {
 		return model.User{}, errors.New("invalid credentials")
 	}
 
-	user := s.users[id]
 	if user.Password != password {
 		return model.User{}, errors.New("invalid credentials")
 	}
+
+	user.Roles = resolveRoles(user.Email)
 
 	return user, nil
 }
 
 func (s *Service) GetByID(id string) (model.User, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	user, exists := s.users[id]
-	if !exists {
+	user, err := s.repo.GetByID(context.Background(), id)
+	if err != nil {
 		return model.User{}, errors.New("user not found")
 	}
 
+	user.Roles = resolveRoles(user.Email)
+
 	return user, nil
+}
+
+func resolveRoles(email string) []string {
+	roles := []string{"OWNER"}
+
+	if strings.Contains(email, "chairman") {
+		roles = append(roles, "CHAIRMAN")
+	}
+
+	return roles
 }

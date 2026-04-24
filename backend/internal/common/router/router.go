@@ -1,20 +1,25 @@
 package router
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	authHandler "golosdom-backend/internal/auth/handler"
+	authRepo "golosdom-backend/internal/auth/repository"
 	authService "golosdom-backend/internal/auth/service"
 	"golosdom-backend/internal/common/response"
 	votingHandler "golosdom-backend/internal/voting/handler"
 	votingService "golosdom-backend/internal/voting/service"
 )
 
-func New() http.Handler {
+func New(dbPool *pgxpool.Pool) http.Handler {
 	mux := http.NewServeMux()
 
-	authSvc := authService.New()
+	authRepo := authRepo.New(dbPool)
+	authSvc := authService.New(authRepo)
 	authH := authHandler.New(authSvc)
 
 	votingSvc := votingService.New()
@@ -28,6 +33,22 @@ func New() http.Handler {
 
 		response.JSON(w, http.StatusOK, map[string]string{
 			"status": "ok",
+		})
+	})
+
+	mux.HandleFunc("/db-health", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+			return
+		}
+
+		if err := dbPool.Ping(context.Background()); err != nil {
+			response.Error(w, http.StatusServiceUnavailable, "database unavailable")
+			return
+		}
+
+		response.JSON(w, http.StatusOK, map[string]string{
+			"database": "ok",
 		})
 	})
 
