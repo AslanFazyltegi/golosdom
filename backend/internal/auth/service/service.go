@@ -38,12 +38,20 @@ func (s *Service) Register(email, password, fullName string) (model.User, error)
 
 	id := email
 
+	roles := []string{"OWNER"}
+
+	// временное правило для теста:
+	// если email содержит chairman, добавляем роль председателя
+	if strings.Contains(email, "chairman") {
+		roles = append(roles, "CHAIRMAN")
+	}
+
 	user := model.User{
 		ID:       id,
 		Email:    email,
 		Password: password,
 		FullName: fullName,
-		Roles:    []string{"OWNER"},
+		Roles:    roles,
 	}
 
 	s.users[id] = user
