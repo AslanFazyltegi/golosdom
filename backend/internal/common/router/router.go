@@ -2,17 +2,23 @@ package router
 
 import (
 	"net/http"
+	"strings"
 
-	"golosdom-backend/internal/auth/handler"
-	"golosdom-backend/internal/auth/service"
+	authHandler "golosdom-backend/internal/auth/handler"
+	authService "golosdom-backend/internal/auth/service"
 	"golosdom-backend/internal/common/response"
+	votingHandler "golosdom-backend/internal/voting/handler"
+	votingService "golosdom-backend/internal/voting/service"
 )
 
 func New() http.Handler {
 	mux := http.NewServeMux()
 
-	authService := service.New()
-	authHandler := handler.New(authService)
+	authSvc := authService.New()
+	authH := authHandler.New(authSvc)
+
+	votingSvc := votingService.New()
+	votingH := votingHandler.New(votingSvc)
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -25,22 +31,49 @@ func New() http.Handler {
 		})
 	})
 
-	mux.HandleFunc("/api/v1/auth/register", authHandler.Register)
-	mux.HandleFunc("/api/v1/auth/login", authHandler.Login)
-	mux.HandleFunc("/api/v1/auth/me", authHandler.Me)
+	mux.HandleFunc("/api/v1/auth/register", authH.Register)
+	mux.HandleFunc("/api/v1/auth/login", authH.Login)
+	mux.HandleFunc("/api/v1/auth/me", authH.Me)
 
-	// ВАЖНО: оборачиваем в CORS
+	mux.HandleFunc("/api/v1/votings", authMiddleware(authSvc, votingH.ListOrCreate))
+
 	return corsMiddleware(mux)
+}
+
+func authMiddleware(authSvc *authService.Service, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			response.Error(w, http.StatusUnauthorized, "missing authorization header")
+			return
+		}
+
+		const prefix = "Bearer "
+		if !strings.HasPrefix(authHeader, prefix) {
+			response.Error(w, http.StatusUnauthorized, "invalid authorization header")
+			return
+		}
+
+		token := strings.TrimSpace(strings.TrimPrefix(authHeader, prefix))
+		user, err := authSvc.GetByID(token)
+		if err != nil {
+			response.Error(w, http.StatusUnauthorized, "invalid token")
+			return
+		}
+
+		r.Header.Set("X-User-ID", user.ID)
+		r.Header.Set("X-User-Roles", strings.Join(user.Roles, ","))
+
+		next(w, r)
+	}
 }
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-		// обработка preflight
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
