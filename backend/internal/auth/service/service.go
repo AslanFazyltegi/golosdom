@@ -33,19 +33,22 @@ func (s *Service) Register(email, password, fullName string) (model.User, error)
 		Roles:    []string{"OWNER"},
 	}
 
-	if strings.Contains(email, "chairman") {
-		user.Roles = append(user.Roles, "CHAIRMAN")
-	}
-
-	err := s.repo.Create(context.Background(), user)
-	if err != nil {
+	if err := s.repo.Create(context.Background(), user); err != nil {
 		return model.User{}, err
 	}
+
+	if err := s.repo.AssignRole(context.Background(), user.ID, "OWNER"); err != nil {
+		return model.User{}, err
+	}
+
+	user.Roles = []string{"OWNER"}
 
 	return user, nil
 }
 
 func (s *Service) Login(email, password string) (model.User, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+
 	user, err := s.repo.GetByEmail(context.Background(), email)
 	if err != nil {
 		return model.User{}, errors.New("invalid credentials")
@@ -55,7 +58,12 @@ func (s *Service) Login(email, password string) (model.User, error) {
 		return model.User{}, errors.New("invalid credentials")
 	}
 
-	user.Roles = resolveRoles(user.Email)
+	roles, err := s.repo.GetUserRoles(context.Background(), user.ID)
+	if err != nil {
+		return model.User{}, err
+	}
+
+	user.Roles = roles
 
 	return user, nil
 }
@@ -66,17 +74,12 @@ func (s *Service) GetByID(id string) (model.User, error) {
 		return model.User{}, errors.New("user not found")
 	}
 
-	user.Roles = resolveRoles(user.Email)
-
-	return user, nil
-}
-
-func resolveRoles(email string) []string {
-	roles := []string{"OWNER"}
-
-	if strings.Contains(email, "chairman") {
-		roles = append(roles, "CHAIRMAN")
+	roles, err := s.repo.GetUserRoles(context.Background(), user.ID)
+	if err != nil {
+		return model.User{}, err
 	}
 
-	return roles
+	user.Roles = roles
+
+	return user, nil
 }

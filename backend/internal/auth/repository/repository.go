@@ -49,3 +49,53 @@ func (r *Repository) GetByID(ctx context.Context, id string) (model.User, error)
 
 	return user, err
 }
+
+func (r *Repository) AssignRole(ctx context.Context, userID string, roleCode string) error {
+	var roleID string
+
+	err := r.db.QueryRow(ctx,
+		`SELECT id FROM roles WHERE code = $1`,
+		roleCode,
+	).Scan(&roleID)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec(ctx,
+		`INSERT INTO user_roles (id, user_id, role_id)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (user_id, role_id) DO NOTHING`,
+		userID+"-"+roleCode,
+		userID,
+		roleID,
+	)
+
+	return err
+}
+
+func (r *Repository) GetUserRoles(ctx context.Context, userID string) ([]string, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT r.code
+		 FROM user_roles ur
+		 JOIN roles r ON r.id = ur.role_id
+		 WHERE ur.user_id = $1
+		 ORDER BY r.code`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	roles := []string{}
+
+	for rows.Next() {
+		var role string
+		if err := rows.Scan(&role); err != nil {
+			return nil, err
+		}
+		roles = append(roles, role)
+	}
+
+	return roles, rows.Err()
+}
