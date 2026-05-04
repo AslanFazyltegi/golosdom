@@ -11,9 +11,16 @@ import (
 	authRepo "golosdom-backend/internal/auth/repository"
 	authService "golosdom-backend/internal/auth/service"
 	"golosdom-backend/internal/common/response"
+	navigationHandler "golosdom-backend/internal/navigation/handler"
+	navigationRepo "golosdom-backend/internal/navigation/repository"
+	navigationService "golosdom-backend/internal/navigation/service"
 	votingHandler "golosdom-backend/internal/voting/handler"
 	votingRepo "golosdom-backend/internal/voting/repository"
 	votingService "golosdom-backend/internal/voting/service"
+
+	objectsHandler "golosdom-backend/internal/objects/handler"
+	objectsRepo "golosdom-backend/internal/objects/repository"
+	objectsService "golosdom-backend/internal/objects/service"
 )
 
 func New(dbPool *pgxpool.Pool) http.Handler {
@@ -26,6 +33,14 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 	votingRepo := votingRepo.New(dbPool)
 	votingSvc := votingService.New(votingRepo)
 	votingH := votingHandler.New(votingSvc)
+
+	navigationRepo := navigationRepo.New(dbPool)
+	navigationSvc := navigationService.New(navigationRepo)
+	navigationH := navigationHandler.New(navigationSvc)
+
+	objectsRepo := objectsRepo.New(dbPool)
+	objectsSvc := objectsService.New(objectsRepo)
+	objectsH := objectsHandler.New(objectsSvc)
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -54,9 +69,19 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 		})
 	})
 
+	mux.HandleFunc("/api/v1/navigation/menu", authMiddleware(authSvc, navigationH.GetMenu))
+
 	mux.HandleFunc("/api/v1/auth/register", authH.Register)
 	mux.HandleFunc("/api/v1/auth/login", authH.Login)
 	mux.HandleFunc("/api/v1/auth/me", authH.Me)
+
+	mux.HandleFunc(
+		"/api/v1/objects",
+		authMiddleware(
+			authSvc,
+			objectsH.Get,
+		),
+	)
 
 	mux.HandleFunc("/api/v1/votings", authMiddleware(authSvc, votingH.ListOrCreate))
 

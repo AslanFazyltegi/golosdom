@@ -4,8 +4,11 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { getToken, removeToken } from "@/lib/auth";
+import { fetchNavigation } from "@/lib/navigation";
 import type { User } from "@/types/user";
 import type { Voting } from "@/types/voting";
+import type { NavigationItem } from "@/types/navigation";
+import { fetchObjects } from "@/lib/objects";
 
 type ViewMode = "dashboard" | "profile" | "settings";
 
@@ -14,10 +17,16 @@ export default function DashboardPage() {
 
   const [user, setUser] = useState<User | null>(null);
   const [votings, setVotings] = useState<Voting[]>([]);
+  const [menu, setMenu] = useState<NavigationItem[]>([]);
+  const [objects, setObjects] = useState<any>(null);
+
+
   const [loading, setLoading] = useState(true);
   const [accountOpen, setAccountOpen] = useState(false);
   const [roleOpen, setRoleOpen] = useState(false);
+
   const [activeRole, setActiveRole] = useState("OWNER");
+  const [activeComponent, setActiveComponent] = useState("dashboard");
   const [view, setView] = useState<ViewMode>("dashboard");
 
   const [title, setTitle] = useState("");
@@ -39,10 +48,21 @@ export default function DashboardPage() {
       try {
         const currentUser = await apiFetch("/api/v1/auth/me");
         setUser(currentUser);
-        setActiveRole(currentUser.roles?.[0] || "OWNER");
 
-        const data = await apiFetch("/api/v1/votings");
-        setVotings(data);
+        const role = currentUser.roles?.[0] || "OWNER";
+        setActiveRole(role);
+
+        const menuData = await fetchNavigation(role);
+        setMenu(menuData);
+
+        const objectsData = await fetchObjects(role);
+        setObjects(objectsData);
+
+        const defaultItem = menuData.find((item) => item.is_default) || menuData[0];
+        setActiveComponent(defaultItem?.component || "dashboard");
+
+        const votingData = await apiFetch("/api/v1/votings");
+        setVotings(votingData);
       } catch {
         removeToken();
         router.push("/login");
@@ -79,12 +99,35 @@ export default function DashboardPage() {
       setDescription("");
       setQuestion("");
       setOptionsText("Да\nНет\nВоздержался");
+
       await loadVotings();
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Не удалось создать голосование");
     } finally {
       setCreating(false);
     }
+  }
+
+  async function switchRole(role: string) {
+    setActiveRole(role);
+
+    const menuData = await fetchNavigation(role);
+    setMenu(menuData);
+
+    const objectsData = await fetchObjects(role);
+    setObjects(objectsData);
+
+    const defaultItem = menuData.find((item) => item.is_default) || menuData[0];
+    setActiveComponent(defaultItem?.component || "dashboard");
+
+    setView("dashboard");
+    setRoleOpen(false);
+    setAccountOpen(false);
+  }
+
+  function openMenuItem(item: NavigationItem) {
+    setActiveComponent(item.component);
+    setView("dashboard");
   }
 
   function logout() {
@@ -96,7 +139,6 @@ export default function DashboardPage() {
   if (!user) return null;
 
   const phone = "+7 (777) 123-45-67";
-  const menuItems = getMenuByRole(activeRole);
 
   return (
     <main className="h-screen overflow-hidden bg-slate-50 text-slate-800">
@@ -123,7 +165,7 @@ export default function DashboardPage() {
           </button>
 
           {accountOpen && (
-            <div className="absolute right-0 z-20 mt-2 w-72 rounded-2xl border bg-white p-2 shadow-lg">
+            <div className="absolute right-0 z-40 mt-2 w-72 rounded-2xl border bg-white p-2 shadow-lg">
               <button
                 onClick={() => setRoleOpen(!roleOpen)}
                 className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left hover:bg-slate-50"
@@ -137,11 +179,7 @@ export default function DashboardPage() {
                   {user.roles.map((role) => (
                     <button
                       key={role}
-                      onClick={() => {
-                        setActiveRole(role);
-                        setRoleOpen(false);
-                        setView("dashboard");
-                      }}
+                      onClick={() => switchRole(role)}
                       className={`block w-full rounded-lg px-3 py-2 text-left text-sm ${
                         activeRole === role ? "bg-blue-600 text-white" : "hover:bg-white"
                       }`}
@@ -188,22 +226,40 @@ export default function DashboardPage() {
       <div className="flex h-screen pt-20">
         <aside className="fixed left-0 top-20 h-[calc(100vh-80px)] w-72 overflow-y-auto border-r bg-white p-5">
           <nav className="space-y-2">
-            {menuItems.map((item) => (
-              <MenuItem
-                key={item.text}
-                icon={item.icon}
-                text={item.text}
-                active={view === "dashboard" && item.active}
-                onClick={() => setView("dashboard")}
-              />
+            {menu.map((item) => (
+              <div key={item.code}>
+                <MenuItem
+                  icon={item.icon}
+                  text={item.title}
+                  active={view === "dashboard" && activeComponent === item.component}
+                  onClick={() => openMenuItem(item)}
+                />
+
+                {item.children.length > 0 && (
+                  <div className="ml-8 mt-1 space-y-1">
+                    {item.children.map((child) => (
+                      <MenuItem
+                        key={child.code}
+                        icon={child.icon}
+                        text={child.title}
+                        active={view === "dashboard" && activeComponent === child.component}
+                        small
+                        onClick={() => openMenuItem(child)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             ))}
           </nav>
         </aside>
 
         <section className="ml-72 h-[calc(100vh-80px)] flex-1 overflow-y-auto p-8">
           {view === "dashboard" && (
-            <DashboardView
+            <WorkAreaTemplate
+              objects={objects}
               activeRole={activeRole}
+              activeComponent={activeComponent}
               votings={votings}
               loadVotings={loadVotings}
               createVoting={createVoting}
@@ -231,8 +287,10 @@ export default function DashboardPage() {
   );
 }
 
-function DashboardView(props: {
+function WorkAreaTemplate(props: {
+  objects: any;
   activeRole: string;
+  activeComponent: string;
   votings: Voting[];
   loadVotings: () => void;
   createVoting: (e: FormEvent) => void;
@@ -247,16 +305,76 @@ function DashboardView(props: {
   creating: boolean;
   createError: string;
 }) {
+  const component = props.activeComponent;
   const isChairman = props.activeRole === "CHAIRMAN";
   const isAdmin = props.activeRole === "SYSTEM_ADMIN";
 
+  if (component === "dashboard") {
+    return <DashboardHome votings={props.votings} loadVotings={props.loadVotings} />;
+  }
+
+  if (component === "objects") {
+    return (
+      <ObjectsTemplate
+        role={props.activeRole}
+        objects={props.objects}
+      />
+    );
+  }
+
+  if (component === "meetings") {
+    return <Placeholder title="Общедомовые собрания" text="Здесь будет общий раздел онлайн-собраний." />;
+  }
+
+  if (component === "meetings_active") {
+    return <Placeholder title="Активные собрания" text="Здесь будут активные общедомовые собрания." />;
+  }
+
+  if (component === "meetings_upcoming") {
+    return <Placeholder title="Предстоящие собрания" text="Здесь будут предстоящие собрания." />;
+  }
+
+  if (component === "meetings_past") {
+    return <Placeholder title="Прошедшие собрания" text="Здесь будет архив прошедших собраний." />;
+  }
+
+  if (component === "votings" || component === "votings_active") {
+    return <VotingsTemplate votings={props.votings} loadVotings={props.loadVotings} />;
+  }
+
+  if (component === "votings_past") {
+    return <Placeholder title="Прошедшие голосования" text="Здесь будет архив завершённых голосований." />;
+  }
+
+  if (component === "voting_constructor" || component.startsWith("voting_constructor")) {
+    if (!isChairman && !isAdmin) {
+      return <Placeholder title="Нет доступа" text="У вашей активной роли нет доступа к конструктору голосования." />;
+    }
+
+    return <ConstructorTemplate {...props} />;
+  }
+
+  if (component === "notifications") {
+    return <Placeholder title="Уведомления" text="Здесь будут уведомления пользователя." />;
+  }
+
+  return <Placeholder title="Раздел" text="Для этого пункта меню пока не настроен шаблон рабочей области." />;
+}
+
+function DashboardHome({
+  votings,
+  loadVotings,
+}: {
+  votings: Voting[];
+  loadVotings: () => void;
+}) {
   return (
     <>
       <h1 className="mb-8 text-3xl font-bold">Дашборд (сводка)</h1>
 
       <div className="mb-8 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
         <StatCard icon="🏢" title="Мои объекты" value="1" />
-        <StatCard icon="✅" title="Голосования" value={String(props.votings.length)} />
+        <StatCard icon="✅" title="Голосования" value={String(votings.length)} />
         <StatCard icon="👥" title="Онлайн-собрания" value="0" />
         <StatCard icon="🔔" title="Уведомления" value="0" />
       </div>
@@ -265,32 +383,12 @@ function DashboardView(props: {
         <section className="rounded-2xl border bg-white p-6 shadow-sm">
           <div className="mb-5 flex items-center justify-between border-b pb-4">
             <h2 className="text-xl font-semibold">Последние голосования</h2>
-            <button onClick={props.loadVotings} className="text-sm text-blue-600">
+            <button onClick={loadVotings} className="text-sm text-blue-600">
               Обновить ›
             </button>
           </div>
 
-          <div className="space-y-4">
-            {props.votings.length === 0 && (
-              <p className="text-slate-500">Пока нет доступных голосований.</p>
-            )}
-
-            {props.votings.slice(0, 3).map((voting) => (
-              <div key={voting.id} className="border-b pb-4 last:border-b-0">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="font-semibold">{voting.title}</h3>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {voting.description || "Без описания"}
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-green-100 px-3 py-1 text-xs text-green-700">
-                    {voting.status}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+          <VotingList votings={votings.slice(0, 3)} />
         </section>
 
         <section className="rounded-2xl border bg-white p-6 shadow-sm">
@@ -304,62 +402,114 @@ function DashboardView(props: {
           <NewsItem title="Отчёт управляющей компании за апрель" date="15.05.2024" />
         </section>
       </div>
+    </>
+  );
+}
 
-      {isChairman && (
-        <section className="mt-6 rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="mb-4 text-xl font-semibold">Конструктор голосования</h2>
+function VotingsTemplate({
+  votings,
+  loadVotings,
+}: {
+  votings: Voting[];
+  loadVotings: () => void;
+}) {
+  return (
+    <>
+      <div className="mb-8 flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Голосование</h1>
+        <button onClick={loadVotings} className="rounded-xl border bg-white px-4 py-2">
+          Обновить
+        </button>
+      </div>
 
-          <form onSubmit={props.createVoting} className="grid gap-3">
-            <input
-              className="rounded-xl border p-3"
-              placeholder="Название голосования"
-              value={props.title}
-              onChange={(e) => props.setTitle(e.target.value)}
-            />
+      <section className="rounded-2xl border bg-white p-6 shadow-sm">
+        <VotingList votings={votings} />
+      </section>
+    </>
+  );
+}
 
-            <textarea
-              className="rounded-xl border p-3"
-              placeholder="Описание"
-              value={props.description}
-              onChange={(e) => props.setDescription(e.target.value)}
-            />
+function ConstructorTemplate(props: {
+  createVoting: (e: FormEvent) => void;
+  title: string;
+  setTitle: (v: string) => void;
+  description: string;
+  setDescription: (v: string) => void;
+  question: string;
+  setQuestion: (v: string) => void;
+  optionsText: string;
+  setOptionsText: (v: string) => void;
+  creating: boolean;
+  createError: string;
+  activeComponent: string;
+}) {
+  const titleMap: Record<string, string> = {
+    voting_constructor: "Конструктор голосования",
+    voting_constructor_create: "Создать новый опросный лист",
+    voting_constructor_approval: "На утверждении у совета дома",
+    voting_constructor_revision: "На доработке",
+    voting_constructor_pending_publication: "Ожидающие публикации",
+    voting_constructor_published: "Опубликованные",
+    voting_constructor_draft: "Черновик",
+  };
 
-            <input
-              className="rounded-xl border p-3"
-              placeholder="Вопрос"
-              value={props.question}
-              onChange={(e) => props.setQuestion(e.target.value)}
-            />
+  const pageTitle = titleMap[props.activeComponent] || "Конструктор голосования";
 
-            <textarea
-              className="rounded-xl border p-3"
-              rows={4}
-              placeholder="Варианты ответа"
-              value={props.optionsText}
-              onChange={(e) => props.setOptionsText(e.target.value)}
-            />
+  if (props.activeComponent !== "voting_constructor" && props.activeComponent !== "voting_constructor_create") {
+    return (
+      <Placeholder
+        title={pageTitle}
+        text="Здесь будет список опросных листов по выбранному статусу."
+      />
+    );
+  }
 
-            {props.createError && <p className="text-sm text-red-600">{props.createError}</p>}
+  return (
+    <>
+      <h1 className="mb-8 text-3xl font-bold">{pageTitle}</h1>
 
-            <button
-              type="submit"
-              disabled={props.creating}
-              className="w-fit rounded-xl bg-blue-600 px-5 py-3 text-white disabled:opacity-50"
-            >
-              {props.creating ? "Создаём..." : "Создать голосование"}
-            </button>
-          </form>
-        </section>
-      )}
+      <section className="rounded-2xl border bg-white p-6 shadow-sm">
+        <form onSubmit={props.createVoting} className="grid gap-3">
+          <input
+            className="rounded-xl border p-3"
+            placeholder="Название голосования"
+            value={props.title}
+            onChange={(e) => props.setTitle(e.target.value)}
+          />
 
-      {isAdmin && (
-        <section className="mt-6 rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold">Администрирование</h2>
-          <p className="mt-2 text-slate-500">
-            Здесь будут пользователи, роли, настройки доступа и системный аудит.
-          </p>
-        </section>
-      )}
+          <textarea
+            className="rounded-xl border p-3"
+            placeholder="Описание"
+            value={props.description}
+            onChange={(e) => props.setDescription(e.target.value)}
+          />
+
+          <input
+            className="rounded-xl border p-3"
+            placeholder="Вопрос"
+            value={props.question}
+            onChange={(e) => props.setQuestion(e.target.value)}
+          />
+
+          <textarea
+            className="rounded-xl border p-3"
+            rows={4}
+            placeholder="Варианты ответа, каждый с новой строки"
+            value={props.optionsText}
+            onChange={(e) => props.setOptionsText(e.target.value)}
+          />
+
+          {props.createError && <p className="text-sm text-red-600">{props.createError}</p>}
+
+          <button
+            type="submit"
+            disabled={props.creating}
+            className="w-fit rounded-xl bg-blue-600 px-5 py-3 text-white disabled:opacity-50"
+          >
+            {props.creating ? "Создаём..." : "Создать голосование"}
+          </button>
+        </form>
+      </section>
     </>
   );
 }
@@ -458,57 +608,66 @@ function SettingsView({ activeRole }: { activeRole: string }) {
   );
 }
 
-function getMenuByRole(role: string) {
-  if (role === "SYSTEM_ADMIN") {
-    return [
-      { icon: "🏠", text: "Дашборд администратора", active: true },
-      { icon: "👥", text: "Пользователи" },
-      { icon: "🔐", text: "Роли и доступы" },
-      { icon: "📄", text: "Системный аудит" },
-      { icon: "⚙️", text: "Настройки системы" },
-    ];
+function VotingList({ votings }: { votings: Voting[] }) {
+  if (votings.length === 0) {
+    return <p className="text-slate-500">Пока нет доступных голосований.</p>;
   }
 
-  if (role === "CHAIRMAN") {
-    return [
-      { icon: "🏠", text: "Дашборд (сводка)", active: true },
-      { icon: "🏢", text: "Мои объекты" },
-      { icon: "🗳️", text: "Голосование" },
-      { icon: "🛠️", text: "Конструктор голосования" },
-      { icon: "🎥", text: "Онлайн-собрание" },
-      { icon: "🔔", text: "Уведомления" },
-    ];
-  }
+  return (
+    <div className="space-y-4">
+      {votings.map((voting) => (
+        <div key={voting.id} className="border-b pb-4 last:border-b-0">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold">{voting.title}</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                {voting.description || "Без описания"}
+              </p>
+            </div>
+            <span className="rounded-full bg-green-100 px-3 py-1 text-xs text-green-700">
+              {voting.status}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
-  return [
-    { icon: "🏠", text: "Дашборд (сводка)", active: true },
-    { icon: "🏢", text: "Мои объекты" },
-    { icon: "🗳️", text: "Активные голосования" },
-    { icon: "📰", text: "Новости" },
-    { icon: "📢", text: "Объявления" },
-    { icon: "🔔", text: "Уведомления" },
-  ];
+function Placeholder({ title, text }: { title: string; text: string }) {
+  return (
+    <>
+      <h1 className="mb-8 text-3xl font-bold">{title}</h1>
+      <section className="rounded-2xl border bg-white p-6 shadow-sm">
+        <p className="text-slate-600">{text}</p>
+      </section>
+    </>
+  );
 }
 
 function MenuItem({
   icon,
   text,
   active = false,
+  small = false,
   onClick,
 }: {
   icon: string;
   text: string;
   active?: boolean;
+  small?: boolean;
   onClick?: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-center gap-4 rounded-xl px-4 py-4 text-left text-sm font-medium ${
+      className={`flex w-full items-center gap-3 rounded-xl text-left font-medium ${
+        small ? "px-3 py-2 text-xs" : "px-4 py-4 text-sm"
+      } ${
         active ? "bg-blue-50 text-blue-600" : "text-slate-600 hover:bg-slate-50"
       }`}
     >
-      <span className="text-xl">{icon}</span>
+      <span className={small ? "text-base" : "text-xl"}>{icon}</span>
       <span>{text}</span>
     </button>
   );
@@ -539,4 +698,186 @@ function NewsItem({ title, date }: { title: string; date: string }) {
       <div className="h-14 w-20 rounded-xl bg-slate-100" />
     </div>
   );
+}
+
+function ObjectsTemplate({
+  role,
+  objects,
+}: {
+  role: string;
+  objects: any;
+}) {
+  if (!objects) {
+    return <Placeholder title="Мои объекты" text="Загрузка данных..." />;
+  }
+
+if (
+  role === "CHAIRMAN" ||
+  role === "COUNCIL_MEMBER" ||
+  role === "AUDITOR"
+) {
+
+  if (!objects) {
+    return (
+      <Placeholder
+        title="Мой МЖК"
+        text="Данные дома пока не заведены в системе."
+      />
+    );
+  }
+
+  return (
+    <>
+      <h1 className="mb-8 text-3xl font-bold">
+        Мой МЖК
+      </h1>
+
+      <section className="rounded-2xl border bg-white p-6 shadow-sm">
+
+        <h2 className="mb-6 text-xl font-semibold">
+          🏢 Данные дома
+        </h2>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+
+          <InfoCard
+            label="Город"
+            value={objects.city}
+          />
+
+          <InfoCard
+            label="Район"
+            value={objects.district}
+          />
+
+          <InfoCard
+            label="Улица"
+            value={objects.street}
+          />
+
+          <InfoCard
+            label="Дом"
+            value={objects.house_number}
+          />
+
+          <InfoCard
+            label="Этажность"
+            value={objects.floors_count}
+          />
+
+          <InfoCard
+            label="Подъезды"
+            value={objects.entrances_count}
+          />
+
+          <InfoCard
+            label="Квартиры"
+            value={objects.apartments_count}
+          />
+
+          <InfoCard
+            label="НП"
+            value={objects.commercial_units_count}
+          />
+
+          <InfoCard
+            label="Кладовые"
+            value={objects.storerooms_count}
+          />
+
+          <InfoCard
+            label="Паркоместа"
+            value={objects.parking_spaces_count}
+          />
+
+        </div>
+
+      </section>
+    </>
+  );
+}
+
+const ownerObjects = Array.isArray(objects)
+  ? objects
+  : [];
+
+return (
+  <>
+    <h1 className="mb-8 text-3xl font-bold">
+      Мои объекты
+    </h1>
+
+    {ownerObjects.length === 0 && (
+      <section className="rounded-2xl border bg-white p-6 shadow-sm">
+
+        <h2 className="mb-3 text-xl font-semibold">
+          📭 Объекты не найдены
+        </h2>
+
+        <p className="text-slate-600">
+          Для роли <b>{role}</b> объекты имущества пока не назначены.
+        </p>
+
+        <p className="mt-2 text-sm text-slate-500">
+          Назначение объектов выполняется через базу данных
+          или административный интерфейс.
+        </p>
+
+      </section>
+    )}
+
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+
+      {ownerObjects.map((item: any) => (
+
+        <section
+          key={`${item.property_type}-${item.number}`}
+          className="rounded-2xl border bg-white p-6 shadow-sm"
+        >
+
+          <h2 className="text-xl font-semibold">
+
+            {propertyTypeLabel(
+              item.property_type,
+            )}
+
+            {" "}
+
+            №{item.number}
+
+          </h2>
+
+          <p className="mt-3 text-slate-600">
+            Площадь: {item.area} м²
+          </p>
+
+          <p className="mt-1 text-slate-500">
+            Статус: {item.status}
+          </p>
+
+        </section>
+      ))}
+    </div>
+  </>
+);
+}
+
+function InfoCard({ label, value }: { label: string; value: any }) {
+  return (
+    <div className="rounded-xl bg-slate-50 p-4">
+      <p className="text-sm text-slate-500">{label}</p>
+      <p className="mt-1 text-xl font-bold">{value ?? "—"}</p>
+    </div>
+  );
+}
+
+function propertyTypeLabel(type: string) {
+  const map: Record<string, string> = {
+    apartment: "Квартира",
+    parking: "Паркоместо",
+    storage: "Кладовая",
+    commercial_room: "НП",
+  };
+
+  return map[type] || type;
 }
