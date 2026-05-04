@@ -34,7 +34,7 @@ func buildTree(items []model.NavigationItem) []dto.MenuItemResponse {
 	order := []string{}
 
 	for _, item := range items {
-		resp := dto.MenuItemResponse{
+		byID[item.ID] = &dto.MenuItemResponse{
 			Code:      item.Code,
 			Title:     item.Title,
 			Icon:      item.Icon,
@@ -47,25 +47,27 @@ func buildTree(items []model.NavigationItem) []dto.MenuItemResponse {
 			Children:  []dto.MenuItemResponse{},
 		}
 
-		byID[item.ID] = &resp
 		parentByID[item.ID] = item.ParentID
 		order = append(order, item.ID)
 	}
 
-	tree := []dto.MenuItemResponse{}
-
 	for _, id := range order {
-		item := byID[id]
 		parentID := parentByID[id]
-
 		if parentID == nil {
-			tree = append(tree, *item)
 			continue
 		}
 
 		parent, exists := byID[*parentID]
 		if exists {
-			parent.Children = append(parent.Children, *item)
+			parent.Children = append(parent.Children, *byID[id])
+		}
+	}
+
+	tree := []dto.MenuItemResponse{}
+
+	for _, id := range order {
+		if parentByID[id] == nil {
+			tree = append(tree, *byID[id])
 		}
 	}
 

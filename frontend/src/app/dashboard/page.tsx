@@ -5,10 +5,14 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { getToken, removeToken } from "@/lib/auth";
 import { fetchNavigation } from "@/lib/navigation";
+import { fetchObjects } from "@/lib/objects";
+import { fetchMeetings, createMeeting } from "@/lib/meetings";
 import type { User } from "@/types/user";
 import type { Voting } from "@/types/voting";
 import type { NavigationItem } from "@/types/navigation";
-import { fetchObjects } from "@/lib/objects";
+import type { Meeting } from "@/types/meeting";
+import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
+import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
 
 type ViewMode = "dashboard" | "profile" | "settings";
 
@@ -19,11 +23,12 @@ export default function DashboardPage() {
   const [votings, setVotings] = useState<Voting[]>([]);
   const [menu, setMenu] = useState<NavigationItem[]>([]);
   const [objects, setObjects] = useState<any>(null);
-
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [accountOpen, setAccountOpen] = useState(false);
   const [roleOpen, setRoleOpen] = useState(false);
+  const [expandedMenuCodes, setExpandedMenuCodes] = useState<string[]>([]);
 
   const [activeRole, setActiveRole] = useState("OWNER");
   const [activeComponent, setActiveComponent] = useState("dashboard");
@@ -35,6 +40,13 @@ export default function DashboardPage() {
   const [optionsText, setOptionsText] = useState("Да\nНет\nВоздержался");
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
+
+  const [meetingError, setMeetingError] = useState("");
+  const [meetingInitiator, setMeetingInitiator] = useState("");
+  const [meetingDateTime, setMeetingDateTime] = useState("");
+  const [meetingLocation, setMeetingLocation] = useState("");
+  const [meetingAgendaText, setMeetingAgendaText] = useState("");
+  const [creatingMeeting, setCreatingMeeting] = useState(false);
 
   useEffect(() => {
     const token = getToken();
@@ -53,13 +65,14 @@ export default function DashboardPage() {
         setActiveRole(role);
 
         const menuData = await fetchNavigation(role);
+        console.log("MENU:", menuData);
         setMenu(menuData);
-
-        const objectsData = await fetchObjects(role);
-        setObjects(objectsData);
 
         const defaultItem = menuData.find((item) => item.is_default) || menuData[0];
         setActiveComponent(defaultItem?.component || "dashboard");
+
+        const objectsData = await fetchObjects(role);
+        setObjects(objectsData);
 
         const votingData = await apiFetch("/api/v1/votings");
         setVotings(votingData);
@@ -99,7 +112,6 @@ export default function DashboardPage() {
       setDescription("");
       setQuestion("");
       setOptionsText("Да\nНет\nВоздержался");
-
       await loadVotings();
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Не удалось создать голосование");
@@ -112,22 +124,91 @@ export default function DashboardPage() {
     setActiveRole(role);
 
     const menuData = await fetchNavigation(role);
+    console.log("MENU:", menuData);
     setMenu(menuData);
-
-    const objectsData = await fetchObjects(role);
-    setObjects(objectsData);
 
     const defaultItem = menuData.find((item) => item.is_default) || menuData[0];
     setActiveComponent(defaultItem?.component || "dashboard");
 
+    const objectsData = await fetchObjects(role);
+    setObjects(objectsData);
+
+    setExpandedMenuCodes([]);
     setView("dashboard");
     setRoleOpen(false);
     setAccountOpen(false);
   }
 
-  function openMenuItem(item: NavigationItem) {
+  function toggleMenu(code: string) {
+    setExpandedMenuCodes((current) =>
+      current.includes(code)
+        ? current.filter((item) => item !== code)
+        : [...current, code]
+    );
+  }
+
+  async function loadMeetingsByComponent(component: string) {
+    let status = "";
+
+    if (component === "meetings_active") status = "active";
+    if (component === "meetings_upcoming") status = "upcoming";
+    if (component === "meetings_past") status = "past";
+
+    if (!status) return;
+
+    try {
+      setMeetingError("");
+      const data = await fetchMeetings(status);
+      setMeetings(data);
+    } catch (err) {
+      setMeetingError(err instanceof Error ? err.message : "Не удалось загрузить собрания");
+    }
+  }
+
+  async function openNavigationItem(item: NavigationItem) {
+    if (item.children && item.children.length > 0) {
+      toggleMenu(item.code);
+    }
+
     setActiveComponent(item.component);
     setView("dashboard");
+
+    if (item.component.startsWith("meetings")) {
+      await loadMeetingsByComponent(item.component);
+    }
+  }
+
+  async function submitMeeting(e: FormEvent) {
+    e.preventDefault();
+    setMeetingError("");
+    setCreatingMeeting(true);
+
+    const agenda = meetingAgendaText
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    try {
+      await createMeeting({
+        initiator_name: meetingInitiator,
+        scheduled_at: new Date(meetingDateTime).toISOString(),
+        location: meetingLocation,
+        agenda,
+      });
+
+      setMeetingInitiator("");
+      setMeetingDateTime("");
+      setMeetingLocation("");
+      setMeetingAgendaText("");
+
+      const data = await fetchMeetings("upcoming");
+      setMeetings(data);
+      setActiveComponent("meetings_upcoming");
+    } catch (err) {
+      setMeetingError(err instanceof Error ? err.message : "Не удалось создать собрание");
+    } finally {
+      setCreatingMeeting(false);
+    }
   }
 
   function logout() {
@@ -138,121 +219,31 @@ export default function DashboardPage() {
   if (loading) return <main className="p-6">Загрузка...</main>;
   if (!user) return null;
 
-  const phone = "+7 (777) 123-45-67";
+  
 
   return (
     <main className="h-screen overflow-hidden bg-slate-50 text-slate-800">
-      <header className="fixed left-0 right-0 top-0 z-30 flex h-20 items-center justify-between border-b bg-white px-8 shadow-sm">
-        <div className="flex h-12 w-48 items-center justify-center rounded-xl border bg-white text-slate-500">
-          Лого
-        </div>
-
-        <div className="relative">
-          <button
-            onClick={() => setAccountOpen(!accountOpen)}
-            className="flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-slate-50"
-          >
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-xl">
-              👤
-            </div>
-
-            <div className="min-w-40 text-right">
-              <p className="text-sm font-medium">{phone}</p>
-              <p className="text-xs text-slate-500">{activeRole}</p>
-            </div>
-
-            <span className="text-slate-500">⌄</span>
-          </button>
-
-          {accountOpen && (
-            <div className="absolute right-0 z-40 mt-2 w-72 rounded-2xl border bg-white p-2 shadow-lg">
-              <button
-                onClick={() => setRoleOpen(!roleOpen)}
-                className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left hover:bg-slate-50"
-              >
-                <span>Роль</span>
-                <span className="text-sm text-slate-500">{activeRole}</span>
-              </button>
-
-              {roleOpen && (
-                <div className="mb-2 rounded-xl bg-slate-50 p-2">
-                  {user.roles.map((role) => (
-                    <button
-                      key={role}
-                      onClick={() => switchRole(role)}
-                      className={`block w-full rounded-lg px-3 py-2 text-left text-sm ${
-                        activeRole === role ? "bg-blue-600 text-white" : "hover:bg-white"
-                      }`}
-                    >
-                      {role}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <button
-                onClick={() => {
-                  setView("profile");
-                  setAccountOpen(false);
-                }}
-                className="block w-full rounded-xl px-4 py-3 text-left hover:bg-slate-50"
-              >
-                Профиль
-              </button>
-
-              <button
-                onClick={() => {
-                  setView("settings");
-                  setAccountOpen(false);
-                }}
-                className="block w-full rounded-xl px-4 py-3 text-left hover:bg-slate-50"
-              >
-                Настройки системы
-              </button>
-
-              <div className="my-2 border-t" />
-
-              <button
-                onClick={logout}
-                className="block w-full rounded-xl px-4 py-3 text-left text-red-600 hover:bg-red-50"
-              >
-                Выход
-              </button>
-            </div>
-          )}
-        </div>
-      </header>
+          <DashboardHeader
+            user={user}
+            activeRole={activeRole}
+            accountOpen={accountOpen}
+            roleOpen={roleOpen}
+            setAccountOpen={setAccountOpen}
+            setRoleOpen={setRoleOpen}
+            setView={setView}
+            switchRole={switchRole}
+            logout={logout}
+          />
 
       <div className="flex h-screen pt-20">
-        <aside className="fixed left-0 top-20 h-[calc(100vh-80px)] w-72 overflow-y-auto border-r bg-white p-5">
-          <nav className="space-y-2">
-            {menu.map((item) => (
-              <div key={item.code}>
-                <MenuItem
-                  icon={item.icon}
-                  text={item.title}
-                  active={view === "dashboard" && activeComponent === item.component}
-                  onClick={() => openMenuItem(item)}
-                />
+              <DashboardSidebar
+                menu={menu}
+                view={view}
+                activeComponent={activeComponent}
+                expandedMenuCodes={expandedMenuCodes}
+                onOpenItem={openNavigationItem}
+              />
 
-                {item.children.length > 0 && (
-                  <div className="ml-8 mt-1 space-y-1">
-                    {item.children.map((child) => (
-                      <MenuItem
-                        key={child.code}
-                        icon={child.icon}
-                        text={child.title}
-                        active={view === "dashboard" && activeComponent === child.component}
-                        small
-                        onClick={() => openMenuItem(child)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </nav>
-        </aside>
 
         <section className="ml-72 h-[calc(100vh-80px)] flex-1 overflow-y-auto p-8">
           {view === "dashboard" && (
@@ -273,6 +264,18 @@ export default function DashboardPage() {
               setOptionsText={setOptionsText}
               creating={creating}
               createError={createError}
+              meetings={meetings}
+              meetingError={meetingError}
+              meetingInitiator={meetingInitiator}
+              setMeetingInitiator={setMeetingInitiator}
+              meetingDateTime={meetingDateTime}
+              setMeetingDateTime={setMeetingDateTime}
+              meetingLocation={meetingLocation}
+              setMeetingLocation={setMeetingLocation}
+              meetingAgendaText={meetingAgendaText}
+              setMeetingAgendaText={setMeetingAgendaText}
+              creatingMeeting={creatingMeeting}
+              submitMeeting={submitMeeting}
             />
           )}
 
@@ -304,6 +307,18 @@ function WorkAreaTemplate(props: {
   setOptionsText: (v: string) => void;
   creating: boolean;
   createError: string;
+  meetings: Meeting[];
+  meetingError: string;
+  meetingInitiator: string;
+  setMeetingInitiator: (v: string) => void;
+  meetingDateTime: string;
+  setMeetingDateTime: (v: string) => void;
+  meetingLocation: string;
+  setMeetingLocation: (v: string) => void;
+  meetingAgendaText: string;
+  setMeetingAgendaText: (v: string) => void;
+  creatingMeeting: boolean;
+  submitMeeting: (e: FormEvent) => void;
 }) {
   const component = props.activeComponent;
   const isChairman = props.activeRole === "CHAIRMAN";
@@ -314,28 +329,34 @@ function WorkAreaTemplate(props: {
   }
 
   if (component === "objects") {
+    return <ObjectsTemplate role={props.activeRole} objects={props.objects} />;
+  }
+
+  if (component === "meetings") {
     return (
-      <ObjectsTemplate
-        role={props.activeRole}
-        objects={props.objects}
+      <Placeholder
+        title="Общедомовые собрания"
+        text="Выберите подпункт: инициировать, активные, предстоящие или прошедшие собрания."
       />
     );
   }
 
-  if (component === "meetings") {
-    return <Placeholder title="Общедомовые собрания" text="Здесь будет общий раздел онлайн-собраний." />;
+  if (component === "meetings_create") {
+    return <MeetingCreateTemplate {...props} />;
   }
 
-  if (component === "meetings_active") {
-    return <Placeholder title="Активные собрания" text="Здесь будут активные общедомовые собрания." />;
-  }
-
-  if (component === "meetings_upcoming") {
-    return <Placeholder title="Предстоящие собрания" text="Здесь будут предстоящие собрания." />;
-  }
-
-  if (component === "meetings_past") {
-    return <Placeholder title="Прошедшие собрания" text="Здесь будет архив прошедших собраний." />;
+  if (
+    component === "meetings_active" ||
+    component === "meetings_upcoming" ||
+    component === "meetings_past"
+  ) {
+    return (
+      <MeetingsListTemplate
+        component={component}
+        meetings={props.meetings}
+        error={props.meetingError}
+      />
+    );
   }
 
   if (component === "votings" || component === "votings_active") {
@@ -361,13 +382,7 @@ function WorkAreaTemplate(props: {
   return <Placeholder title="Раздел" text="Для этого пункта меню пока не настроен шаблон рабочей области." />;
 }
 
-function DashboardHome({
-  votings,
-  loadVotings,
-}: {
-  votings: Voting[];
-  loadVotings: () => void;
-}) {
+function DashboardHome({ votings, loadVotings }: { votings: Voting[]; loadVotings: () => void }) {
   return (
     <>
       <h1 className="mb-8 text-3xl font-bold">Дашборд (сводка)</h1>
@@ -406,13 +421,70 @@ function DashboardHome({
   );
 }
 
-function VotingsTemplate({
-  votings,
-  loadVotings,
-}: {
-  votings: Voting[];
-  loadVotings: () => void;
-}) {
+function ObjectsTemplate({ role, objects }: { role: string; objects: any }) {
+  if (!objects) {
+    return <Placeholder title="Мои объекты" text="Загрузка данных..." />;
+  }
+
+  if (role === "CHAIRMAN" || role === "COUNCIL_MEMBER" || role === "AUDITOR") {
+    return (
+      <>
+        <h1 className="mb-8 text-3xl font-bold">Мой МЖК</h1>
+
+        <section className="rounded-2xl border bg-white p-6 shadow-sm">
+          <h2 className="mb-6 text-xl font-semibold">🏢 Данные дома</h2>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <InfoCard label="Город" value={objects.city} />
+            <InfoCard label="Район" value={objects.district} />
+            <InfoCard label="Улица" value={objects.street} />
+            <InfoCard label="Дом" value={objects.house_number} />
+            <InfoCard label="Этажность" value={objects.floors_count} />
+            <InfoCard label="Подъезды" value={objects.entrances_count} />
+            <InfoCard label="Квартиры" value={objects.apartments_count} />
+            <InfoCard label="НП" value={objects.commercial_units_count} />
+            <InfoCard label="Кладовые" value={objects.storerooms_count} />
+            <InfoCard label="Паркоместа" value={objects.parking_spaces_count} />
+          </div>
+        </section>
+      </>
+    );
+  }
+
+  const ownerObjects = Array.isArray(objects) ? objects : [];
+
+  return (
+    <>
+      <h1 className="mb-8 text-3xl font-bold">Мои объекты</h1>
+
+      {ownerObjects.length === 0 && (
+        <section className="rounded-2xl border bg-white p-6 shadow-sm">
+          <h2 className="mb-3 text-xl font-semibold">📭 Объекты не найдены</h2>
+          <p className="text-slate-600">
+            Для роли <b>{role}</b> объекты имущества пока не назначены.
+          </p>
+        </section>
+      )}
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        {ownerObjects.map((item: any) => (
+          <section
+            key={`${item.property_type}-${item.number}`}
+            className="rounded-2xl border bg-white p-6 shadow-sm"
+          >
+            <h2 className="text-xl font-semibold">
+              {propertyTypeLabel(item.property_type)} №{item.number}
+            </h2>
+            <p className="mt-3 text-slate-600">Площадь: {item.area} м²</p>
+            <p className="mt-1 text-slate-500">Статус: {item.status}</p>
+          </section>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function VotingsTemplate({ votings, loadVotings }: { votings: Voting[]; loadVotings: () => void }) {
   return (
     <>
       <div className="mb-8 flex items-center justify-between">
@@ -456,12 +528,7 @@ function ConstructorTemplate(props: {
   const pageTitle = titleMap[props.activeComponent] || "Конструктор голосования";
 
   if (props.activeComponent !== "voting_constructor" && props.activeComponent !== "voting_constructor_create") {
-    return (
-      <Placeholder
-        title={pageTitle}
-        text="Здесь будет список опросных листов по выбранному статусу."
-      />
-    );
+    return <Placeholder title={pageTitle} text="Здесь будет список опросных листов по выбранному статусу." />;
   }
 
   return (
@@ -470,42 +537,14 @@ function ConstructorTemplate(props: {
 
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
         <form onSubmit={props.createVoting} className="grid gap-3">
-          <input
-            className="rounded-xl border p-3"
-            placeholder="Название голосования"
-            value={props.title}
-            onChange={(e) => props.setTitle(e.target.value)}
-          />
-
-          <textarea
-            className="rounded-xl border p-3"
-            placeholder="Описание"
-            value={props.description}
-            onChange={(e) => props.setDescription(e.target.value)}
-          />
-
-          <input
-            className="rounded-xl border p-3"
-            placeholder="Вопрос"
-            value={props.question}
-            onChange={(e) => props.setQuestion(e.target.value)}
-          />
-
-          <textarea
-            className="rounded-xl border p-3"
-            rows={4}
-            placeholder="Варианты ответа, каждый с новой строки"
-            value={props.optionsText}
-            onChange={(e) => props.setOptionsText(e.target.value)}
-          />
+          <input className="rounded-xl border p-3" placeholder="Название голосования" value={props.title} onChange={(e) => props.setTitle(e.target.value)} />
+          <textarea className="rounded-xl border p-3" placeholder="Описание" value={props.description} onChange={(e) => props.setDescription(e.target.value)} />
+          <input className="rounded-xl border p-3" placeholder="Вопрос" value={props.question} onChange={(e) => props.setQuestion(e.target.value)} />
+          <textarea className="rounded-xl border p-3" rows={4} placeholder="Варианты ответа, каждый с новой строки" value={props.optionsText} onChange={(e) => props.setOptionsText(e.target.value)} />
 
           {props.createError && <p className="text-sm text-red-600">{props.createError}</p>}
 
-          <button
-            type="submit"
-            disabled={props.creating}
-            className="w-fit rounded-xl bg-blue-600 px-5 py-3 text-white disabled:opacity-50"
-          >
+          <button type="submit" disabled={props.creating} className="w-fit rounded-xl bg-blue-600 px-5 py-3 text-white disabled:opacity-50">
             {props.creating ? "Создаём..." : "Создать голосование"}
           </button>
         </form>
@@ -514,15 +553,101 @@ function ConstructorTemplate(props: {
   );
 }
 
-function ProfileView({
-  user,
-  activeRole,
-  logout,
-}: {
-  user: User;
-  activeRole: string;
-  logout: () => void;
+function MeetingCreateTemplate(props: {
+  meetingError: string;
+  meetingInitiator: string;
+  setMeetingInitiator: (v: string) => void;
+  meetingDateTime: string;
+  setMeetingDateTime: (v: string) => void;
+  meetingLocation: string;
+  setMeetingLocation: (v: string) => void;
+  meetingAgendaText: string;
+  setMeetingAgendaText: (v: string) => void;
+  creatingMeeting: boolean;
+  submitMeeting: (e: FormEvent) => void;
 }) {
+  return (
+    <>
+      <h1 className="mb-8 text-3xl font-bold">Инициировать общедомовое собрание</h1>
+
+      <section className="rounded-2xl border bg-white p-6 shadow-sm">
+        <form onSubmit={props.submitMeeting} className="grid gap-4">
+          <input className="rounded-xl border p-3" placeholder="Инициатор собрания" value={props.meetingInitiator} onChange={(e) => props.setMeetingInitiator(e.target.value)} />
+          <input className="rounded-xl border p-3" type="datetime-local" value={props.meetingDateTime} onChange={(e) => props.setMeetingDateTime(e.target.value)} />
+          <input className="rounded-xl border p-3" placeholder="Место проведения" value={props.meetingLocation} onChange={(e) => props.setMeetingLocation(e.target.value)} />
+          <textarea className="rounded-xl border p-3" rows={5} placeholder="Основные вопросы повестки, каждый с новой строки" value={props.meetingAgendaText} onChange={(e) => props.setMeetingAgendaText(e.target.value)} />
+
+          <p className="text-sm text-slate-500">
+            Дата проведения должна быть не раньше чем через 5 календарных дней.
+          </p>
+
+          {props.meetingError && <p className="text-sm text-red-600">{props.meetingError}</p>}
+
+          <button type="submit" disabled={props.creatingMeeting} className="w-fit rounded-xl bg-blue-600 px-5 py-3 text-white disabled:opacity-50">
+            {props.creatingMeeting ? "Создаём..." : "Отправить на утверждение совету дома"}
+          </button>
+        </form>
+      </section>
+    </>
+  );
+}
+
+function MeetingsListTemplate({ component, meetings, error }: { component: string; meetings: Meeting[]; error: string }) {
+  const titleMap: Record<string, string> = {
+    meetings_active: "Активные собрания",
+    meetings_upcoming: "Предстоящие собрания",
+    meetings_past: "Прошедшие собрания",
+  };
+
+  return (
+    <>
+      <h1 className="mb-8 text-3xl font-bold">{titleMap[component] || "Собрания"}</h1>
+
+      {error && (
+        <section className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-600">
+          {error}
+        </section>
+      )}
+
+      {meetings.length === 0 && (
+        <section className="rounded-2xl border bg-white p-6 shadow-sm">
+          <p className="text-slate-600">Данных по этому разделу пока нет.</p>
+        </section>
+      )}
+
+      <div className="space-y-4">
+        {meetings.map((meeting) => (
+          <section key={meeting.id} className="rounded-2xl border bg-white p-6 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-xl font-semibold">{meeting.initiator_name}</h2>
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-xs text-blue-700">
+                {meeting.status}
+              </span>
+            </div>
+
+            <p className="text-slate-600">
+              <b>Дата:</b> {new Date(meeting.scheduled_at).toLocaleString("ru-RU")}
+            </p>
+            <p className="mt-1 text-slate-600">
+              <b>Место:</b> {meeting.location}
+            </p>
+
+            <div className="mt-4">
+              <p className="font-medium">Повестка:</p>
+              <ul className="mt-2 list-disc pl-5 text-slate-600">
+                {meeting.agenda.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function ProfileView({ user, activeRole, logout }: { user: User; activeRole: string; logout: () => void }) {
   return (
     <>
       <h1 className="mb-8 text-3xl font-bold">👤 Профиль</h1>
@@ -542,28 +667,6 @@ function ProfileView({
           Выход со всех других сессий
         </button>
       </section>
-
-      <section className="mb-6 rounded-2xl border bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-xl font-semibold">📄 Общая информация</h2>
-        <p><b>Дата регистрации:</b> пока не подключено</p>
-        <p><b>Статус аккаунта:</b> active</p>
-      </section>
-
-      <section className="rounded-2xl border bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-xl font-semibold">📄 История действий</h2>
-        <ol className="list-decimal space-y-2 pl-5 text-slate-600">
-          <li>Вход в личный кабинет</li>
-          <li>Просмотр доступных голосований</li>
-          <li>Открытие профиля</li>
-          <li>Обновление списка голосований</li>
-          <li>Переход в настройки</li>
-          <li>Смена активной роли</li>
-          <li>Просмотр дашборда</li>
-          <li>Открытие меню аккаунта</li>
-          <li>Проверка данных профиля</li>
-          <li>Системная проверка доступа</li>
-        </ol>
-      </section>
     </>
   );
 }
@@ -573,36 +676,9 @@ function SettingsView({ activeRole }: { activeRole: string }) {
     <>
       <h1 className="mb-8 text-3xl font-bold">Настройки системы</h1>
 
-      <section className="mb-6 rounded-2xl border bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-xl font-semibold">Интерфейс</h2>
-        <label className="mb-3 flex items-center gap-3">
-          <input type="checkbox" defaultChecked />
-          Показывать уведомления в личном кабинете
-        </label>
-        <label className="mb-3 flex items-center gap-3">
-          <input type="checkbox" defaultChecked />
-          Использовать компактное меню
-        </label>
-      </section>
-
-      <section className="mb-6 rounded-2xl border bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-xl font-semibold">Безопасность</h2>
-        <label className="mb-3 flex items-center gap-3">
-          <input type="checkbox" />
-          Требовать повторный вход для критичных действий
-        </label>
-        <label className="mb-3 flex items-center gap-3">
-          <input type="checkbox" defaultChecked />
-          Показывать историю действий
-        </label>
-      </section>
-
       <section className="rounded-2xl border bg-white p-6 shadow-sm">
         <h2 className="mb-4 text-xl font-semibold">Доступ</h2>
         <p className="text-slate-600">Активная роль: {activeRole}</p>
-        <p className="mt-2 text-slate-500">
-          В будущем здесь будут настройки уведомлений, языка, темы, безопасности и прав доступа.
-        </p>
       </section>
     </>
   );
@@ -620,9 +696,7 @@ function VotingList({ votings }: { votings: Voting[] }) {
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="font-semibold">{voting.title}</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                {voting.description || "Без описания"}
-              </p>
+              <p className="mt-1 text-sm text-slate-500">{voting.description || "Без описания"}</p>
             </div>
             <span className="rounded-full bg-green-100 px-3 py-1 text-xs text-green-700">
               {voting.status}
@@ -650,25 +724,35 @@ function MenuItem({
   text,
   active = false,
   small = false,
+  hasChildren = false,
+  expanded = false,
   onClick,
 }: {
   icon: string;
   text: string;
   active?: boolean;
   small?: boolean;
+  hasChildren?: boolean;
+  expanded?: boolean;
   onClick?: () => void;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-center gap-3 rounded-xl text-left font-medium ${
+      className={`flex w-full items-center justify-between rounded-xl text-left font-medium ${
         small ? "px-3 py-2 text-xs" : "px-4 py-4 text-sm"
-      } ${
-        active ? "bg-blue-50 text-blue-600" : "text-slate-600 hover:bg-slate-50"
-      }`}
+      } ${active ? "bg-blue-50 text-blue-600" : "text-slate-600 hover:bg-slate-50"}`}
     >
-      <span className={small ? "text-base" : "text-xl"}>{icon}</span>
-      <span>{text}</span>
+      <span className="flex items-center gap-3">
+        <span className={small ? "text-base" : "text-xl"}>{icon}</span>
+        <span>{text}</span>
+      </span>
+
+      {hasChildren && (
+        <span className="text-xs text-slate-400">
+          {expanded ? "▲" : "▼"}
+        </span>
+      )}
     </button>
   );
 }
@@ -698,168 +782,6 @@ function NewsItem({ title, date }: { title: string; date: string }) {
       <div className="h-14 w-20 rounded-xl bg-slate-100" />
     </div>
   );
-}
-
-function ObjectsTemplate({
-  role,
-  objects,
-}: {
-  role: string;
-  objects: any;
-}) {
-  if (!objects) {
-    return <Placeholder title="Мои объекты" text="Загрузка данных..." />;
-  }
-
-if (
-  role === "CHAIRMAN" ||
-  role === "COUNCIL_MEMBER" ||
-  role === "AUDITOR"
-) {
-
-  if (!objects) {
-    return (
-      <Placeholder
-        title="Мой МЖК"
-        text="Данные дома пока не заведены в системе."
-      />
-    );
-  }
-
-  return (
-    <>
-      <h1 className="mb-8 text-3xl font-bold">
-        Мой МЖК
-      </h1>
-
-      <section className="rounded-2xl border bg-white p-6 shadow-sm">
-
-        <h2 className="mb-6 text-xl font-semibold">
-          🏢 Данные дома
-        </h2>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-
-          <InfoCard
-            label="Город"
-            value={objects.city}
-          />
-
-          <InfoCard
-            label="Район"
-            value={objects.district}
-          />
-
-          <InfoCard
-            label="Улица"
-            value={objects.street}
-          />
-
-          <InfoCard
-            label="Дом"
-            value={objects.house_number}
-          />
-
-          <InfoCard
-            label="Этажность"
-            value={objects.floors_count}
-          />
-
-          <InfoCard
-            label="Подъезды"
-            value={objects.entrances_count}
-          />
-
-          <InfoCard
-            label="Квартиры"
-            value={objects.apartments_count}
-          />
-
-          <InfoCard
-            label="НП"
-            value={objects.commercial_units_count}
-          />
-
-          <InfoCard
-            label="Кладовые"
-            value={objects.storerooms_count}
-          />
-
-          <InfoCard
-            label="Паркоместа"
-            value={objects.parking_spaces_count}
-          />
-
-        </div>
-
-      </section>
-    </>
-  );
-}
-
-const ownerObjects = Array.isArray(objects)
-  ? objects
-  : [];
-
-return (
-  <>
-    <h1 className="mb-8 text-3xl font-bold">
-      Мои объекты
-    </h1>
-
-    {ownerObjects.length === 0 && (
-      <section className="rounded-2xl border bg-white p-6 shadow-sm">
-
-        <h2 className="mb-3 text-xl font-semibold">
-          📭 Объекты не найдены
-        </h2>
-
-        <p className="text-slate-600">
-          Для роли <b>{role}</b> объекты имущества пока не назначены.
-        </p>
-
-        <p className="mt-2 text-sm text-slate-500">
-          Назначение объектов выполняется через базу данных
-          или административный интерфейс.
-        </p>
-
-      </section>
-    )}
-
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-
-      {ownerObjects.map((item: any) => (
-
-        <section
-          key={`${item.property_type}-${item.number}`}
-          className="rounded-2xl border bg-white p-6 shadow-sm"
-        >
-
-          <h2 className="text-xl font-semibold">
-
-            {propertyTypeLabel(
-              item.property_type,
-            )}
-
-            {" "}
-
-            №{item.number}
-
-          </h2>
-
-          <p className="mt-3 text-slate-600">
-            Площадь: {item.area} м²
-          </p>
-
-          <p className="mt-1 text-slate-500">
-            Статус: {item.status}
-          </p>
-
-        </section>
-      ))}
-    </div>
-  </>
-);
 }
 
 function InfoCard({ label, value }: { label: string; value: any }) {
