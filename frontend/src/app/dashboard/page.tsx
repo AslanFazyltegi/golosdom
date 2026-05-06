@@ -437,6 +437,7 @@ function ObjectsTemplate({ role, objects }: { role: string; objects: any }) {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <InfoCard label="Город" value={objects.city} />
             <InfoCard label="Район" value={objects.district} />
+            <InfoCard label="Наименование ЖК" value={objects.building_name} />
             <InfoCard label="Улица" value={objects.street} />
             <InfoCard label="Дом" value={objects.house_number} />
             <InfoCard label="Этажность" value={objects.floors_count} />

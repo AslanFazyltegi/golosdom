@@ -3,10 +3,11 @@ package dto
 type BuildingResponse struct {
 	Type string `json:"type"`
 
-	City        string `json:"city"`
-	District    string `json:"district"`
-	Street      string `json:"street"`
-	HouseNumber string `json:"house_number"`
+	City         string `json:"city"`
+	District     string `json:"district"`
+	BuildingName string `json:"building_name"`
+	Street       string `json:"street"`
+	HouseNumber  string `json:"house_number"`
 
 	FloorsCount    int `json:"floors_count"`
 	EntrancesCount int `json:"entrances_count"`

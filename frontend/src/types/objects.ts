@@ -2,6 +2,7 @@ export type BuildingObject = {
   type: "building";
   city: string;
   district: string;
+  building_name: string,
   street: string;
   house_number: string;
   floors_count: number;

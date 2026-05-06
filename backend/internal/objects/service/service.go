@@ -41,10 +41,11 @@ func (s *Service) GetObjects(
 		return dto.BuildingResponse{
 			Type: "building",
 
-			City:        building.City,
-			District:    building.District,
-			Street:      building.Street,
-			HouseNumber: building.HouseNumber,
+			City:         building.City,
+			District:     building.District,
+			BuildingName: building.BuildingName,
+			Street:       building.Street,
+			HouseNumber:  building.HouseNumber,
 
 			FloorsCount:    building.FloorsCount,
 			EntrancesCount: building.EntrancesCount,

@@ -17,10 +17,11 @@ func New(db *pgxpool.Pool) *Repository {
 }
 
 type BuildingData struct {
-	City        string
-	District    string
-	Street      string
-	HouseNumber string
+	City         string
+	District     string
+	BuildingName string
+	Street       string
+	HouseNumber  string
 
 	FloorsCount    int
 	EntrancesCount int
@@ -43,6 +44,7 @@ func (r *Repository) GetBuilding(
 		SELECT
 			city,
 			district,
+			building_name,
 			street,
 			house_number,
 
@@ -61,6 +63,7 @@ func (r *Repository) GetBuilding(
 	).Scan(
 		&building.City,
 		&building.District,
+		&building.BuildingName,
 		&building.Street,
 		&building.HouseNumber,
 
