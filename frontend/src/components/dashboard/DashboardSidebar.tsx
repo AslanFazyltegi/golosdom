@@ -35,7 +35,7 @@ export function DashboardSidebar({
 
               {hasChildren && isExpanded && (
                 <div className="ml-8 mt-1 space-y-1">
-                  {item.children.map((child) => (
+                  {item.children?.map((child) => (
                     <MenuItem
                       key={child.code}
                       icon={child.icon}

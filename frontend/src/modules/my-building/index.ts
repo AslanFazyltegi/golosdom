@@ -1,0 +1,1 @@
+export { MyBuildingPage } from "./MyBuildingPage";

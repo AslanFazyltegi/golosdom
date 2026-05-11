@@ -22,7 +22,7 @@ export default function LoginPage() {
       });
 
       saveToken(data.token);
-      router.push("/dashboard");
+      router.push("/cabinet");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка входа");
     }

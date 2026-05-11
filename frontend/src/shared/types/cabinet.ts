@@ -1,0 +1,45 @@
+import type { FormEvent, ReactNode } from "react";
+import type { MeetingOwner } from "@/lib/owners";
+import type { Meeting } from "@/types/meeting";
+import type { User } from "@/types/user";
+import type { Voting } from "@/types/voting";
+
+export type CabinetModuleProps = {
+  user: User;
+  objects: unknown;
+  owners: MeetingOwner[];
+  activeRole: string;
+  activeComponent: string;
+  votings: Voting[];
+  loadVotings: () => void;
+  createVoting: (e: FormEvent) => void;
+  title: string;
+  setTitle: (v: string) => void;
+  description: string;
+  setDescription: (v: string) => void;
+  question: string;
+  setQuestion: (v: string) => void;
+  optionsText: string;
+  setOptionsText: (v: string) => void;
+  creating: boolean;
+  createError: string;
+  meetings: Meeting[];
+  meetingError: string;
+  meetingInitiators: string[];
+  setMeetingInitiators: (v: string[]) => void;
+  meetingDate: string;
+  setMeetingDate: (v: string) => void;
+  meetingTime: string;
+  setMeetingTime: (v: string) => void;
+  meetingLocationAddress: string;
+  setMeetingLocationAddress: (v: string) => void;
+  meetingLocationDetail: string;
+  setMeetingLocationDetail: (v: string) => void;
+  meetingAgenda: string[];
+  setMeetingAgenda: (v: string[]) => void;
+  creatingMeeting: boolean;
+  submitMeeting: (e: FormEvent) => void;
+  logout: () => void;
+};
+
+export type CabinetModuleComponent = (props: CabinetModuleProps) => ReactNode;

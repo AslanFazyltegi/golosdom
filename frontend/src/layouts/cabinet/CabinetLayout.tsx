@@ -1,0 +1,370 @@
+"use client";
+
+import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { apiFetch } from "@/lib/api";
+import { getToken, removeToken } from "@/lib/auth";
+import { createMeeting, fetchMeetings } from "@/lib/meetings";
+import { fetchNavigation } from "@/lib/navigation";
+import { fetchObjects } from "@/lib/objects";
+import { fetchOwners, type MeetingOwner } from "@/lib/owners";
+import type { Meeting } from "@/types/meeting";
+import type { NavigationItem } from "@/types/navigation";
+import type { User } from "@/types/user";
+import type { Voting } from "@/types/voting";
+import { CabinetHeader } from "./CabinetHeader";
+import { CabinetSidebar } from "./CabinetSidebar";
+import { CabinetWorkspace } from "./CabinetWorkspace";
+
+export function CabinetLayout() {
+  const router = useRouter();
+
+  const [user, setUser] = useState<User | null>(null);
+  const [votings, setVotings] = useState<Voting[]>([]);
+  const [menu, setMenu] = useState<NavigationItem[]>([]);
+  const [objects, setObjects] = useState<unknown>(null);
+  const [meetings, setMeetings] = useState<Meeting[]>([]);
+
+  const [loading, setLoading] = useState(true);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [roleOpen, setRoleOpen] = useState(false);
+  const [expandedMenuCodes, setExpandedMenuCodes] = useState<string[]>([]);
+
+  const [activeRole, setActiveRole] = useState("OWNER");
+  const [activeComponent, setActiveComponent] = useState("dashboard");
+
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [question, setQuestion] = useState("");
+  const [optionsText, setOptionsText] = useState("Да\nНет\nВоздержался");
+  const [createError, setCreateError] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const [meetingError, setMeetingError] = useState("");
+  const [meetingInitiators, setMeetingInitiators] = useState<string[]>([
+    "Председатель ОСИ",
+    "Совет дома",
+  ]);
+  const [meetingDate, setMeetingDate] = useState("");
+  const [meetingTime, setMeetingTime] = useState("20:00");
+  const [meetingLocationAddress, setMeetingLocationAddress] = useState("");
+  const [meetingLocationDetail, setMeetingLocationDetail] =
+    useState("Двор / 1-5 подъезд");
+  const [meetingAgenda, setMeetingAgenda] = useState<string[]>([]);
+  const [creatingMeeting, setCreatingMeeting] = useState(false);
+
+  const [owners, setOwners] = useState<MeetingOwner[]>([]);
+
+  async function loadMeetingsByComponent(component: string) {
+    let status = "";
+
+    if (component === "meetings_active") status = "active";
+    if (component === "meetings_upcoming") status = "upcoming";
+    if (component === "meetings_past") status = "past";
+
+    if (!status) return;
+
+    try {
+      setMeetingError("");
+      const data = await fetchMeetings(status);
+      setMeetings(data);
+    } catch (err) {
+      setMeetingError(
+        err instanceof Error ? err.message : "Не удалось загрузить собрания",
+      );
+    }
+  }
+
+  useEffect(() => {
+    const token = getToken();
+
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+
+    async function load() {
+      try {
+        const currentUser = (await apiFetch("/api/v1/auth/me")) as User;
+        setUser(currentUser);
+
+        const role = currentUser.roles?.[0] || "OWNER";
+        setActiveRole(role);
+
+        const menuData = await fetchNavigation(role);
+        setMenu(menuData);
+
+        const defaultItem =
+          menuData.find((item) => item.is_default) || menuData[0];
+        const defaultComponent = getModuleCode(defaultItem);
+        setActiveComponent(defaultComponent);
+
+        const objectsData = await fetchObjects(role);
+        setObjects(objectsData);
+        setMeetingLocationAddress(buildMeetingAddress(objectsData));
+
+        try {
+          const ownersData = await fetchOwners();
+          setOwners(ownersData);
+        } catch (err) {
+          console.error("Не удалось загрузить собственников:", err);
+          setOwners([]);
+        }
+
+        const votingData = (await apiFetch("/api/v1/votings")) as Voting[];
+        setVotings(votingData);
+
+        if (defaultComponent.startsWith("meetings")) {
+          await loadMeetingsByComponent(defaultComponent);
+        }
+      } catch {
+        removeToken();
+        router.push("/login");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    load();
+  }, [router]);
+
+  async function loadVotings() {
+    const data = (await apiFetch("/api/v1/votings")) as Voting[];
+    setVotings(data);
+  }
+
+  async function createVoting(e: FormEvent) {
+    e.preventDefault();
+    setCreateError("");
+    setCreating(true);
+
+    const options = optionsText
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    try {
+      await apiFetch("/api/v1/votings", {
+        method: "POST",
+        body: JSON.stringify({ title, description, question, options }),
+      });
+
+      setTitle("");
+      setDescription("");
+      setQuestion("");
+      setOptionsText("Да\nНет\nВоздержался");
+      await loadVotings();
+    } catch (err) {
+      setCreateError(
+        err instanceof Error ? err.message : "Не удалось создать голосование",
+      );
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function switchRole(role: string) {
+    setActiveRole(role);
+
+    const menuData = await fetchNavigation(role);
+    setMenu(menuData);
+
+    const defaultItem = menuData.find((item) => item.is_default) || menuData[0];
+    const defaultComponent = getModuleCode(defaultItem);
+    setActiveComponent(defaultComponent);
+
+    const objectsData = await fetchObjects(role);
+    setObjects(objectsData);
+    setMeetingLocationAddress(buildMeetingAddress(objectsData));
+
+    setExpandedMenuCodes([]);
+    setRoleOpen(false);
+    setAccountOpen(false);
+
+    if (defaultComponent.startsWith("meetings")) {
+      await loadMeetingsByComponent(defaultComponent);
+    }
+  }
+
+  function toggleMenu(code: string) {
+    setExpandedMenuCodes((current) =>
+      current.includes(code)
+        ? current.filter((item) => item !== code)
+        : [...current, code],
+    );
+  }
+
+  async function openNavigationItem(item: NavigationItem) {
+    if (item.children && item.children.length > 0) {
+      toggleMenu(item.code);
+    }
+
+    const component = getModuleCode(item);
+    setActiveComponent(component);
+
+    if (component.startsWith("meetings")) {
+      await loadMeetingsByComponent(component);
+    }
+  }
+
+  function openAccountModule(code: string) {
+    setActiveComponent(code);
+    setAccountOpen(false);
+  }
+
+  async function submitMeeting(e: FormEvent) {
+    e.preventDefault();
+    setMeetingError("");
+    setCreatingMeeting(true);
+
+    const agenda = meetingAgenda.map((item) => item.trim()).filter(Boolean);
+    const scheduledAt = `${meetingDate}T${meetingTime}`;
+    const location = [meetingLocationAddress.trim(), meetingLocationDetail.trim()]
+      .filter(Boolean)
+      .join(", ");
+
+    if (!meetingDate) {
+      setMeetingError("Укажите дату проведения собрания");
+      setCreatingMeeting(false);
+      return;
+    }
+
+    if (new Date(scheduledAt) < getMinMeetingDate()) {
+      setMeetingError(
+        "Дата проведения должна быть не раньше 5-го календарного дня, считая со следующего дня.",
+      );
+      setCreatingMeeting(false);
+      return;
+    }
+
+    if (agenda.length === 0) {
+      setMeetingError("Добавьте хотя бы один вопрос повестки");
+      setCreatingMeeting(false);
+      return;
+    }
+
+    try {
+      await createMeeting({
+        initiator_name: meetingInitiators.join(", "),
+        scheduled_at: new Date(scheduledAt).toISOString(),
+        location,
+        agenda,
+      });
+
+      setMeetingInitiators(["Председатель ОСИ", "Совет дома"]);
+      setMeetingDate("");
+      setMeetingTime("20:00");
+      setMeetingLocationAddress(buildMeetingAddress(objects));
+      setMeetingLocationDetail("Двор / 1-5 подъезд");
+      setMeetingAgenda([""]);
+
+      const data = await fetchMeetings("upcoming");
+      setMeetings(data);
+      setActiveComponent("meetings_upcoming");
+    } catch (err) {
+      setMeetingError(
+        err instanceof Error ? err.message : "Не удалось создать собрание",
+      );
+    } finally {
+      setCreatingMeeting(false);
+    }
+  }
+
+  function logout() {
+    removeToken();
+    router.push("/login");
+  }
+
+  if (loading) return <main className="p-6">Загрузка...</main>;
+  if (!user) return null;
+
+  return (
+    <main className="h-screen overflow-hidden bg-slate-50 text-slate-800">
+      <CabinetHeader
+        user={user}
+        activeRole={activeRole}
+        accountOpen={accountOpen}
+        roleOpen={roleOpen}
+        setAccountOpen={setAccountOpen}
+        setRoleOpen={setRoleOpen}
+        onOpenModule={openAccountModule}
+        switchRole={switchRole}
+        logout={logout}
+      />
+
+      <div className="flex h-screen pt-20">
+        <CabinetSidebar
+          menu={menu}
+          activeComponent={activeComponent}
+          expandedMenuCodes={expandedMenuCodes}
+          onOpenItem={openNavigationItem}
+        />
+
+        <CabinetWorkspace
+          user={user}
+          objects={objects}
+          owners={owners}
+          activeRole={activeRole}
+          activeComponent={activeComponent}
+          votings={votings}
+          loadVotings={loadVotings}
+          createVoting={createVoting}
+          title={title}
+          setTitle={setTitle}
+          description={description}
+          setDescription={setDescription}
+          question={question}
+          setQuestion={setQuestion}
+          optionsText={optionsText}
+          setOptionsText={setOptionsText}
+          creating={creating}
+          createError={createError}
+          meetings={meetings}
+          meetingError={meetingError}
+          meetingInitiators={meetingInitiators}
+          setMeetingInitiators={setMeetingInitiators}
+          meetingDate={meetingDate}
+          setMeetingDate={setMeetingDate}
+          meetingTime={meetingTime}
+          setMeetingTime={setMeetingTime}
+          meetingLocationAddress={meetingLocationAddress}
+          setMeetingLocationAddress={setMeetingLocationAddress}
+          meetingLocationDetail={meetingLocationDetail}
+          setMeetingLocationDetail={setMeetingLocationDetail}
+          meetingAgenda={meetingAgenda}
+          setMeetingAgenda={setMeetingAgenda}
+          creatingMeeting={creatingMeeting}
+          submitMeeting={submitMeeting}
+          logout={logout}
+        />
+      </div>
+    </main>
+  );
+}
+
+function getModuleCode(item?: NavigationItem) {
+  return item?.component || item?.code || "dashboard";
+}
+
+function getMinMeetingDate() {
+  const date = new Date();
+  date.setDate(date.getDate() + 5);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function buildMeetingAddress(objects: unknown) {
+  if (!objects || Array.isArray(objects)) return "Адрес дома не найден";
+
+  const building = objects as Record<string, unknown>;
+
+  return [
+    building.city,
+    building.district,
+    building.building_name,
+    building.street ? `ул. ${building.street}` : "",
+    building.house_number ? `д. ${building.house_number}` : "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
