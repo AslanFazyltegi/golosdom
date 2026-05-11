@@ -38,7 +38,7 @@ export type CabinetModuleProps = {
   meetingAgenda: string[];
   setMeetingAgenda: (v: string[]) => void;
   creatingMeeting: boolean;
-  submitMeeting: (e: FormEvent) => void;
+  submitMeeting: (e?: FormEvent) => Promise<void>;
   logout: () => void;
 };
 

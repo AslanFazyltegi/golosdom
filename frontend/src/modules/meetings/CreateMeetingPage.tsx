@@ -1,11 +1,27 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
+import {
+  MeetingConfirmationPage,
+  type MeetingConfirmationData,
+} from "./MeetingConfirmationPage";
+
+type MeetingStep = "form" | "confirmation";
+
+const meetingFormLabels: Record<string, string> = {
+  offline: "Очное собрание (Явочный формат)",
+  absentee: "Заочное собрание (Письменный опрос / Электронное голосование)",
+};
 
 export function CreateMeetingPage(props: CabinetModuleProps) {
+  const [step, setStep] = useState<MeetingStep>("form");
   const [ownerDropdownOpen, setOwnerDropdownOpen] = useState(false);
+  const [meetingForm, setMeetingForm] = useState("offline");
   const [initiatorInput, setInitiatorInput] = useState("");
+  const [validationError, setValidationError] = useState("");
+  const [notificationDate, setNotificationDate] = useState(new Date());
   const { meetingDate, setMeetingDate } = props;
 
   const minDateValue = formatDateInput(getMinMeetingDate());
@@ -63,6 +79,77 @@ export function CreateMeetingPage(props: CabinetModuleProps) {
     props.setMeetingAgenda(next);
   }
 
+  function openConfirmation(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setValidationError("");
+
+    const agenda = props.meetingAgenda
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const scheduledAt = `${props.meetingDate}T${props.meetingTime}`;
+    const meetingLocation = getMeetingLocation(
+      props.meetingLocationAddress,
+      props.meetingLocationDetail,
+    );
+
+    if (props.meetingInitiators.length === 0) {
+      setValidationError("Укажите инициатора собрания");
+      return;
+    }
+
+    if (!props.meetingDate) {
+      setValidationError("Укажите дату проведения собрания");
+      return;
+    }
+
+    if (new Date(scheduledAt) < getMinMeetingDate()) {
+      setValidationError(
+        "Дата проведения должна быть не раньше 5-го календарного дня, считая со следующего дня.",
+      );
+      return;
+    }
+
+    if (!meetingLocation) {
+      setValidationError("Укажите место проведения собрания");
+      return;
+    }
+
+    if (agenda.length === 0) {
+      setValidationError("Добавьте хотя бы один вопрос повестки");
+      return;
+    }
+
+    setNotificationDate(new Date());
+    setOwnerDropdownOpen(false);
+    setStep("confirmation");
+  }
+
+  const confirmationData: MeetingConfirmationData = {
+    condominiumAddress: buildMeetingAddress(props.objects),
+    meetingFormLabel: meetingFormLabels[meetingForm] || meetingForm,
+    meetingDate: props.meetingDate,
+    meetingTime: props.meetingTime,
+    meetingLocation: getMeetingLocation(
+      props.meetingLocationAddress,
+      props.meetingLocationDetail,
+    ),
+    initiators: props.meetingInitiators,
+    agenda: props.meetingAgenda.map((item) => item.trim()).filter(Boolean),
+    notificationDate,
+  };
+
+  if (step === "confirmation") {
+    return (
+      <MeetingConfirmationPage
+        creating={props.creatingMeeting}
+        data={confirmationData}
+        error={props.meetingError}
+        onBack={() => setStep("form")}
+        onConfirm={() => void props.submitMeeting()}
+      />
+    );
+  }
+
   return (
     <>
       <h1 className="mb-8 text-3xl font-bold text-slate-900">
@@ -70,7 +157,7 @@ export function CreateMeetingPage(props: CabinetModuleProps) {
       </h1>
 
       <section className="overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <form onSubmit={props.submitMeeting}>
+        <form onSubmit={openConfirmation}>
           <div className="border-b border-slate-200 p-7">
             <label className="mb-3 block font-semibold text-slate-800">
               Инициатор собрания <span className="text-red-500">*</span>
@@ -238,6 +325,27 @@ export function CreateMeetingPage(props: CabinetModuleProps) {
                 т.д.
               </p>
             </div>
+
+            <div className="border-b border-slate-200 p-7 xl:border-b-0 xl:border-r">
+              <label className="mb-3 block font-semibold text-slate-800">
+                Форма собрания <span className="text-red-500">*</span>
+              </label>
+
+              <select
+                className="w-full rounded-xl border border-slate-300 bg-white p-3 shadow-sm outline-none focus:border-blue-500"
+                value={meetingForm}
+                onChange={(e) => setMeetingForm(e.target.value)}
+              >
+                <option value="offline">Очное собрание (Явочный формат)</option>
+                <option value="absentee">
+                  Заочное собрание (Письменный опрос / Электронное голосование)
+                </option>
+              </select>
+
+              <p className="mt-3 text-sm leading-5 text-slate-500">
+                Выберите формат проведения общедомового собрания.
+              </p>
+            </div>
           </div>
 
           <div className="border-b border-slate-200 p-7">
@@ -300,20 +408,17 @@ export function CreateMeetingPage(props: CabinetModuleProps) {
           </div>
 
           <div className="p-7">
-            {props.meetingError && (
+            {(validationError || props.meetingError) && (
               <p className="mb-4 text-sm text-red-600">
-                {props.meetingError}
+                {validationError || props.meetingError}
               </p>
             )}
 
             <button
               type="submit"
-              disabled={props.creatingMeeting}
               className="w-fit rounded-xl bg-blue-600 px-5 py-3 text-white shadow-sm hover:bg-blue-700 disabled:opacity-50"
             >
-              {props.creatingMeeting
-                ? "Создаём..."
-                : "Далее"}
+              Далее
             </button>
           </div>
         </form>
@@ -334,6 +439,10 @@ function formatDateInput(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function getMeetingLocation(address: string, detail: string) {
+  return [address.trim(), detail.trim()].filter(Boolean).join(", ");
 }
 
 function buildMeetingAddress(objects: unknown) {

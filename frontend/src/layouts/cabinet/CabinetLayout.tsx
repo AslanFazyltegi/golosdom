@@ -212,8 +212,8 @@ export function CabinetLayout() {
     setAccountOpen(false);
   }
 
-  async function submitMeeting(e: FormEvent) {
-    e.preventDefault();
+  async function submitMeeting(e?: FormEvent) {
+    e?.preventDefault();
     setMeetingError("");
     setCreatingMeeting(true);
 
@@ -222,6 +222,12 @@ export function CabinetLayout() {
     const location = [meetingLocationAddress.trim(), meetingLocationDetail.trim()]
       .filter(Boolean)
       .join(", ");
+
+    if (meetingInitiators.length === 0) {
+      setMeetingError("Укажите инициатора собрания");
+      setCreatingMeeting(false);
+      return;
+    }
 
     if (!meetingDate) {
       setMeetingError("Укажите дату проведения собрания");
@@ -233,6 +239,12 @@ export function CabinetLayout() {
       setMeetingError(
         "Дата проведения должна быть не раньше 5-го календарного дня, считая со следующего дня.",
       );
+      setCreatingMeeting(false);
+      return;
+    }
+
+    if (!location) {
+      setMeetingError("Укажите место проведения собрания");
       setCreatingMeeting(false);
       return;
     }
