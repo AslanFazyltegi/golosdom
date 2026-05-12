@@ -537,33 +537,29 @@ function getFormattedAddress(meeting: any) {
 function formatMeetingDateTime(value: string) {
   if (!value) return "";
 
-  const date = new Date(value);
+  const normalizedValue = value.replace("Z", "");
+  const [datePart, timePartRaw = ""] = normalizedValue.split("T");
 
-  if (Number.isNaN(date.getTime())) return value;
+  if (!datePart || !timePartRaw) return value;
 
-  return date.toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const [year, month, day] = datePart.split("-");
+  const timePart = timePartRaw.slice(0, 5);
+
+  return `${day}.${month}.${year}, ${timePart}`;
 }
 
 function formatMeetingDateTimeForDocument(value: string) {
   if (!value) return "";
 
-  const date = new Date(value);
+  const normalizedValue = value.replace("Z", "");
+  const [datePart, timePartRaw = ""] = normalizedValue.split("T");
 
-  if (Number.isNaN(date.getTime())) return value;
+  if (!datePart || !timePartRaw) return value;
 
-  const datePart = date.toLocaleDateString("ru-RU");
-  const timePart = date.toLocaleTimeString("ru-RU", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const [year, month, day] = datePart.split("-");
+  const timePart = timePartRaw.slice(0, 5);
 
-  return `${datePart} в ${timePart}`;
+  return `${day}.${month}.${year} в ${timePart}`;
 }
 
 function formatDateOnly(value?: string) {
