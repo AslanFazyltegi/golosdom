@@ -54,21 +54,13 @@ function MeetingsListTemplate({
   const [selectedMeeting, setSelectedMeeting] = useState<any | null>(null);
 
   const sortedMeetings = useMemo(() => {
-    return [...meetings].sort((a, b) => {
-      return (
-        new Date(a.scheduled_at).getTime() -
-        new Date(b.scheduled_at).getTime()
-      );
-    });
+    return [...meetings].sort((a, b) =>
+      String(a.scheduled_at ?? "").localeCompare(String(b.scheduled_at ?? ""))
+    );
   }, [meetings]);
-
-  const openPreview = (meeting: any) => {
-    setSelectedMeeting(meeting);
-  };
 
   const handlePrint = (meeting: any) => {
     const printWindow = window.open("", "_blank");
-
     if (!printWindow) return;
 
     printWindow.document.write(buildMeetingPrintPageHtml(meeting));
@@ -81,105 +73,82 @@ function MeetingsListTemplate({
     }, 300);
   };
 
-const handleDownloadPdf = async (meeting: any) => {
-  const iframe = document.createElement("iframe");
+  const handleDownloadPdf = async (meeting: any) => {
+    const iframe = document.createElement("iframe");
 
-  iframe.style.position = "fixed";
-  iframe.style.left = "-10000px";
-  iframe.style.top = "0";
-  iframe.style.width = "210mm";
-  iframe.style.height = "297mm";
-  iframe.style.border = "0";
+    iframe.style.position = "fixed";
+    iframe.style.left = "-10000px";
+    iframe.style.top = "0";
+    iframe.style.width = "210mm";
+    iframe.style.height = "297mm";
+    iframe.style.border = "0";
 
-  document.body.appendChild(iframe);
+    document.body.appendChild(iframe);
 
-  const iframeDocument =
-    iframe.contentDocument || iframe.contentWindow?.document;
+    const iframeDocument =
+      iframe.contentDocument || iframe.contentWindow?.document;
 
-  if (!iframeDocument) {
-    document.body.removeChild(iframe);
-    return;
-  }
-
-  iframeDocument.open();
-
-  iframeDocument.write(`
-    <html>
-      <head>
-        <style>
-          ${getPrintStyles()}
-        </style>
-      </head>
-      <body>
-        ${buildMeetingPrintDocumentHtml(meeting)}
-      </body>
-    </html>
-  `);
-
-  iframeDocument.close();
-
-  const element = iframeDocument.getElementById(
-    "meeting-print-document"
-  ) as HTMLElement | null;
-
-  if (!element) {
-    document.body.removeChild(iframe);
-    return;
-  }
-
-  try {
-    const canvas = await html2canvas(element, {
-      scale: 2,
-      backgroundColor: "#ffffff",
-      useCORS: true,
-    });
-
-    const imgData = canvas.toDataURL("image/png");
-
-    const pdf = new jsPDF("p", "mm", "a4");
-
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-
-    const imgWidth = pageWidth - 30;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-    let heightLeft = imgHeight;
-    let position = 15;
-
-    pdf.addImage(
-      imgData,
-      "PNG",
-      15,
-      position,
-      imgWidth,
-      imgHeight
-    );
-
-    heightLeft -= pageHeight - 30;
-
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight + 15;
-
-      pdf.addPage();
-
-      pdf.addImage(
-        imgData,
-        "PNG",
-        15,
-        position,
-        imgWidth,
-        imgHeight
-      );
-
-      heightLeft -= pageHeight - 30;
+    if (!iframeDocument) {
+      document.body.removeChild(iframe);
+      return;
     }
 
-    pdf.save(`uvedomlenie-sobranie-${meeting.id}.pdf`);
-  } finally {
-    document.body.removeChild(iframe);
-  }
-};
+    iframeDocument.open();
+    iframeDocument.write(`
+      <html>
+        <head>
+          <style>${getPrintStyles()}</style>
+        </head>
+        <body>
+          ${buildMeetingPrintDocumentHtml(meeting)}
+        </body>
+      </html>
+    `);
+    iframeDocument.close();
+
+    const element = iframeDocument.getElementById(
+      "meeting-print-document"
+    ) as HTMLElement | null;
+
+    if (!element) {
+      document.body.removeChild(iframe);
+      return;
+    }
+
+    try {
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      const imgWidth = pageWidth - 30;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 15;
+
+      pdf.addImage(imgData, "PNG", 15, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight - 30;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight + 15;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 15, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight - 30;
+      }
+
+      pdf.save(`uvedomlenie-sobranie-${meeting.id}.pdf`);
+    } finally {
+      document.body.removeChild(iframe);
+    }
+  };
 
   return (
     <>
@@ -216,7 +185,7 @@ const handleDownloadPdf = async (meeting: any) => {
                   </span>
 
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-                    {formatMeetingDateTime(meeting.scheduled_at)}
+                    {formatMeetingDateTimeFromDb(meeting.scheduled_at)}
                   </span>
                 </div>
 
@@ -236,7 +205,7 @@ const handleDownloadPdf = async (meeting: any) => {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => openPreview(meeting)}
+                  onClick={() => setSelectedMeeting(meeting)}
                   className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 >
                   Подробнее
@@ -296,6 +265,7 @@ const handleDownloadPdf = async (meeting: any) => {
 
             <MeetingConfirmationPage
               meeting={selectedMeeting}
+              data={buildConfirmationDataFromMeeting(selectedMeeting)}
               mode="preview"
               creating={false}
               onBack={() => setSelectedMeeting(null)}
@@ -308,14 +278,37 @@ const handleDownloadPdf = async (meeting: any) => {
   );
 }
 
+function buildConfirmationDataFromMeeting(meeting: any) {
+  const { datePart, timePart } = splitDbDateTime(meeting?.scheduled_at);
+
+  return {
+    condominiumAddress:
+      meeting?.condominium_address ||
+      meeting?.building_address ||
+      meeting?.address ||
+      meeting?.location ||
+      "",
+    meetingFormLabel:
+      meeting?.meeting_form_label ||
+      meeting?.meeting_format ||
+      "Очное собрание (Явочный формат)",
+    meetingDate: datePart,
+    meetingTime: timePart,
+    meetingLocation: meeting?.location || "",
+    initiators: splitInitiators(meeting?.initiator_name),
+    agenda: Array.isArray(meeting?.agenda) ? meeting.agenda : [],
+    notificationDate: meeting?.created_at
+      ? new Date(meeting.created_at)
+      : new Date(),
+  };
+}
+
 function buildMeetingPrintPageHtml(meeting: any) {
   return `
     <html>
       <head>
         <title>Уведомление о собрании</title>
-        <style>
-          ${getPrintStyles()}
-        </style>
+        <style>${getPrintStyles()}</style>
       </head>
       <body>
         ${buildMeetingPrintDocumentHtml(meeting)}
@@ -356,7 +349,7 @@ function buildMeetingPrintDocumentHtml(meeting: any) {
 
       <div class="point">
         <p class="point-title">2. Дата и время проведения:</p>
-        <p>${escapeHtml(formatMeetingDateTimeForDocument(meeting?.scheduled_at))}</p>
+        <p>${escapeHtml(formatMeetingDateTimeForDocumentFromDb(meeting?.scheduled_at))}</p>
       </div>
 
       <div class="point">
@@ -391,7 +384,7 @@ function buildMeetingPrintDocumentHtml(meeting: any) {
 
       <div class="point">
         <p class="point-title">7. Дата размещения уведомления:</p>
-        <p>${escapeHtml(formatDateOnly(meeting?.created_at))}</p>
+        <p>${escapeHtml(formatDateOnlyFromDb(meeting?.created_at))}</p>
       </div>
 
       <div class="point">
@@ -534,42 +527,65 @@ function getFormattedAddress(meeting: any) {
     .join(", ");
 }
 
-function formatMeetingDateTime(value: string) {
-  if (!value) return "";
+function splitDbDateTime(value?: string) {
+  if (!value) {
+    return {
+      datePart: "",
+      timePart: "",
+    };
+  }
 
-  const normalizedValue = value.replace("Z", "");
-  const [datePart, timePartRaw = ""] = normalizedValue.split("T");
+  const cleanValue = String(value).replace("Z", "");
+  const [datePart = "", timePartRaw = ""] = cleanValue.split("T");
 
-  if (!datePart || !timePartRaw) return value;
+  return {
+    datePart,
+    timePart: timePartRaw.slice(0, 5),
+  };
+}
+
+function formatMeetingDateTimeFromDb(value?: string) {
+  const { datePart, timePart } = splitDbDateTime(value);
+
+  if (!datePart || !timePart) return value || "";
 
   const [year, month, day] = datePart.split("-");
-  const timePart = timePartRaw.slice(0, 5);
 
   return `${day}.${month}.${year}, ${timePart}`;
 }
 
-function formatMeetingDateTimeForDocument(value: string) {
-  if (!value) return "";
+function formatMeetingDateTimeForDocumentFromDb(value?: string) {
+  const { datePart, timePart } = splitDbDateTime(value);
 
-  const normalizedValue = value.replace("Z", "");
-  const [datePart, timePartRaw = ""] = normalizedValue.split("T");
-
-  if (!datePart || !timePartRaw) return value;
+  if (!datePart || !timePart) return value || "";
 
   const [year, month, day] = datePart.split("-");
-  const timePart = timePartRaw.slice(0, 5);
 
   return `${day}.${month}.${year} в ${timePart}`;
 }
 
-function formatDateOnly(value?: string) {
-  const date = value ? new Date(value) : new Date();
+function formatDateOnlyFromDb(value?: string) {
+  if (!value) return "";
 
-  if (Number.isNaN(date.getTime())) {
-    return new Date().toLocaleDateString("ru-RU");
-  }
+  const cleanValue = String(value).replace("Z", "");
+  const [datePart = ""] = cleanValue.split("T");
 
-  return date.toLocaleDateString("ru-RU");
+  if (!datePart) return value;
+
+  const [year, month, day] = datePart.split("-");
+
+  if (!year || !month || !day) return value;
+
+  return `${day}.${month}.${year}`;
+}
+
+function splitInitiators(value: string) {
+  if (!value) return [];
+
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function escapeHtml(value: unknown) {
