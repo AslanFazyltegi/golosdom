@@ -1,7 +1,11 @@
+"use client";
+
 import { useMemo, useState } from "react";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
 import { Placeholder } from "@/shared/ui/Placeholder";
-import jsPDF from "jspdf";
+import { MeetingConfirmationPage } from "@/modules/meetings/MeetingConfirmationPage";
 
 export function MeetingsPage() {
   return (
@@ -51,73 +55,131 @@ function MeetingsListTemplate({
 
   const sortedMeetings = useMemo(() => {
     return [...meetings].sort((a, b) => {
-      const dateA = new Date(a.scheduled_at).getTime();
-      const dateB = new Date(b.scheduled_at).getTime();
-      return dateA - dateB;
+      return (
+        new Date(a.scheduled_at).getTime() -
+        new Date(b.scheduled_at).getTime()
+      );
     });
   }, [meetings]);
+
+  const openPreview = (meeting: any) => {
+    setSelectedMeeting(meeting);
+  };
 
   const handlePrint = (meeting: any) => {
     const printWindow = window.open("", "_blank");
 
     if (!printWindow) return;
 
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Печать объявления</title>
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              padding: 40px;
-              color: #0f172a;
-            }
-            h1 {
-              text-align: center;
-              font-size: 22px;
-              margin-bottom: 30px;
-            }
-            .row {
-              margin-bottom: 14px;
-              font-size: 15px;
-            }
-            .label {
-              font-weight: bold;
-            }
-            ul {
-              margin-top: 8px;
-            }
-          </style>
-        </head>
-        <body>
-          <h1>Объявление о проведении общедомового собрания</h1>
-
-          <div class="row">
-            <span class="label">Инициатор:</span> ${meeting.initiator_name}
-          </div>
-
-          <div class="row">
-            <span class="label">Дата и время проведения:</span> ${formatMeetingDateTime(meeting.scheduled_at)}
-          </div>
-
-          <div class="row">
-            <span class="label">Место проведения:</span> ${meeting.location}
-          </div>
-
-          <div class="row">
-            <span class="label">Повестка дня:</span>
-            <ul>
-              ${meeting.agenda.map((item: string) => `<li>${item}</li>`).join("")}
-            </ul>
-          </div>
-        </body>
-      </html>
-    `);
-
+    printWindow.document.write(buildMeetingPrintPageHtml(meeting));
     printWindow.document.close();
     printWindow.focus();
-    printWindow.print();
+
+    window.setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 300);
   };
+
+const handleDownloadPdf = async (meeting: any) => {
+  const iframe = document.createElement("iframe");
+
+  iframe.style.position = "fixed";
+  iframe.style.left = "-10000px";
+  iframe.style.top = "0";
+  iframe.style.width = "210mm";
+  iframe.style.height = "297mm";
+  iframe.style.border = "0";
+
+  document.body.appendChild(iframe);
+
+  const iframeDocument =
+    iframe.contentDocument || iframe.contentWindow?.document;
+
+  if (!iframeDocument) {
+    document.body.removeChild(iframe);
+    return;
+  }
+
+  iframeDocument.open();
+
+  iframeDocument.write(`
+    <html>
+      <head>
+        <style>
+          ${getPrintStyles()}
+        </style>
+      </head>
+      <body>
+        ${buildMeetingPrintDocumentHtml(meeting)}
+      </body>
+    </html>
+  `);
+
+  iframeDocument.close();
+
+  const element = iframeDocument.getElementById(
+    "meeting-print-document"
+  ) as HTMLElement | null;
+
+  if (!element) {
+    document.body.removeChild(iframe);
+    return;
+  }
+
+  try {
+    const canvas = await html2canvas(element, {
+      scale: 2,
+      backgroundColor: "#ffffff",
+      useCORS: true,
+    });
+
+    const imgData = canvas.toDataURL("image/png");
+
+    const pdf = new jsPDF("p", "mm", "a4");
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+
+    const imgWidth = pageWidth - 30;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    let heightLeft = imgHeight;
+    let position = 15;
+
+    pdf.addImage(
+      imgData,
+      "PNG",
+      15,
+      position,
+      imgWidth,
+      imgHeight
+    );
+
+    heightLeft -= pageHeight - 30;
+
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight + 15;
+
+      pdf.addPage();
+
+      pdf.addImage(
+        imgData,
+        "PNG",
+        15,
+        position,
+        imgWidth,
+        imgHeight
+      );
+
+      heightLeft -= pageHeight - 30;
+    }
+
+    pdf.save(`uvedomlenie-sobranie-${meeting.id}.pdf`);
+  } finally {
+    document.body.removeChild(iframe);
+  }
+};
 
   return (
     <>
@@ -150,7 +212,7 @@ function MeetingsListTemplate({
               <div>
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                    Предстоящий
+                    {translateStatus(meeting.status)}
                   </span>
 
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
@@ -171,10 +233,10 @@ function MeetingsListTemplate({
                 </p>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => setSelectedMeeting(meeting)}
+                  onClick={() => openPreview(meeting)}
                   className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 >
                   Подробнее
@@ -193,7 +255,7 @@ function MeetingsListTemplate({
                   onClick={() => handleDownloadPdf(meeting)}
                   className="rounded-xl border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
                 >
-                  Скачать
+                  Скачать PDF
                 </button>
               </div>
             </div>
@@ -204,14 +266,14 @@ function MeetingsListTemplate({
               </p>
 
               <ul className="space-y-1 text-sm text-slate-600">
-                {meeting.agenda.slice(0, 3).map((item) => (
+                {(meeting.agenda ?? []).slice(0, 3).map((item: string) => (
                   <li key={item}>• {item}</li>
                 ))}
               </ul>
 
-              {meeting.agenda.length > 3 && (
+              {(meeting.agenda ?? []).length > 3 && (
                 <p className="mt-2 text-xs text-slate-400">
-                  Ещё пунктов: {meeting.agenda.length - 3}
+                  Ещё пунктов: {(meeting.agenda ?? []).length - 3}
                 </p>
               )}
             </div>
@@ -220,91 +282,256 @@ function MeetingsListTemplate({
       </div>
 
       {selectedMeeting && (
-        <MeetingDetailsModal
-          meeting={selectedMeeting}
-          onClose={() => setSelectedMeeting(null)}
-          onPrint={() => handlePrint(selectedMeeting)}
-        />
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-6">
+          <div className="mx-auto max-w-6xl rounded-3xl bg-slate-100 p-6 shadow-xl">
+            <div className="mb-4 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSelectedMeeting(null)}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Закрыть
+              </button>
+            </div>
+
+            <MeetingConfirmationPage
+              meeting={selectedMeeting}
+              mode="preview"
+              creating={false}
+              onBack={() => setSelectedMeeting(null)}
+              onConfirm={() => {}}
+            />
+          </div>
+        </div>
       )}
     </>
   );
 }
 
-function MeetingDetailsModal({
-  meeting,
-  onClose,
-  onPrint,
-}: {
-  meeting: any;
-  onClose: () => void;
-  onPrint: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl bg-white p-8 shadow-xl">
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900">
-              Объявление о проведении общедомового собрания
-            </h2>
-            <p className="mt-2 text-sm text-slate-500">
-              Предпросмотр шаблона перед печатью.
-            </p>
-          </div>
+function buildMeetingPrintPageHtml(meeting: any) {
+  return `
+    <html>
+      <head>
+        <title>Уведомление о собрании</title>
+        <style>
+          ${getPrintStyles()}
+        </style>
+      </head>
+      <body>
+        ${buildMeetingPrintDocumentHtml(meeting)}
+      </body>
+    </html>
+  `;
+}
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border px-3 py-2 text-sm hover:bg-slate-50"
-          >
-            Закрыть
-          </button>
-        </div>
+function buildMeetingPrintDocumentHtml(meeting: any) {
+  const address = getFormattedAddress(meeting);
+  const agenda = Array.isArray(meeting?.agenda) ? meeting.agenda : [];
 
-        <div className="space-y-4 rounded-2xl border border-slate-200 p-6">
-          <p>
-            <b>Инициатор:</b> {meeting.initiator_name}
-          </p>
+  return `
+    <div id="meeting-print-document">
+      <h1>УВЕДОМЛЕНИЕ</h1>
 
-          <p>
-            <b>Дата и время проведения:</b>{" "}
-            {formatMeetingDateTime(meeting.scheduled_at)}
-          </p>
+      <p class="subtitle">
+        о проведении собрания собственников квартир, нежилых помещений,
+        парковочных мест и кладовых помещений по адресу: ${escapeHtml(address)}.
+      </p>
 
-          <p>
-            <b>Место проведения:</b> {meeting.location}
-          </p>
+      <p>
+        Собственникам квартир, нежилых помещений, парковочных мест и кладовых помещений
+      </p>
 
-          <div>
-            <p className="font-semibold">Повестка дня:</p>
-            <ul className="mt-2 list-disc pl-6">
-              {meeting.agenda.map((item: string) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        </div>
+      <p>
+        «В соответствии со статьями 42-1 и 42-2 Закона РК «О жилищных отношениях»
+        и Правилами принятия решений по управлению объектом кондоминиума и
+        содержанию общего имущества объекта кондоминиума, уведомляем вас о
+        проведении общего собрания собственников квартир и нежилых помещений
+        по адресу: ${escapeHtml(address)}».
+      </p>
 
-        <div className="mt-6 flex justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border px-5 py-2 text-sm font-medium hover:bg-slate-50"
-          >
-            Отмена
-          </button>
+      <div class="point">
+        <p class="point-title">1. Формат проведения собрания:</p>
+        <p>${escapeHtml(getMeetingFormLabel(meeting))}</p>
+      </div>
 
-          <button
-            type="button"
-            onClick={onPrint}
-            className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            Печать
-          </button>
-        </div>
+      <div class="point">
+        <p class="point-title">2. Дата и время проведения:</p>
+        <p>${escapeHtml(formatMeetingDateTimeForDocument(meeting?.scheduled_at))}</p>
+      </div>
+
+      <div class="point">
+        <p class="point-title">3. Место проведения:</p>
+        <p>${escapeHtml(meeting?.location ?? "")}</p>
+      </div>
+
+      <div class="point">
+        <p class="point-title">4. Инициатор собрания:</p>
+        <p>${escapeHtml(meeting?.initiator_name ?? "")}</p>
+      </div>
+
+      <div class="point">
+        <p class="point-title">5. Повестка дня:</p>
+        <ol>
+          ${agenda
+            .map((item: string) => `<li>${escapeHtml(item)}</li>`)
+            .join("")}
+        </ol>
+      </div>
+
+      <div class="point">
+        <p class="point-title">6. Порядок ознакомления с материалами:</p>
+        <p>
+          Материалы и информация по вопросам повестки дня предоставляются
+          инициатором собрания для ознакомления собственникам по обращению до
+          начала проведения собрания.
+        </p>
+        <p>С материалами можно ознакомиться по адресу:</p>
+        <p>${escapeHtml(address)}, офис ОСИ.</p>
+      </div>
+
+      <div class="point">
+        <p class="point-title">7. Дата размещения уведомления:</p>
+        <p>${escapeHtml(formatDateOnly(meeting?.created_at))}</p>
+      </div>
+
+      <div class="point">
+        <p class="point-title">8. Способ уведомления собственников:</p>
+        <p>
+          Уведомление размещается в общедоступных местах объекта кондоминиума,
+          а также направляется собственникам посредством доступных каналов связи.
+        </p>
       </div>
     </div>
+  `;
+}
+
+function getPrintStyles() {
+  return `
+    @page {
+      size: A4;
+      margin: 15mm;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
+      color: #000000;
+      font-family: "Times New Roman", Times, serif;
+      font-size: 14pt;
+      line-height: 1;
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+    }
+
+    #meeting-print-document {
+      width: 100%;
+      max-width: 180mm;
+      margin: 0 auto;
+      padding: 0;
+      background: #ffffff;
+      color: #000000;
+      font-family: "Times New Roman", Times, serif;
+      font-size: 14pt;
+      line-height: 1;
+      text-align: justify;
+      box-sizing: border-box;
+    }
+
+    h1 {
+      margin: 0 0 12px 0;
+      text-align: center;
+      font-size: 16pt;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .subtitle {
+      max-width: 165mm;
+      margin: 0 auto 28px auto;
+      text-align: center;
+      font-weight: 700;
+    }
+
+    p {
+      margin: 0 0 14px 0;
+    }
+
+    .point {
+      margin-top: 18px;
+    }
+
+    .point-title {
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    ol {
+      margin: 0;
+      padding-left: 24px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    * {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+  `;
+}
+
+function translateStatus(status: string) {
+  const statuses: Record<string, string> = {
+    upcoming: "Предстоящий",
+    active: "Активный",
+    past: "Прошедший",
+    approval: "На утверждении",
+    revision: "На доработке",
+  };
+
+  return statuses[status] ?? status ?? "Предстоящий";
+}
+
+function getMeetingFormLabel(meeting: any) {
+  return (
+    meeting?.meeting_form_label ||
+    meeting?.meeting_format ||
+    "Очное собрание (Явочный формат)"
   );
+}
+
+function getFormattedAddress(meeting: any) {
+  const source =
+    meeting?.condominium_address ||
+    meeting?.building_address ||
+    meeting?.address ||
+    meeting?.location ||
+    "";
+
+  const parts = String(source)
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length < 5) return source;
+
+  const [city, district, complex, street, house] = parts;
+
+  return [
+    city ? `г. ${city}` : "",
+    district ? `р-н ${district}` : "",
+    complex ? `ЖК ${complex}` : "",
+    street || "",
+    house || "",
+  ]
+    .filter(Boolean)
+    .join(", ");
 }
 
 function formatMeetingDateTime(value: string) {
@@ -323,52 +550,37 @@ function formatMeetingDateTime(value: string) {
   });
 }
 
-const handleDownloadPdf = (meeting: any) => {
-  const doc = new jsPDF();
+function formatMeetingDateTimeForDocument(value: string) {
+  if (!value) return "";
 
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.text("Obyavlenie o provedenii obshchedomovogo sobraniya", 20, 20);
+  const date = new Date(value);
 
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
+  if (Number.isNaN(date.getTime())) return value;
 
-  let y = 40;
-
-  doc.text(`Initsiator: ${meeting.initiator_name}`, 20, y);
-  y += 10;
-
-  doc.text(
-    `Data i vremya: ${formatMeetingDateTime(meeting.scheduled_at)}`,
-    20,
-    y
-  );
-  y += 10;
-
-  const locationLines = doc.splitTextToSize(
-    `Mesto provedeniya: ${meeting.location}`,
-    170
-  );
-  doc.text(locationLines, 20, y);
-  y += locationLines.length * 8 + 5;
-
-  doc.setFont("helvetica", "bold");
-  doc.text("Povestka dnya:", 20, y);
-  y += 10;
-
-  doc.setFont("helvetica", "normal");
-
-  meeting.agenda.forEach((item: string, index: number) => {
-    const lines = doc.splitTextToSize(`${index + 1}. ${item}`, 170);
-
-    if (y > 270) {
-      doc.addPage();
-      y = 20;
-    }
-
-    doc.text(lines, 20, y);
-    y += lines.length * 8;
+  const datePart = date.toLocaleDateString("ru-RU");
+  const timePart = date.toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
   });
 
-  doc.save(`sobranie-${meeting.id}.pdf`);
-};
+  return `${datePart} в ${timePart}`;
+}
+
+function formatDateOnly(value?: string) {
+  const date = value ? new Date(value) : new Date();
+
+  if (Number.isNaN(date.getTime())) {
+    return new Date().toLocaleDateString("ru-RU");
+  }
+
+  return date.toLocaleDateString("ru-RU");
+}
+
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
