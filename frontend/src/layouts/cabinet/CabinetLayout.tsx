@@ -256,11 +256,22 @@ export function CabinetLayout() {
     }
 
     try {
-      await createMeeting({
+      console.log("CREATE MEETING PAYLOAD", {
         initiator_name: meetingInitiators.join(", "),
-        scheduled_at: new Date(scheduledAt).toISOString(),
+        scheduled_at: scheduledAt,
         location,
         agenda,
+        meeting_form: "offline",
+        status: "upcoming",
+      });
+
+      await createMeeting({
+        initiator_name: meetingInitiators.join(", "),
+        scheduled_at: scheduledAt,
+        location,
+        agenda,
+        meeting_form: "offline",
+        status: "upcoming",
       });
 
       setMeetingInitiators(["Председатель ОСИ", "Совет дома"]);

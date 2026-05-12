@@ -14,6 +14,24 @@ export type MeetingConfirmationData = {
   notificationDate: Date;
 };
 
+function formatCondominiumAddress(address: string) {
+  if (!address) return "";
+
+  const parts = address.split(",").map((part) => part.trim());
+
+  const [city, district, complex, street, house] = parts;
+
+  return [
+    city ? `г. ${city}` : "",
+    district ? `р-н ${district}` : "",
+    complex ? `ЖК ${complex}` : "",
+    street || "",
+    house || "",
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
 export function MeetingConfirmationPage({
   creating,
   data,
@@ -28,6 +46,8 @@ export function MeetingConfirmationPage({
   onConfirm: () => void;
 }) {
   const [confirmed, setConfirmed] = useState(false);
+
+  const formattedAddress = formatCondominiumAddress(data.condominiumAddress);
 
   return (
     <>
@@ -44,7 +64,7 @@ export function MeetingConfirmationPage({
               </h2>
               <p className="mx-auto mt-2 max-w-2xl text-center font-semibold">
                 о проведении собрания собственников квартир, нежилых помещений,
-                парковочных мест и кладовых помещений по адресу: {data.meetingLocation}.
+                парковочных мест и кладовых помещений по адресу: {formattedAddress}.
               </p>
 
               <p className="mt-8">
@@ -53,7 +73,7 @@ export function MeetingConfirmationPage({
               </p>
 
               <p className="mt-6">
-                «В соответствии со статьями 42-1 и 42-2 Закона РК «О жилищных отношениях» и Правилами принятия решений по управлению объектом кондоминиума и содержанию общего имущества объекта кондоминиума, уведомляем вас о проведении общего собрания собственников квартир и нежилых помещений по адресу: {data.meetingLocation}».
+                «В соответствии со статьями 42-1 и 42-2 Закона РК «О жилищных отношениях» и Правилами принятия решений по управлению объектом кондоминиума и содержанию общего имущества объекта кондоминиума, уведомляем вас о проведении общего собрания собственников квартир и нежилых помещений по адресу: {formattedAddress}».
               </p>
 
               <DocumentPoint title="1. Формат проведения собрания:">
@@ -88,7 +108,7 @@ export function MeetingConfirmationPage({
                 <br />
                 <br />С материалами можно ознакомиться по адресу:
                 <br />
-                {data.condominiumAddress}, офис ОСИ.
+                {formattedAddress}, офис ОСИ.
               </DocumentPoint>
 
               <DocumentPoint title="7. Дата размещения уведомления:">

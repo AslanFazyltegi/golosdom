@@ -28,6 +28,10 @@ import (
 	votingHandler "golosdom-backend/internal/voting/handler"
 	votingRepo "golosdom-backend/internal/voting/repository"
 	votingService "golosdom-backend/internal/voting/service"
+
+	meetingsHandler "golosdom-backend/internal/meetings/handler"
+	meetingsRepo "golosdom-backend/internal/meetings/repository"
+	meetingsService "golosdom-backend/internal/meetings/service"
 )
 
 func New(dbPool *pgxpool.Pool) http.Handler {
@@ -52,6 +56,10 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 	ownersRepo := ownersRepo.New(dbPool)
 	ownersSvc := ownersService.New(ownersRepo)
 	ownersH := ownersHandler.New(ownersSvc)
+
+	meetingsRepo := meetingsRepo.New(dbPool)
+	meetingsSvc := meetingsService.New(meetingsRepo)
+	meetingsH := meetingsHandler.New(meetingsSvc)
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -103,6 +111,8 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 	)
 
 	mux.HandleFunc("/api/v1/votings", authMiddleware(authSvc, votingH.ListOrCreate))
+
+	mux.HandleFunc("/api/v1/meetings", authMiddleware(authSvc, meetingsH.ListOrCreate))
 
 	return corsMiddleware(mux)
 }

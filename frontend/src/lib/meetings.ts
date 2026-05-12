@@ -10,6 +10,8 @@ export async function createMeeting(payload: {
   scheduled_at: string;
   location: string;
   agenda: string[];
+  meeting_form?: string;
+  status?: string;
 }) {
   return apiFetch("/api/v1/meetings", {
     method: "POST",
