@@ -1,7 +1,8 @@
 import { apiFetch } from "@/lib/api";
 
-export async function fetchMeetings(status?: string) {
-  const query = status ? `?status=${status}` : "";
+export async function fetchMeetings(period?: string) {
+  const query = period ? `?period=${encodeURIComponent(period)}` : "";
+
   return apiFetch(`/api/v1/meetings${query}`);
 }
 
@@ -11,7 +12,6 @@ export async function createMeeting(payload: {
   location: string;
   agenda: string[];
   meeting_form?: string;
-  status?: string;
 }) {
   return apiFetch("/api/v1/meetings", {
     method: "POST",

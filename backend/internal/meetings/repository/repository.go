@@ -29,12 +29,11 @@ func (r *Repository) Create(ctx context.Context, meeting model.Meeting) (*model.
 			scheduled_at,
 			location,
 			agenda,
-			status,
 			meeting_form,
 			created_by
 		)
-		values ($1, $2, $3, $4, $5, $6, $7)
-		returning id, initiator_name, scheduled_at, location, agenda, status, meeting_form, created_by, created_at
+		values ($1, $2, $3, $4, $5, $6)
+		returning id, initiator_name, scheduled_at, location, agenda, meeting_form, created_by, created_at
 	`
 
 	var agendaRaw []byte
@@ -47,7 +46,6 @@ func (r *Repository) Create(ctx context.Context, meeting model.Meeting) (*model.
 		meeting.ScheduledAt,
 		meeting.Location,
 		agendaJSON,
-		meeting.Status,
 		meeting.MeetingForm,
 		meeting.CreatedBy,
 	).Scan(
@@ -56,7 +54,6 @@ func (r *Repository) Create(ctx context.Context, meeting model.Meeting) (*model.
 		&created.ScheduledAt,
 		&created.Location,
 		&agendaRaw,
-		&created.Status,
 		&created.MeetingForm,
 		&created.CreatedBy,
 		&created.CreatedAt,
@@ -72,15 +69,23 @@ func (r *Repository) Create(ctx context.Context, meeting model.Meeting) (*model.
 	return created, nil
 }
 
-func (r *Repository) List(ctx context.Context, status string) ([]model.Meeting, error) {
+func (r *Repository) List(ctx context.Context, period string) ([]model.Meeting, error) {
 	query := `
-		select id, initiator_name, scheduled_at, location, agenda, status, meeting_form, created_by, created_at
+		select id, initiator_name, scheduled_at, location, agenda, meeting_form, created_by, created_at
 		from meetings
-		where ($1 = '' or status = $1)
-		order by scheduled_at asc
+		where
+			(
+				$1 = ''
+				or ($1 = 'active' and scheduled_at::date = current_date)
+				or ($1 = 'upcoming' and scheduled_at::date > current_date)
+				or ($1 = 'past' and scheduled_at::date < current_date)
+			)
+		order by
+			case when $1 = 'past' then scheduled_at end desc,
+			case when $1 <> 'past' then scheduled_at end asc
 	`
 
-	rows, err := r.db.Query(ctx, query, status)
+	rows, err := r.db.Query(ctx, query, period)
 	if err != nil {
 		return nil, err
 	}
@@ -92,17 +97,17 @@ func (r *Repository) List(ctx context.Context, status string) ([]model.Meeting, 
 		var meeting model.Meeting
 		var agendaRaw []byte
 
-		if err := rows.Scan(
+		err := rows.Scan(
 			&meeting.ID,
 			&meeting.InitiatorName,
 			&meeting.ScheduledAt,
 			&meeting.Location,
 			&agendaRaw,
-			&meeting.Status,
 			&meeting.MeetingForm,
 			&meeting.CreatedBy,
 			&meeting.CreatedAt,
-		); err != nil {
+		)
+		if err != nil {
 			return nil, err
 		}
 

@@ -7,7 +7,6 @@ type CreateMeetingRequest struct {
 	ScheduledAt   string   `json:"scheduled_at"`
 	Location      string   `json:"location"`
 	Agenda        []string `json:"agenda"`
-	Status        string   `json:"status"`
 	MeetingForm   string   `json:"meeting_form"`
 }
 
@@ -17,7 +16,6 @@ type MeetingResponse struct {
 	ScheduledAt   time.Time `json:"scheduled_at"`
 	Location      string    `json:"location"`
 	Agenda        []string  `json:"agenda"`
-	Status        string    `json:"status"`
 	MeetingForm   string    `json:"meeting_form"`
 	CreatedBy     string    `json:"created_by"`
 	CreatedAt     time.Time `json:"created_at"`

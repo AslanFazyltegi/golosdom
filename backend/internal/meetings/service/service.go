@@ -27,11 +27,6 @@ func (s *Service) Create(ctx context.Context, req dto.CreateMeetingRequest, user
 		}
 	}
 
-	status := strings.TrimSpace(req.Status)
-	if status == "" {
-		status = "upcoming"
-	}
-
 	meetingForm := strings.TrimSpace(req.MeetingForm)
 	if meetingForm == "" {
 		meetingForm = "offline"
@@ -42,7 +37,6 @@ func (s *Service) Create(ctx context.Context, req dto.CreateMeetingRequest, user
 		ScheduledAt:   scheduledAt,
 		Location:      strings.TrimSpace(req.Location),
 		Agenda:        req.Agenda,
-		Status:        status,
 		MeetingForm:   meetingForm,
 		CreatedBy:     userID,
 	})
@@ -53,8 +47,8 @@ func (s *Service) Create(ctx context.Context, req dto.CreateMeetingRequest, user
 	return toResponse(created), nil
 }
 
-func (s *Service) List(ctx context.Context, status string) ([]dto.MeetingResponse, error) {
-	items, err := s.repo.List(ctx, status)
+func (s *Service) List(ctx context.Context, period string) ([]dto.MeetingResponse, error) {
+	items, err := s.repo.List(ctx, period)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +68,6 @@ func toResponse(meeting *model.Meeting) *dto.MeetingResponse {
 		ScheduledAt:   meeting.ScheduledAt,
 		Location:      meeting.Location,
 		Agenda:        meeting.Agenda,
-		Status:        meeting.Status,
 		MeetingForm:   meeting.MeetingForm,
 		CreatedBy:     meeting.CreatedBy,
 		CreatedAt:     meeting.CreatedAt,

@@ -29,9 +29,9 @@ func (h *Handler) ListOrCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
-	status := r.URL.Query().Get("status")
+	period := r.URL.Query().Get("period")
 
-	meetings, err := h.service.List(r.Context(), status)
+	meetings, err := h.service.List(r.Context(), period)
 	if err != nil {
 		response.Error(w, http.StatusInternalServerError, "failed to load meetings")
 		return

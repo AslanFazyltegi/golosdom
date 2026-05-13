@@ -8,7 +8,6 @@ type Meeting struct {
 	ScheduledAt   time.Time
 	Location      string
 	Agenda        []string
-	Status        string
 	MeetingForm   string
 	CreatedBy     string
 	CreatedAt     time.Time

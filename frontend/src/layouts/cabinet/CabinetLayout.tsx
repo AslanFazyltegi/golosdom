@@ -56,17 +56,17 @@ export function CabinetLayout() {
   const [owners, setOwners] = useState<MeetingOwner[]>([]);
 
   async function loadMeetingsByComponent(component: string) {
-    let status = "";
+    let period = "";
 
-    if (component === "meetings_active") status = "active";
-    if (component === "meetings_upcoming") status = "upcoming";
-    if (component === "meetings_past") status = "past";
+    if (component === "meetings_active") period = "active";
+    if (component === "meetings_upcoming") period = "upcoming";
+    if (component === "meetings_past") period = "past";
 
-    if (!status) return;
+    if (!period) return;
 
     try {
       setMeetingError("");
-      const data = await fetchMeetings(status);
+      const data = await fetchMeetings(period);
       setMeetings(data);
     } catch (err) {
       setMeetingError(
