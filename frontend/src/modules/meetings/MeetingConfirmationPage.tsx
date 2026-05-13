@@ -212,7 +212,7 @@ export function MeetingConfirmationPage({
                 onClick={onConfirm}
                 className="rounded-xl bg-blue-600 px-5 py-3 font-medium text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {creating ? "Создаём..." : "Подтвердить и создать собрание"}
+                {creating ? "Создаём..." : "Подтвердить и Опубликовать"}
               </button>
             </div>
           </div>

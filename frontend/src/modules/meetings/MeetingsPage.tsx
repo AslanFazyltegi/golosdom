@@ -187,6 +187,16 @@ function MeetingsListTemplate({
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
                     {formatMeetingDateTimeFromDb(meeting.scheduled_at)}
                   </span>
+
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-medium ${
+                        isOnlineMeeting(meeting)
+                          ? "bg-blue-50 text-blue-700"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {translateMeetingFormat(meeting)}
+                    </span>
                 </div>
 
                 <h2 className="text-xl font-bold text-slate-900">
@@ -595,4 +605,40 @@ function escapeHtml(value: unknown) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function translateMeetingFormat(meeting: any) {
+  const format =
+    meeting?.meeting_format ||
+    meeting?.meeting_form ||
+    meeting?.meeting_form_label ||
+    "";
+
+  const normalized = String(format).toLowerCase();
+
+  if (
+    normalized.includes("online") ||
+    normalized.includes("онлайн") ||
+    normalized.includes("заоч")
+  ) {
+    return "Онлайн";
+  }
+
+  return "Оффлайн";
+}
+
+function isOnlineMeeting(meeting: any) {
+  const format =
+    meeting?.meeting_format ||
+    meeting?.meeting_form ||
+    meeting?.meeting_form_label ||
+    "";
+
+  const normalized = String(format).toLowerCase();
+
+  return (
+    normalized.includes("online") ||
+    normalized.includes("онлайн") ||
+    normalized.includes("заоч")
+  );
 }
