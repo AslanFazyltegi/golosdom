@@ -4,5 +4,6 @@ export type Meeting = {
   scheduled_at: string;
   location: string;
   agenda: string[];
+  meeting_form: string;
   status: string;
 };

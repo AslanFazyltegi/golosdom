@@ -6,3 +6,22 @@ type CreateVotingRequest struct {
 	Question    string   `json:"question"`
 	Options     []string `json:"options"`
 }
+
+type SaveDraftRequest struct {
+	Title       string            `json:"title"`
+	Description string            `json:"description"`
+	MeetingID   *string           `json:"meeting_id"`
+	Questions   []QuestionRequest `json:"questions"`
+}
+
+type QuestionRequest struct {
+	ID      string   `json:"id"`
+	Text    string   `json:"text"`
+	Options []string `json:"options"`
+}
+
+type ApprovalVoteRequest struct {
+	Decision string `json:"decision"`
+	Reason   string `json:"reason"`
+	Comment  string `json:"comment"`
+}

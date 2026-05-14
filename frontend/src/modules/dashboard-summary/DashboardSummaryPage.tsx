@@ -66,12 +66,7 @@ export function VotingList({
       {votings.map((voting) => (
         <div key={voting.id} className="border-b pb-4 last:border-b-0">
           <div className="flex items-center justify-between gap-3">
-            <div>
-              <h3 className="font-semibold">{voting.title}</h3>
-              <p className="mt-1 text-sm text-slate-500">
-                {voting.description || "Без описания"}
-              </p>
-            </div>
+
             <span className="rounded-full bg-green-100 px-3 py-1 text-xs text-green-700">
               {voting.status}
             </span>

@@ -111,6 +111,8 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 	)
 
 	mux.HandleFunc("/api/v1/votings", authMiddleware(authSvc, votingH.ListOrCreate))
+	mux.HandleFunc("/api/v1/votings/draft", authMiddleware(authSvc, votingH.CreateDraft))
+	mux.HandleFunc("/api/v1/votings/", authMiddleware(authSvc, votingH.VotingByID))
 
 	mux.HandleFunc("/api/v1/meetings", authMiddleware(authSvc, meetingsH.ListOrCreate))
 

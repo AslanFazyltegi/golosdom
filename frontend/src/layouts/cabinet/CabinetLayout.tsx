@@ -8,6 +8,7 @@ import { createMeeting, fetchMeetings } from "@/lib/meetings";
 import { fetchNavigation } from "@/lib/navigation";
 import { fetchObjects } from "@/lib/objects";
 import { fetchOwners, type MeetingOwner } from "@/lib/owners";
+import { fetchVotings } from "@/lib/votings";
 import type { Meeting } from "@/types/meeting";
 import type { NavigationItem } from "@/types/navigation";
 import type { User } from "@/types/user";
@@ -15,6 +16,12 @@ import type { Voting } from "@/types/voting";
 import { CabinetHeader } from "./CabinetHeader";
 import { CabinetSidebar } from "./CabinetSidebar";
 import { CabinetWorkspace } from "./CabinetWorkspace";
+
+declare global {
+  interface Window {
+    __votingConstructorDirty?: boolean;
+  }
+}
 
 export function CabinetLayout() {
   const router = useRouter();
@@ -84,10 +91,18 @@ export function CabinetLayout() {
     }
 
     async function load() {
-      try {
-        const currentUser = (await apiFetch("/api/v1/auth/me")) as User;
-        setUser(currentUser);
+      let currentUser: User;
 
+      try {
+        currentUser = (await apiFetch("/api/v1/auth/me")) as User;
+        setUser(currentUser);
+      } catch {
+        removeToken();
+        router.push("/login");
+        return;
+      }
+
+      try {
         const role = currentUser.roles?.[0] || "OWNER";
         setActiveRole(role);
 
@@ -111,15 +126,14 @@ export function CabinetLayout() {
           setOwners([]);
         }
 
-        const votingData = (await apiFetch("/api/v1/votings")) as Voting[];
+        const votingData = await fetchVotings();
         setVotings(votingData);
 
         if (defaultComponent.startsWith("meetings")) {
           await loadMeetingsByComponent(defaultComponent);
         }
-      } catch {
-        removeToken();
-        router.push("/login");
+      } catch (err) {
+        console.error("Не удалось загрузить данные кабинета:", err);
       } finally {
         setLoading(false);
       }
@@ -128,8 +142,30 @@ export function CabinetLayout() {
     load();
   }, [router]);
 
+  useEffect(() => {
+    function confirmVotingNavigation(event: Event) {
+      const custom = event as CustomEvent<{ component: string }>;
+      if (!custom.detail?.component) return;
+      window.__votingConstructorDirty = false;
+      setActiveComponent(custom.detail.component);
+      if (custom.detail.component.startsWith("meetings")) {
+        void loadMeetingsByComponent(custom.detail.component);
+      }
+    }
+
+    window.addEventListener(
+      "voting-constructor-navigation-confirmed",
+      confirmVotingNavigation,
+    );
+    return () =>
+      window.removeEventListener(
+        "voting-constructor-navigation-confirmed",
+        confirmVotingNavigation,
+      );
+  }, []);
+
   async function loadVotings() {
-    const data = (await apiFetch("/api/v1/votings")) as Voting[];
+    const data = await fetchVotings();
     setVotings(data);
   }
 
@@ -200,6 +236,20 @@ export function CabinetLayout() {
     }
 
     const component = getModuleCode(item);
+    if (
+      activeComponent === "voting_constructor_create" &&
+      component !== activeComponent &&
+      typeof window !== "undefined" &&
+      window.__votingConstructorDirty
+    ) {
+      window.dispatchEvent(
+        new CustomEvent("voting-constructor-navigation-request", {
+          detail: { component },
+        }),
+      );
+      return;
+    }
+
     setActiveComponent(component);
 
     if (component.startsWith("meetings")) {
