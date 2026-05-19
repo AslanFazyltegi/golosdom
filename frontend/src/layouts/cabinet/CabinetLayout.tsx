@@ -39,6 +39,8 @@ export function CabinetLayout() {
 
   const [activeRole, setActiveRole] = useState("OWNER");
   const [activeComponent, setActiveComponent] = useState("dashboard");
+  const [votingConstructorInitial, setVotingConstructorInitial] =
+    useState<Voting | null>(null);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -144,9 +146,17 @@ export function CabinetLayout() {
 
   useEffect(() => {
     function confirmVotingNavigation(event: Event) {
-      const custom = event as CustomEvent<{ component: string }>;
+      const custom = event as CustomEvent<{
+        component: string;
+        initialVoting?: Voting | null;
+      }>;
       if (!custom.detail?.component) return;
       window.__votingConstructorDirty = false;
+      setVotingConstructorInitial(
+        custom.detail.component === "voting_constructor_create"
+          ? custom.detail.initialVoting ?? null
+          : null,
+      );
       setActiveComponent(custom.detail.component);
       if (custom.detail.component.startsWith("meetings")) {
         void loadMeetingsByComponent(custom.detail.component);
@@ -207,6 +217,7 @@ export function CabinetLayout() {
 
     const defaultItem = menuData.find((item) => item.is_default) || menuData[0];
     const defaultComponent = getModuleCode(defaultItem);
+    setVotingConstructorInitial(null);
     setActiveComponent(defaultComponent);
 
     const objectsData = await fetchObjects(role);
@@ -250,6 +261,7 @@ export function CabinetLayout() {
       return;
     }
 
+    setVotingConstructorInitial(null);
     setActiveComponent(component);
 
     if (component.startsWith("meetings")) {
@@ -258,6 +270,7 @@ export function CabinetLayout() {
   }
 
   function openAccountModule(code: string) {
+    setVotingConstructorInitial(null);
     setActiveComponent(code);
     setAccountOpen(false);
   }
@@ -379,6 +392,7 @@ export function CabinetLayout() {
           owners={owners}
           activeRole={activeRole}
           activeComponent={activeComponent}
+          votingConstructorInitial={votingConstructorInitial}
           votings={votings}
           loadVotings={loadVotings}
           createVoting={createVoting}

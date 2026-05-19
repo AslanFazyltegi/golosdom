@@ -72,13 +72,11 @@ func (s *Service) UpdateDraft(id, userID string, req dto.SaveDraftRequest) (mode
 	if voting.Version < 1 {
 		voting.Version = 1
 	}
-
-	if current.Status == model.StatusDraft {
-		err = s.repo.UpdateDraft(context.Background(), voting)
-	} else {
-		err = s.repo.UpdateDraft(context.Background(), voting)
+	if current.Status == model.StatusRevisionRequired && req.MeetingID == nil {
+		voting.MeetingID = current.MeetingID
 	}
-	if err != nil {
+
+	if err := s.repo.UpdateDraft(context.Background(), voting); err != nil {
 		return model.Voting{}, err
 	}
 	return s.repo.Get(context.Background(), id)
@@ -152,13 +150,13 @@ func (s *Service) Vote(votingID, userID string, req dto.ApprovalVoteRequest) (mo
 	if req.Decision != model.DecisionApprove && req.Decision != model.DecisionRevision {
 		return model.ApprovalReview{}, errors.New("invalid decision")
 	}
-	if req.Decision == model.DecisionRevision {
-		if req.Reason == "" || req.Comment == "" {
-			return model.ApprovalReview{}, errors.New("reason and comment are required for revision")
-		}
-		if !validRevisionReason(req.Reason) {
-			return model.ApprovalReview{}, errors.New("invalid revision reason")
-		}
+
+	review, err := s.repo.CurrentApproval(context.Background(), votingID)
+	if err != nil {
+		return model.ApprovalReview{}, err
+	}
+	if userAlreadyVoted(review.Votes, userID) {
+		return review, nil
 	}
 
 	voting, err := s.repo.Get(context.Background(), votingID)
@@ -168,13 +166,20 @@ func (s *Service) Vote(votingID, userID string, req dto.ApprovalVoteRequest) (mo
 	if voting.Status != model.StatusCouncilReview {
 		return model.ApprovalReview{}, errors.New("voting is not in council review")
 	}
-
-	review, err := s.repo.CurrentApproval(context.Background(), votingID)
-	if err != nil {
-		return model.ApprovalReview{}, err
-	}
 	if review.Status != model.ReviewInProgress {
 		return model.ApprovalReview{}, errors.New("approval review is not in progress")
+	}
+
+	if req.Decision == model.DecisionRevision {
+		if req.Reason == "" || req.Comment == "" {
+			req.Reason, req.Comment = firstRevisionDetails(review.Votes)
+		}
+		if req.Reason == "" || req.Comment == "" {
+			return model.ApprovalReview{}, errors.New("reason and comment are required for first revision vote")
+		}
+		if !validRevisionReason(req.Reason) {
+			return model.ApprovalReview{}, errors.New("invalid revision reason")
+		}
 	}
 
 	vote := model.ApprovalVote{
@@ -188,6 +193,24 @@ func (s *Service) Vote(votingID, userID string, req dto.ApprovalVoteRequest) (mo
 	}
 
 	return s.repo.Vote(context.Background(), review, vote)
+}
+
+func userAlreadyVoted(votes []model.ApprovalVote, userID string) bool {
+	for _, vote := range votes {
+		if vote.UserID == userID {
+			return true
+		}
+	}
+	return false
+}
+
+func firstRevisionDetails(votes []model.ApprovalVote) (string, string) {
+	for _, vote := range votes {
+		if vote.Decision == model.DecisionRevision && vote.Reason != "" && vote.Comment != "" {
+			return vote.Reason, vote.Comment
+		}
+	}
+	return "", ""
 }
 
 func buildVoting(id, createdBy string, req dto.SaveDraftRequest) (model.Voting, error) {

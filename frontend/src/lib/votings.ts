@@ -2,7 +2,7 @@ import { apiFetch } from "@/lib/api";
 import type {
   Voting,
   VotingApprovalReview,
-  VotingDraftPayload,
+  VotingSavePayload,
 } from "@/types/voting";
 
 export function fetchVotings(status?: string): Promise<Voting[]> {
@@ -14,7 +14,7 @@ export function fetchVoting(id: string): Promise<Voting> {
   return apiFetch(`/api/v1/votings/${id}`) as Promise<Voting>;
 }
 
-export function createVotingDraft(payload: VotingDraftPayload): Promise<Voting> {
+export function createVotingDraft(payload: VotingSavePayload): Promise<Voting> {
   return apiFetch("/api/v1/votings/draft", {
     method: "POST",
     body: JSON.stringify(payload),
@@ -23,7 +23,7 @@ export function createVotingDraft(payload: VotingDraftPayload): Promise<Voting> 
 
 export function updateVotingDraft(
   id: string,
-  payload: VotingDraftPayload,
+  payload: VotingSavePayload,
 ): Promise<Voting> {
   return apiFetch(`/api/v1/votings/${id}/draft`, {
     method: "PUT",

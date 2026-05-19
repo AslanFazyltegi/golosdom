@@ -53,7 +53,8 @@ FROM (
     ('nav-voting-constructor-approval', 'voting_constructor_approval', 'На утверждении у совета дома', 'check', 'voting_constructor_approval', 20),
     ('nav-voting-constructor-revision', 'voting_constructor_revision', 'На доработке', 'edit', 'voting_constructor_revision', 30),
     ('nav-voting-constructor-pending-publication', 'voting_constructor_pending_publication', 'Ожидающие публикации', 'clock', 'voting_constructor_pending_publication', 40),
-    ('nav-voting-constructor-draft', 'voting_constructor_draft', 'Черновик', 'file', 'voting_constructor_draft', 50)
+    ('nav-voting-constructor-draft', 'voting_constructor_draft', 'Черновик', 'file', 'voting_constructor_draft', 50),
+    ('nav-voting-constructor-published', 'voting_constructor_published', 'Опубликованные', 'archive', 'voting_constructor_published', 60)
 ) AS item(id, code, title, icon, component, sort_order)
 JOIN navigation_items parent ON parent.code = 'voting_constructor'
 WHERE NOT EXISTS (SELECT 1 FROM navigation_items existing WHERE existing.code = item.code);
@@ -84,7 +85,8 @@ JOIN navigation_items ni ON ni.code IN (
   'voting_constructor_approval',
   'voting_constructor_revision',
   'voting_constructor_pending_publication',
-  'voting_constructor_draft'
+  'voting_constructor_draft',
+  'voting_constructor_published'
 )
 WHERE r.code = 'CHAIRMAN'
   AND NOT EXISTS (
@@ -116,7 +118,10 @@ SELECT
 FROM roles r
 JOIN navigation_items ni ON ni.code IN (
   'voting_constructor',
-  'voting_constructor_approval'
+  'voting_constructor_approval',
+  'voting_constructor_revision',
+  'voting_constructor_pending_publication',
+  'voting_constructor_published'
 )
 WHERE r.code = 'COUNCIL_MEMBER'
   AND NOT EXISTS (
@@ -125,3 +130,21 @@ WHERE r.code = 'COUNCIL_MEMBER'
     WHERE existing.role_id = r.id
       AND existing.navigation_item_id = ni.id
   );
+
+UPDATE role_navigation_permissions rnp
+SET can_view = true,
+    can_create = false,
+    can_update = false,
+    can_delete = false,
+    is_default = false
+FROM roles r
+JOIN navigation_items ni ON ni.code IN (
+  'voting_constructor',
+  'voting_constructor_approval',
+  'voting_constructor_revision',
+  'voting_constructor_pending_publication',
+  'voting_constructor_published'
+)
+WHERE rnp.role_id = r.id
+  AND rnp.navigation_item_id = ni.id
+  AND r.code = 'COUNCIL_MEMBER';

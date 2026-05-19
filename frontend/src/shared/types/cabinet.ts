@@ -10,6 +10,7 @@ export type CabinetModuleProps = {
   owners: MeetingOwner[];
   activeRole: string;
   activeComponent: string;
+  votingConstructorInitial: Voting | null;
   votings: Voting[];
   loadVotings: () => void;
   createVoting: (e: FormEvent) => void;

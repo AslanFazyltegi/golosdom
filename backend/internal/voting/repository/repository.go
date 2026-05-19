@@ -3,12 +3,14 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"golosdom-backend/internal/voting/model"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -21,7 +23,7 @@ func New(db *pgxpool.Pool) *Repository {
 }
 
 func (r *Repository) List(ctx context.Context, status string) ([]model.Voting, error) {
-	if err := r.MarkExpiredReviews(ctx); err != nil {
+	if err := r.syncReviewStatuses(ctx); err != nil {
 		return nil, err
 	}
 
@@ -59,7 +61,7 @@ func (r *Repository) List(ctx context.Context, status string) ([]model.Voting, e
 }
 
 func (r *Repository) Get(ctx context.Context, id string) (model.Voting, error) {
-	if err := r.MarkExpiredReviews(ctx); err != nil {
+	if err := r.syncReviewStatuses(ctx); err != nil {
 		return model.Voting{}, err
 	}
 
@@ -132,10 +134,17 @@ func (r *Repository) SubmitToCouncil(ctx context.Context, id string, version int
 }
 
 func (r *Repository) CurrentApproval(ctx context.Context, votingID string) (model.ApprovalReview, error) {
+	if err := r.FinalizeApprovalIfMajorityReached(ctx, votingID); err != nil {
+		return model.ApprovalReview{}, err
+	}
 	if err := r.MarkExpiredReviews(ctx); err != nil {
 		return model.ApprovalReview{}, err
 	}
 
+	return r.loadCurrentApproval(ctx, votingID)
+}
+
+func (r *Repository) loadCurrentApproval(ctx context.Context, votingID string) (model.ApprovalReview, error) {
 	row := r.db.QueryRow(ctx, `
 		SELECT id, voting_id, version, status, deadline, created_at, updated_at
 		FROM voting_approval_reviews
@@ -153,32 +162,25 @@ func (r *Repository) CurrentApproval(ctx context.Context, votingID string) (mode
 }
 
 func (r *Repository) Vote(ctx context.Context, review model.ApprovalReview, vote model.ApprovalVote) (model.ApprovalReview, error) {
-	tx, err := r.db.Begin(ctx)
-	if err != nil {
-		return model.ApprovalReview{}, err
-	}
-	defer tx.Rollback(ctx)
-
 	var exists string
-	err = tx.QueryRow(ctx, `
+	err := r.db.QueryRow(ctx, `
 		SELECT id FROM voting_approval_votes WHERE review_id = $1 AND user_id = $2
 	`, review.ID, vote.UserID).Scan(&exists)
 	if err == nil {
-		return model.ApprovalReview{}, fmt.Errorf("user already voted for this approval version")
+		return r.CurrentApproval(ctx, vote.VotingID)
 	}
 	if err != pgx.ErrNoRows {
 		return model.ApprovalReview{}, err
 	}
 
-	_, err = tx.Exec(ctx, `
+	_, err = r.db.Exec(ctx, `
 		INSERT INTO voting_approval_votes (id, review_id, voting_id, user_id, decision, comment, reason)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 	`, vote.ID, vote.ReviewID, vote.VotingID, vote.UserID, vote.Decision, vote.Comment, vote.Reason)
 	if err != nil {
-		return model.ApprovalReview{}, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
+		if isUniqueViolation(err) {
+			return r.CurrentApproval(ctx, vote.VotingID)
+		}
 		return model.ApprovalReview{}, err
 	}
 
@@ -199,23 +201,149 @@ func (r *Repository) RecalculateApproval(ctx context.Context, reviewID string) (
 	status := model.ReviewInProgress
 	votingStatus := model.StatusCouncilReview
 
-	if review.ApproveCount > review.TotalCouncilMembers/2 {
+	majority := majorityThreshold(review.TotalCouncilMembers)
+	if review.ApproveCount >= majority {
 		status = model.ReviewApproved
 		votingStatus = model.StatusPendingPublish
-	} else if review.RevisionCount > review.TotalCouncilMembers/2 {
+	} else if review.RevisionCount >= majority {
 		status = model.ReviewRevision
 		votingStatus = model.StatusRevisionRequired
 	}
 
-	_, err = r.db.Exec(ctx, `
-		UPDATE voting_approval_reviews SET status = $2, updated_at = now() WHERE id = $1;
-		UPDATE votings SET status = $4, updated_at = now() WHERE id = $3;
-	`, review.ID, status, review.VotingID, votingStatus)
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return model.ApprovalReview{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `
+		UPDATE voting_approval_reviews
+		SET status = $2, updated_at = now()
+		WHERE id = $1
+	`, review.ID, status)
 	if err != nil {
 		return model.ApprovalReview{}, err
 	}
 
-	return r.CurrentApproval(ctx, review.VotingID)
+	_, err = tx.Exec(ctx, `
+		UPDATE votings
+		SET status = $2, updated_at = now()
+		WHERE id = $1
+	`, review.VotingID, votingStatus)
+	if err != nil {
+		return model.ApprovalReview{}, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return model.ApprovalReview{}, err
+	}
+
+	return r.loadCurrentApproval(ctx, review.VotingID)
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+func majorityThreshold(totalCouncilMembers int) int {
+	return totalCouncilMembers/2 + 1
+}
+
+func (r *Repository) syncReviewStatuses(ctx context.Context) error {
+	if err := r.FinalizeApprovalsIfMajorityReached(ctx); err != nil {
+		return err
+	}
+	return r.MarkExpiredReviews(ctx)
+}
+
+func (r *Repository) FinalizeApprovalIfMajorityReached(ctx context.Context, votingID string) error {
+	total, err := r.CouncilMemberCount(ctx)
+	if err != nil {
+		return err
+	}
+	majority := majorityThreshold(total)
+
+	var reviewID string
+	err = r.db.QueryRow(ctx, `
+		SELECT ar.id
+		FROM voting_approval_reviews ar
+		JOIN votings v ON v.id = ar.voting_id
+		LEFT JOIN voting_approval_votes av ON av.review_id = ar.id
+		WHERE ar.voting_id = $1
+		  AND v.status = $2
+		  AND ar.status = $3
+		  AND ar.id = (
+		    SELECT latest.id
+		    FROM voting_approval_reviews latest
+		    WHERE latest.voting_id = ar.voting_id
+		    ORDER BY latest.version DESC, latest.created_at DESC
+		    LIMIT 1
+		  )
+		GROUP BY ar.id
+		HAVING COUNT(*) FILTER (WHERE av.decision = $4) >= $6
+		    OR COUNT(*) FILTER (WHERE av.decision = $5) >= $6
+	`, votingID, model.StatusCouncilReview, model.ReviewInProgress, model.DecisionApprove, model.DecisionRevision, majority).Scan(&reviewID)
+	if err == pgx.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	_, err = r.RecalculateApproval(ctx, reviewID)
+	return err
+}
+
+func (r *Repository) FinalizeApprovalsIfMajorityReached(ctx context.Context) error {
+	total, err := r.CouncilMemberCount(ctx)
+	if err != nil {
+		return err
+	}
+	majority := majorityThreshold(total)
+
+	rows, err := r.db.Query(ctx, `
+		SELECT ar.id
+		FROM voting_approval_reviews ar
+		JOIN votings v ON v.id = ar.voting_id
+		LEFT JOIN voting_approval_votes av ON av.review_id = ar.id
+		WHERE v.status = $1
+		  AND ar.status = $2
+		  AND ar.id = (
+		    SELECT latest.id
+		    FROM voting_approval_reviews latest
+		    WHERE latest.voting_id = ar.voting_id
+		    ORDER BY latest.version DESC, latest.created_at DESC
+		    LIMIT 1
+		  )
+		GROUP BY ar.id
+		HAVING COUNT(*) FILTER (WHERE av.decision = $3) >= $5
+		    OR COUNT(*) FILTER (WHERE av.decision = $4) >= $5
+	`, model.StatusCouncilReview, model.ReviewInProgress, model.DecisionApprove, model.DecisionRevision, majority)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	reviewIDs := []string{}
+	for rows.Next() {
+		var reviewID string
+		if err := rows.Scan(&reviewID); err != nil {
+			return err
+		}
+		reviewIDs = append(reviewIDs, reviewID)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, reviewID := range reviewIDs {
+		if _, err := r.RecalculateApproval(ctx, reviewID); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *Repository) MarkExpiredReviews(ctx context.Context) error {
@@ -370,6 +498,7 @@ func (r *Repository) hydrateReview(ctx context.Context, review model.ApprovalRev
 		return model.ApprovalReview{}, err
 	}
 	review.TotalCouncilMembers = count
+	review.Votes = []model.ApprovalVote{}
 
 	rows, err := r.db.Query(ctx, `
 		SELECT id, review_id, voting_id, user_id, decision, COALESCE(comment, ''), COALESCE(reason, ''), created_at, updated_at

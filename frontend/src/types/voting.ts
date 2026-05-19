@@ -1,7 +1,7 @@
 export type VotingQuestion = {
   id: string;
   text: string;
-  options: string[];
+  options?: string[] | null;
 };
 
 export type VotingMeeting = {
@@ -20,10 +20,12 @@ export type Voting = {
   status: string;
   created_by: string;
   meeting_id?: string | null;
-  version: number;
+  version?: number | null;
   review_deadline?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
   meeting?: VotingMeeting | null;
-  questions: VotingQuestion[];
+  questions?: VotingQuestion[] | null;
 };
 
 export type VotingApprovalVote = {
@@ -41,23 +43,34 @@ export type VotingApprovalVote = {
 export type VotingApprovalReview = {
   id: string;
   voting_id: string;
-  version: number;
+  version?: number | null;
   status: "in_progress" | "approved" | "revision_required" | "no_majority";
   deadline: string;
+  created_at?: string;
+  updated_at?: string;
   approve_count: number;
   revision_count: number;
   total_council_members: number;
   pending_council_members: number;
   no_majority_reason?: string;
-  votes: VotingApprovalVote[];
+  votes?: VotingApprovalVote[] | null;
 };
 
 export type VotingDraftPayload = {
   title: string;
   description: string;
-  meeting_id?: string | null;
-  questions: VotingQuestion[];
+  questions: Array<{
+    id: string;
+    text: string;
+    options: string[];
+  }>;
 };
+
+export type VotingCouncilSubmitPayload = VotingDraftPayload & {
+  meeting_id: string | null;
+};
+
+export type VotingSavePayload = VotingDraftPayload | VotingCouncilSubmitPayload;
 
 export type VotingStatus =
   | "draft"
