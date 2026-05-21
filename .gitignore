@@ -29,3 +29,14 @@ frontend/.env.*
 coverage/
 dist/
 tmp/
+# Local Codex files
+/.codex/
+
+# Local database dumps / restore files in project root
+/*.sql
+
+# Windows metadata files
+*:Zone.Identifier
+
+# Local backups
+/db-backups/
