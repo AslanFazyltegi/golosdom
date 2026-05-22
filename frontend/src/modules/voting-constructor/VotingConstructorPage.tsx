@@ -8,11 +8,24 @@ import {
   fetchVotingApproval,
   fetchVotings,
   resubmitVotingToCouncil,
+  scheduleVotingPublication,
   submitApprovalVote,
   submitVotingToCouncil,
   updateVotingDraft,
 } from "@/lib/votings";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
+import {
+  addAstanaDays,
+  addAstanaMonths,
+  endOfAstanaDay,
+  formatAstanaDate,
+  formatAstanaDateTime,
+  formatAstanaDateTimeLocal,
+  formatAstanaTime,
+  parseAstanaDateTimeLocal,
+  setAstanaTime,
+  startOfAstanaDay,
+} from "@/shared/lib/dateTime";
 import { Placeholder } from "@/shared/ui/Placeholder";
 import type { Meeting } from "@/types/meeting";
 import type {
@@ -21,12 +34,14 @@ import type {
   VotingApprovalVote,
   VotingCouncilSubmitPayload,
   VotingDraftPayload,
+  VotingPublicationSchedulePayload,
   VotingQuestion,
   VotingSavePayload,
 } from "@/types/voting";
 
 type WizardStep = 1 | 2 | 3;
 const DEFAULT_OPTIONS = ["Да", "Нет", "Воздержался"];
+const MIN_VOTING_DAYS = 7;
 
 const reasonLabels: Record<string, string> = {
   unclear_wording: "Неясная формулировка",
@@ -63,7 +78,7 @@ export function VotingConstructorPage(props: CabinetModuleProps) {
     if (!isCouncil) {
       return <NoAccess />;
     }
-    return <VotingPendingPublishPage />;
+    return <VotingPendingPublishPage isChairman={isChairman} />;
   }
 
   if (props.activeComponent === "voting_constructor_published") {
@@ -528,13 +543,23 @@ function VotingRevisionPage({ isChairman }: { isChairman: boolean }) {
   );
 }
 
-function VotingPendingPublishPage() {
+function VotingPendingPublishPage({ isChairman }: { isChairman: boolean }) {
   return (
     <VotingStatusPage
       title="Ожидающие публикации"
       status="pending_publish"
       emptyText="Нет опросных листов, ожидающих публикации."
-      actions={() => <Button disabled>Опубликовать позже</Button>}
+      actions={
+        isChairman
+          ? (voting, reload) => (
+              <PublicationScheduleActions
+                voting={voting}
+                reload={reload}
+              />
+            )
+          : undefined
+      }
+      showPublicationSchedule
     />
   );
 }
@@ -580,6 +605,7 @@ function VotingStatusPage({
   actions,
   showApproval = false,
   showRevisionDetails = false,
+  showPublicationSchedule = false,
 }: {
   title: string;
   status: string;
@@ -587,6 +613,7 @@ function VotingStatusPage({
   actions?: (voting: Voting, reload: () => Promise<void>) => ReactNode;
   showApproval?: boolean;
   showRevisionDetails?: boolean;
+  showPublicationSchedule?: boolean;
 }) {
   const [votings, setVotings] = useState<Voting[]>([]);
   const [loading, setLoading] = useState(true);
@@ -648,6 +675,7 @@ function VotingStatusPage({
               voting={voting}
               showApproval={showApproval}
               showRevisionDetails={showRevisionDetails}
+              showPublicationSchedule={showPublicationSchedule}
               refreshToken={refreshToken}
             >
               {actions?.(voting, load)}
@@ -664,12 +692,14 @@ function VotingCard({
   children,
   showApproval,
   showRevisionDetails,
+  showPublicationSchedule,
   refreshToken,
 }: {
   voting: Voting;
   children?: ReactNode;
   showApproval?: boolean;
   showRevisionDetails?: boolean;
+  showPublicationSchedule?: boolean;
   refreshToken: number;
 }) {
   return (
@@ -683,6 +713,7 @@ function VotingCard({
         <div className="flex flex-wrap gap-2">{children}</div>
       </div>
       {voting.meeting && <MeetingInfo meeting={voting.meeting} />}
+      {showPublicationSchedule && <PublicationScheduleDetails voting={voting} />}
       {showRevisionDetails && (
         <VotingApprovalDetails
           votingID={voting.id}
@@ -708,7 +739,6 @@ function VotingApprovalDetails({
   votingID,
   refreshToken,
   compact = false,
-  showVotes = true,
   showRevisionSummary = false,
 }: {
   votingID: string;
@@ -734,9 +764,11 @@ function VotingApprovalDetails({
   if (error) return <p className="mt-4 text-sm text-red-600">{error}</p>;
   if (!approval) return <p className="mt-4 text-sm text-slate-500">Загрузка согласования...</p>;
 
-  const approvalVotes = approval.votes ?? [];
+  const votes = approval.votes ?? [];
+  const revisionVotes = votes.filter((vote) => vote.decision === "revision");
+  const revisionDetails = revisionVotes.filter((vote) => vote.reason || vote.comment);
   const revisionVote = showRevisionSummary
-    ? findRevisionVoteWithComment(approvalVotes)
+    ? findRevisionVoteWithComment(votes)
     : undefined;
   const revisionDate = showRevisionSummary
     ? approval.updated_at ?? revisionVote?.created_at
@@ -753,27 +785,250 @@ function VotingApprovalDetails({
         {revisionDate && <p>Отправлено на доработку: {formatDate(revisionDate)}</p>}
         <p>Утвердили: {approval.approve_count}</p>
         <p>На доработку: {approval.revision_count}</p>
-        {revisionVote?.reason && (
-          <p>Причина доработки: {reasonLabels[revisionVote.reason] || revisionVote.reason}</p>
-        )}
-        {revisionVote?.comment && <p>Комментарий: {revisionVote.comment}</p>}
+        {revisionDetails.map((vote) => (
+          <div key={vote.id} className="ml-4 text-slate-600">
+            {vote.reason && <p>Причина: {reasonLabels[vote.reason] || vote.reason}</p>}
+            {vote.comment && <p>Комментарий: {vote.comment}</p>}
+          </div>
+        ))}
         <p>Не проголосовали: {approval.pending_council_members}</p>
         {approval.no_majority_reason && (
           <p className="text-amber-700">{approval.no_majority_reason}</p>
         )}
       </div>
+    </div>
+  );
+}
 
-      {showVotes && approvalVotes.length > 0 && (
-        <div className="mt-3 grid gap-2 text-sm">
-          {approvalVotes.map((vote) => (
-            <div key={vote.id} className="rounded-md border bg-white p-3">
-              <p>{vote.decision === "approve" ? "Утвердить" : "На доработку"}</p>
-              {vote.reason && <p>Причина: {reasonLabels[vote.reason] || vote.reason}</p>}
-              {vote.comment && <p>Комментарий: {vote.comment}</p>}
-            </div>
-          ))}
+function PublicationScheduleDetails({ voting }: { voting: Voting }) {
+  const limits = getPublicationScheduleLimits(voting);
+  const scheduledStartAt = parseServerDateTime(voting.publication_start_at);
+  const scheduledEndAt = parseServerDateTime(voting.publication_end_at);
+  const expired = isPublicationSchedulingExpired(voting);
+  const hasScheduledPublication =
+    voting.publication_status === "scheduled" &&
+    scheduledStartAt !== null &&
+    scheduledEndAt !== null;
+
+  return (
+    <div className="mb-4 rounded-md bg-slate-50 p-4 text-sm text-slate-700">
+      <p className="mb-2 font-medium">Сроки голосования:</p>
+      {limits ? (
+        <div className="grid gap-1">
+          <p>Собрание: {formatMeetingDate(limits.meetingDate)}</p>
+          <p>Опрос можно открыть с: {formatMeetingDate(limits.earliestStartDate)}</p>
+          <p>Последний допустимый старт: {formatMeetingDate(limits.latestStartDate)}</p>
+          <p>Крайний срок завершения: {formatMeetingDate(limits.finalDeadlineDate)}</p>
+          <p>Минимальная длительность: {MIN_VOTING_DAYS} дней</p>
+          <div className="mt-3">
+            <p className="font-medium">Рекомендуемый период:</p>
+            <p>
+              {formatPublicationDateTime(limits.recommendedStart)} —{" "}
+              {formatPublicationDateTime(limits.recommendedEnd)}
+            </p>
+          </div>
+          {expired && (
+            <p className="mt-3 rounded-md bg-red-50 p-3 text-red-700">
+              Срок публикации истёк. Минимальная длительность голосования — 7 дней,
+              поэтому опрос уже нельзя открыть в пределах допустимого срока.
+            </p>
+          )}
+        </div>
+      ) : (
+        <p>У опросника нет привязанного собрания с датой. Планирование недоступно.</p>
+      )}
+      {hasScheduledPublication && scheduledStartAt && scheduledEndAt && (
+        <div className="mt-4 border-t border-slate-200 pt-3">
+          <p className="mb-2 font-medium">Публикация запланирована:</p>
+          <div className="grid gap-1">
+            <p>Начало голосования: {formatDate(scheduledStartAt)}</p>
+            <p>Завершение голосования: {formatDate(scheduledEndAt)}</p>
+            <p>
+              Уведомление:{" "}
+              {voting.publication_send_notifications
+                ? "будет отправлено при открытии голосования"
+                : "не будет отправлено автоматически"}
+            </p>
+          </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function PublicationScheduleActions({
+  voting,
+  reload,
+}: {
+  voting: Voting;
+  reload: () => Promise<void>;
+}) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [success, setSuccess] = useState("");
+  const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const scheduled = voting.publication_status === "scheduled";
+  const expired = isPublicationSchedulingExpired(voting);
+
+  async function removeVoting() {
+    try {
+      setDeleting(true);
+      setError("");
+      await deleteVoting(voting.id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось удалить опросник");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-2">
+      {expired ? (
+        <Button onClick={removeVoting} disabled={deleting}>
+          Удалить
+        </Button>
+      ) : (
+        <Button
+          variant="primary"
+          onClick={() => {
+            setSuccess("");
+            setError("");
+            setModalOpen(true);
+          }}
+        >
+          {scheduled ? "Изменить расписание" : "Запланировать публикацию"}
+        </Button>
+      )}
+      {success && <p className="text-sm text-emerald-700">{success}</p>}
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {modalOpen && (
+        <PublicationScheduleModal
+          voting={voting}
+          onClose={() => setModalOpen(false)}
+          onScheduled={async () => {
+            await reload();
+            setSuccess("Публикация запланирована.");
+            setModalOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function PublicationScheduleModal({
+  voting,
+  onClose,
+  onScheduled,
+}: {
+  voting: Voting;
+  onClose: () => void;
+  onScheduled: () => Promise<void>;
+}) {
+  const limits = getPublicationScheduleLimits(voting);
+  const [startAt, setStartAt] = useState(() => getInitialPublicationStart(voting, limits));
+  const [endAt, setEndAt] = useState(() => getInitialPublicationEnd(voting, limits));
+  const [sendNotifications, setSendNotifications] = useState(
+    Boolean(voting.publication_send_notifications),
+  );
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit() {
+    const validationError = validatePublicationSchedule(limits, startAt, endAt);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    const startDate = parseDateTimeLocal(startAt);
+    const endDate = parseDateTimeLocal(endAt);
+    if (!startDate || !endDate) {
+      setError("Укажите дату и время начала и завершения голосования.");
+      return;
+    }
+
+    const payload: VotingPublicationSchedulePayload = {
+      start_at: formatPayloadDateTime(startDate),
+      end_at: formatPayloadDateTime(endDate),
+      send_notifications: sendNotifications,
+    };
+
+    try {
+      setSubmitting(true);
+      setError("");
+      await scheduleVotingPublication(voting.id, payload);
+      setSubmitting(false);
+      await onScheduled();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось запланировать публикацию");
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
+      <div className="w-full max-w-xl rounded-lg bg-white p-6 shadow-xl">
+        <h2 className="mb-4 text-xl font-semibold">Запланировать публикацию</h2>
+        <div className="mb-5 rounded-md bg-slate-50 p-4 text-sm text-slate-700">
+          {limits ? (
+            <div className="grid gap-1">
+              <p>Дата собрания: {formatMeetingDate(limits.meetingDate)}</p>
+              <p>Минимальная дата начала: {formatMeetingDate(limits.earliestStartDate)}</p>
+              <p>Последний допустимый старт: {formatMeetingDate(limits.latestStartDate)}</p>
+              <p>Крайний срок завершения: {formatMeetingDate(limits.finalDeadlineDate)}</p>
+              <p>Минимальная длительность: {MIN_VOTING_DAYS} дней</p>
+            </div>
+          ) : (
+            <p className="text-red-600">
+              У опросника нет привязанного собрания с датой. Планирование недоступно.
+            </p>
+          )}
+        </div>
+        <div className="grid gap-4">
+          <label className="grid gap-1 text-sm">
+            <span className="text-slate-600">Дата и время начала голосования</span>
+            <input
+              type="datetime-local"
+              className="rounded-md border p-2"
+              value={startAt}
+              onChange={(event) => setStartAt(event.target.value)}
+              disabled={!limits || submitting}
+            />
+          </label>
+          <label className="grid gap-1 text-sm">
+            <span className="text-slate-600">Дата и время завершения голосования</span>
+            <input
+              type="datetime-local"
+              className="rounded-md border p-2"
+              value={endAt}
+              onChange={(event) => setEndAt(event.target.value)}
+              disabled={!limits || submitting}
+            />
+          </label>
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={sendNotifications}
+              onChange={(event) => setSendNotifications(event.target.checked)}
+              disabled={!limits || submitting}
+            />
+            <span>Отправить уведомление собственникам при открытии голосования</span>
+          </label>
+        </div>
+        {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+        <div className="mt-6 flex justify-end gap-3">
+          <Button onClick={onClose} disabled={submitting}>
+            Отмена
+          </Button>
+          <Button variant="primary" onClick={submit} disabled={!limits || submitting}>
+            Сохранить
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1174,21 +1429,152 @@ function confirmNavigation(component: string) {
 }
 
 function formatDate(value: string | Date) {
-  return new Date(value).toLocaleString("ru-RU", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatAstanaDateTime(value);
 }
 
 function formatMeetingDate(value: string | Date) {
-  return new Date(value).toLocaleDateString("ru-RU", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  return formatAstanaDate(value);
+}
+
+type PublicationScheduleLimits = {
+  meetingDate: Date;
+  earliestStartDate: Date;
+  latestStartDate: Date;
+  finalDeadlineDate: Date;
+  finalDeadlineEnd: Date;
+  recommendedStart: Date;
+  recommendedEnd: Date;
+};
+
+function getPublicationScheduleLimits(voting: Voting): PublicationScheduleLimits | null {
+  if (!voting.meeting?.scheduled_at) return null;
+
+  const meetingDate = startOfAstanaDay(voting.meeting.scheduled_at);
+  if (!meetingDate) return null;
+
+  const earliestStartDate = addAstanaDays(meetingDate, 1);
+  const finalDeadlineDate = addAstanaMonths(meetingDate, 2);
+  if (!earliestStartDate || !finalDeadlineDate) return null;
+
+  const latestStartDate = addAstanaDays(finalDeadlineDate, -MIN_VOTING_DAYS);
+  const recommendedStart = setAstanaTime(earliestStartDate, 9, 0);
+  if (!latestStartDate || !recommendedStart) return null;
+
+  const finalDeadlineEnd = endOfAstanaDay(finalDeadlineDate);
+  const recommendedEnd = addAstanaDays(recommendedStart, MIN_VOTING_DAYS);
+  if (!finalDeadlineEnd || !recommendedEnd) return null;
+
+  return {
+    meetingDate,
+    earliestStartDate,
+    latestStartDate,
+    finalDeadlineDate,
+    finalDeadlineEnd,
+    recommendedStart,
+    recommendedEnd,
+  };
+}
+
+function getInitialPublicationStart(
+  voting: Voting,
+  limits: PublicationScheduleLimits | null,
+) {
+  const savedStart = parseServerDateTime(voting.publication_start_at);
+  if (savedStart) return formatDateTimeLocal(savedStart);
+  return limits ? formatDateTimeLocal(limits.recommendedStart) : "";
+}
+
+function getInitialPublicationEnd(
+  voting: Voting,
+  limits: PublicationScheduleLimits | null,
+) {
+  const savedEnd = parseServerDateTime(voting.publication_end_at);
+  if (savedEnd) return formatDateTimeLocal(savedEnd);
+  return limits ? formatDateTimeLocal(limits.recommendedEnd) : "";
+}
+
+function validatePublicationSchedule(
+  limits: PublicationScheduleLimits | null,
+  startValue: string,
+  endValue: string,
+) {
+  if (!limits) {
+    return "У опросника нет привязанного собрания.";
+  }
+
+  const startAt = parseDateTimeLocal(startValue);
+  const endAt = parseDateTimeLocal(endValue);
+  if (!startAt || !endAt) {
+    return "Укажите дату и время начала и завершения голосования.";
+  }
+
+  if (startAt < limits.earliestStartDate) {
+    return `Дата начала не может быть раньше ${formatMeetingDate(limits.earliestStartDate)}.`;
+  }
+
+  const latestStartEnd = endOfAstanaDay(limits.latestStartDate);
+  if (!latestStartEnd) {
+    return "Укажите дату и время начала и завершения голосования.";
+  }
+
+  if (startAt > latestStartEnd) {
+    return "Нельзя выбрать эту дату начала: 7 дней голосования не помещаются в допустимый срок.";
+  }
+
+  const minimumEndAt = addAstanaDays(startAt, MIN_VOTING_DAYS);
+  if (!minimumEndAt) {
+    return "Укажите дату и время начала и завершения голосования.";
+  }
+
+  if (minimumEndAt > limits.finalDeadlineEnd) {
+    return "Нельзя выбрать эту дату начала: 7 дней голосования не помещаются в допустимый срок.";
+  }
+
+  if (endAt < minimumEndAt) {
+    return `Минимальная длительность голосования — ${MIN_VOTING_DAYS} дней.`;
+  }
+
+  if (endAt > limits.finalDeadlineEnd) {
+    return `Дата завершения не может быть позже ${formatMeetingDate(limits.finalDeadlineDate)}.`;
+  }
+
+  return "";
+}
+
+function isPublicationSchedulingExpired(voting: Voting) {
+  const limits = getPublicationScheduleLimits(voting);
+  if (!limits) return false;
+  if (
+    voting.publication_status === "scheduled" ||
+    voting.publication_status === "published"
+  ) {
+    return false;
+  }
+
+  const latestStartEnd = endOfAstanaDay(limits.latestStartDate);
+  return latestStartEnd ? new Date() > latestStartEnd : false;
+}
+
+function parseDateTimeLocal(value: string) {
+  return parseAstanaDateTimeLocal(value);
+}
+
+function parseServerDateTime(value?: string | null) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatDateTimeLocal(date: Date) {
+  return formatAstanaDateTimeLocal(date);
+}
+
+function formatPayloadDateTime(date: Date) {
+  return `${formatDateTimeLocal(date)}:00`;
+}
+
+function formatPublicationDateTime(date: Date) {
+  return `${formatMeetingDate(date)} ${formatAstanaTime(date)}`;
 }
 
 function normalizeAgenda(agenda: unknown) {

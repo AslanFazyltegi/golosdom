@@ -22,6 +22,11 @@ export type Voting = {
   meeting_id?: string | null;
   version?: number | null;
   review_deadline?: string | null;
+  publication_start_at?: string | null;
+  publication_end_at?: string | null;
+  publication_send_notifications?: boolean;
+  publication_scheduled_at?: string | null;
+  publication_status?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   meeting?: VotingMeeting | null;
@@ -71,6 +76,12 @@ export type VotingCouncilSubmitPayload = VotingDraftPayload & {
 };
 
 export type VotingSavePayload = VotingDraftPayload | VotingCouncilSubmitPayload;
+
+export type VotingPublicationSchedulePayload = {
+  start_at: string;
+  end_at: string;
+  send_notifications: boolean;
+};
 
 export type VotingStatus =
   | "draft"

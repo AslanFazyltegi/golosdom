@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
+import { addAstanaDays, formatAstanaDateKey } from "@/shared/lib/dateTime";
 import {
   MeetingConfirmationPage,
   type MeetingConfirmationData,
@@ -24,7 +25,7 @@ export function CreateMeetingPage(props: CabinetModuleProps) {
   const [notificationDate, setNotificationDate] = useState(new Date());
   const { meetingDate, setMeetingDate } = props;
 
-  const minDateValue = formatDateInput(getMinMeetingDate());
+  const minDateValue = getMinMeetingDateValue();
 
   useEffect(() => {
     if (!meetingDate) setMeetingDate(minDateValue);
@@ -86,7 +87,6 @@ export function CreateMeetingPage(props: CabinetModuleProps) {
     const agenda = props.meetingAgenda
       .map((item) => item.trim())
       .filter(Boolean);
-    const scheduledAt = `${props.meetingDate}T${props.meetingTime}`;
     const meetingLocation = getMeetingLocation(
       props.meetingLocationAddress,
       props.meetingLocationDetail,
@@ -102,7 +102,7 @@ export function CreateMeetingPage(props: CabinetModuleProps) {
       return;
     }
 
-    if (new Date(scheduledAt) < getMinMeetingDate()) {
+    if (props.meetingDate < minDateValue) {
       setValidationError(
         "Дата проведения должна быть не раньше 5-го календарного дня, считая со следующего дня.",
       );
@@ -427,18 +427,8 @@ export function CreateMeetingPage(props: CabinetModuleProps) {
   );
 }
 
-function getMinMeetingDate() {
-  const date = new Date();
-  date.setDate(date.getDate() + 5);
-  date.setHours(0, 0, 0, 0);
-  return date;
-}
-
-function formatDateInput(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+function getMinMeetingDateValue() {
+  return formatAstanaDateKey(addAstanaDays(new Date(), 5));
 }
 
 function getMeetingLocation(address: string, detail: string) {

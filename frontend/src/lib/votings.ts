@@ -2,6 +2,7 @@ import { apiFetch } from "@/lib/api";
 import type {
   Voting,
   VotingApprovalReview,
+  VotingPublicationSchedulePayload,
   VotingSavePayload,
 } from "@/types/voting";
 
@@ -61,4 +62,14 @@ export function submitApprovalVote(
     method: "POST",
     body: JSON.stringify(payload),
   }) as Promise<VotingApprovalReview>;
+}
+
+export function scheduleVotingPublication(
+  id: string,
+  payload: VotingPublicationSchedulePayload,
+): Promise<Voting> {
+  return apiFetch(`/api/v1/votings/${id}/schedule-publication`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }) as Promise<Voting>;
 }

@@ -123,6 +123,8 @@ func (h *Handler) VotingByID(w http.ResponseWriter, r *http.Request) {
 		h.submitToCouncil(w, r, id)
 	case action == "resubmit-to-council" && r.Method == http.MethodPost:
 		h.resubmitToCouncil(w, r, id)
+	case action == "schedule-publication" && r.Method == http.MethodPost:
+		h.schedulePublication(w, r, id)
 	case action == "approval" && r.Method == http.MethodGet:
 		h.approval(w, r, id)
 	case action == "approval/vote" && r.Method == http.MethodPost:
@@ -173,6 +175,25 @@ func (h *Handler) resubmitToCouncil(w http.ResponseWriter, r *http.Request, id s
 		return
 	}
 	response.JSON(w, http.StatusOK, map[string]any{"voting": voting, "warning": warning})
+}
+
+func (h *Handler) schedulePublication(w http.ResponseWriter, r *http.Request, id string) {
+	if !requireChairman(w, r) {
+		return
+	}
+
+	var req dto.SchedulePublicationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	voting, err := h.service.SchedulePublication(id, req)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, voting)
 }
 
 func (h *Handler) approval(w http.ResponseWriter, r *http.Request, id string) {

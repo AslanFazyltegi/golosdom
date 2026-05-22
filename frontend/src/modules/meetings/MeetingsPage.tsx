@@ -4,6 +4,13 @@ import { useMemo, useState } from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
+import {
+  formatAstanaDate,
+  formatAstanaDateKey,
+  formatAstanaDateTime,
+  formatAstanaDateTimeForDocument,
+  getAstanaTodayDateKey,
+} from "@/shared/lib/dateTime";
 import { Placeholder } from "@/shared/ui/Placeholder";
 import { MeetingConfirmationPage } from "@/modules/meetings/MeetingConfirmationPage";
 
@@ -518,8 +525,8 @@ function getPrintStyles() {
 }
 
 function getMeetingStatusByDate(value?: string) {
-  const meetingDate = getDbDatePart(value);
-  const today = getTodayDateKey();
+  const meetingDate = formatAstanaDateKey(value);
+  const today = getAstanaTodayDateKey();
 
   if (!meetingDate) return "upcoming";
 
@@ -527,21 +534,6 @@ function getMeetingStatusByDate(value?: string) {
   if (meetingDate === today) return "active";
 
   return "upcoming";
-}
-
-function getDbDatePart(value?: string) {
-  if (!value) return "";
-  return String(value).replace("Z", "").split("T")[0] || "";
-}
-
-function getTodayDateKey() {
-  const today = new Date();
-
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const day = String(today.getDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
 }
 
 function getStatusBadgeClass(status: string) {
@@ -622,46 +614,15 @@ function getFormattedAddress(meeting: any) {
 }
 
 function formatMeetingDateTime(value: string) {
-  if (!value) return "";
-
-  const normalizedValue = value.replace("Z", "");
-  const [datePart, timePartRaw = ""] = normalizedValue.split("T");
-
-  if (!datePart || !timePartRaw) return value;
-
-  const [year, month, day] = datePart.split("-");
-  const timePart = timePartRaw.slice(0, 5);
-
-  return `${day}.${month}.${year}, ${timePart}`;
+  return formatAstanaDateTime(value);
 }
 
 function formatMeetingDateTimeForDocument(value: string) {
-  if (!value) return "";
-
-  const normalizedValue = value.replace("Z", "");
-  const [datePart, timePartRaw = ""] = normalizedValue.split("T");
-
-  if (!datePart || !timePartRaw) return value;
-
-  const [year, month, day] = datePart.split("-");
-  const timePart = timePartRaw.slice(0, 5);
-
-  return `${day}.${month}.${year} в ${timePart}`;
+  return formatAstanaDateTimeForDocument(value);
 }
 
 function formatDateOnly(value?: string) {
-  if (!value) return "";
-
-  const normalizedValue = String(value).replace("Z", "");
-  const [datePart = ""] = normalizedValue.split("T");
-
-  if (!datePart) return value;
-
-  const [year, month, day] = datePart.split("-");
-
-  if (!year || !month || !day) return value;
-
-  return `${day}.${month}.${year}`;
+  return formatAstanaDate(value);
 }
 
 function escapeHtml(value: unknown) {

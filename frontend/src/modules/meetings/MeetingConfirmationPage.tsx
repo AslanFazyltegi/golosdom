@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 import type { ReactNode } from "react";
+import {
+  formatAstanaDate,
+  formatAstanaDateKey,
+  formatAstanaTime,
+} from "@/shared/lib/dateTime";
 
 export type MeetingConfirmationData = {
   condominiumAddress: string;
@@ -117,21 +122,24 @@ export function MeetingConfirmationPage({
                 парковочных мест и кладовых помещений по адресу:{" "}
                 {formattedAddress}.
               </p>
+              <div className="mt-8 space-y-5 text-justify leading-6">
+                <p className="mt-8">
+                  Собственникам квартир, нежилых помещений, парковочных мест и
+                  кладовых помещений
+                </p>
 
-              <p className="mt-8">
-                Собственникам квартир, нежилых помещений, парковочных мест и
-                кладовых помещений
-              </p>
-
-              <p className="mt-6">
-                «В соответствии со статьями 42-1 и 42-2 Закона РК «О жилищных
-                отношениях» и Правилами принятия решений по управлению объектом
-                кондоминиума и содержанию общего имущества объекта
-                кондоминиума, уведомляем вас о проведении общего собрания
-                собственников квартир и нежилых помещений по адресу:{" "}
-                {formattedAddress}».
-              </p>
-
+                <p className="mt-6">
+                  «В соответствии со статьями 42-1 и 42-2 Закона РК «О жилищных
+                  отношениях» и Правилами принятия решений по управлению объектом
+                  кондоминиума и содержанию общего имущества объекта
+                  кондоминиума, уведомляем вас о проведении общего собрания
+                  собственников квартир и нежилых помещений по адресу:{" "}
+                  {formattedAddress}».
+                </p>
+                <p>
+                  В случае отсутствия кворума на очном собрании голосование будет продолжено посредством объекта информатизации в сфере жилищных отношений и жилищно-коммунального хозяйства начиная со следующего календарного дня после даты проведения собрания в порядке и сроки, предусмотренные законодательством Республики Казахстан.
+                </p>
+              </div>
               <DocumentPoint title="1. Формат проведения собрания:">
                 {preparedData.meetingFormLabel}
               </DocumentPoint>
@@ -171,7 +179,7 @@ export function MeetingConfirmationPage({
               </DocumentPoint>
 
               <DocumentPoint title="7. Дата размещения уведомления:">
-                {preparedData.notificationDate.toLocaleDateString("ru-RU")}
+                {formatAstanaDate(preparedData.notificationDate)}
               </DocumentPoint>
 
               <DocumentPoint title="8. Способ уведомления собственников:">
@@ -223,22 +231,8 @@ export function MeetingConfirmationPage({
 }
 
 function buildConfirmationDataFromMeeting(meeting: any): MeetingConfirmationData {
-  const scheduledAt = meeting?.scheduled_at
-    ? new Date(meeting.scheduled_at)
-    : null;
-
-  const meetingDate =
-    scheduledAt && !Number.isNaN(scheduledAt.getTime())
-      ? scheduledAt.toISOString().slice(0, 10)
-      : "";
-
-  const meetingTime =
-    scheduledAt && !Number.isNaN(scheduledAt.getTime())
-      ? scheduledAt.toLocaleTimeString("ru-RU", {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : "";
+  const meetingDate = formatAstanaDateKey(meeting?.scheduled_at);
+  const meetingTime = formatAstanaTime(meeting?.scheduled_at);
 
   return {
     condominiumAddress:
@@ -287,7 +281,5 @@ function DocumentPoint({
 }
 
 function formatDate(value: string) {
-  if (!value) return "";
-
-  return new Date(`${value}T00:00`).toLocaleDateString("ru-RU");
+  return formatAstanaDate(value);
 }

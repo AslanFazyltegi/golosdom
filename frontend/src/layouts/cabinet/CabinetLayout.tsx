@@ -9,6 +9,7 @@ import { fetchNavigation } from "@/lib/navigation";
 import { fetchObjects } from "@/lib/objects";
 import { fetchOwners, type MeetingOwner } from "@/lib/owners";
 import { fetchVotings } from "@/lib/votings";
+import { addAstanaDays, formatAstanaDateKey } from "@/shared/lib/dateTime";
 import type { Meeting } from "@/types/meeting";
 import type { NavigationItem } from "@/types/navigation";
 import type { User } from "@/types/user";
@@ -298,7 +299,7 @@ export function CabinetLayout() {
       return;
     }
 
-    if (new Date(scheduledAt) < getMinMeetingDate()) {
+    if (meetingDate < getMinMeetingDateValue()) {
       setMeetingError(
         "Дата проведения должна быть не раньше 5-го календарного дня, считая со следующего дня.",
       );
@@ -433,11 +434,8 @@ function getModuleCode(item?: NavigationItem) {
   return item?.component || item?.code || "dashboard";
 }
 
-function getMinMeetingDate() {
-  const date = new Date();
-  date.setDate(date.getDate() + 5);
-  date.setHours(0, 0, 0, 0);
-  return date;
+function getMinMeetingDateValue() {
+  return formatAstanaDateKey(addAstanaDays(new Date(), 5));
 }
 
 function buildMeetingAddress(objects: unknown) {

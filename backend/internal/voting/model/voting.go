@@ -9,6 +9,10 @@ const (
 	StatusPendingPublish   = "pending_publish"
 	StatusPublished        = "published"
 
+	PublicationNotScheduled = "not_scheduled"
+	PublicationScheduled    = "scheduled"
+	PublicationPublished    = "published"
+
 	ReviewInProgress      = "in_progress"
 	ReviewApproved        = "approved"
 	ReviewRevision        = "revision_required"
@@ -19,18 +23,23 @@ const (
 )
 
 type Voting struct {
-	ID             string     `json:"id"`
-	Title          string     `json:"title"`
-	Description    string     `json:"description"`
-	Status         string     `json:"status"`
-	CreatedBy      string     `json:"created_by"`
-	MeetingID      *string    `json:"meeting_id,omitempty"`
-	Version        int        `json:"version"`
-	ReviewDeadline *time.Time `json:"review_deadline,omitempty"`
-	CreatedAt      *time.Time `json:"created_at,omitempty"`
-	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
-	Meeting        *Meeting   `json:"meeting,omitempty"`
-	Questions      []Question `json:"questions"`
+	ID                           string     `json:"id"`
+	Title                        string     `json:"title"`
+	Description                  string     `json:"description"`
+	Status                       string     `json:"status"`
+	CreatedBy                    string     `json:"created_by"`
+	MeetingID                    *string    `json:"meeting_id,omitempty"`
+	Version                      int        `json:"version"`
+	ReviewDeadline               *time.Time `json:"review_deadline,omitempty"`
+	PublicationStartAt           *time.Time `json:"publication_start_at,omitempty"`
+	PublicationEndAt             *time.Time `json:"publication_end_at,omitempty"`
+	PublicationSendNotifications bool       `json:"publication_send_notifications"`
+	PublicationScheduledAt       *time.Time `json:"publication_scheduled_at,omitempty"`
+	PublicationStatus            string     `json:"publication_status,omitempty"`
+	CreatedAt                    *time.Time `json:"created_at,omitempty"`
+	UpdatedAt                    *time.Time `json:"updated_at,omitempty"`
+	Meeting                      *Meeting   `json:"meeting,omitempty"`
+	Questions                    []Question `json:"questions"`
 }
 
 type Meeting struct {

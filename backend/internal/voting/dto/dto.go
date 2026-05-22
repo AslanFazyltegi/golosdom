@@ -25,3 +25,9 @@ type ApprovalVoteRequest struct {
 	Reason   string `json:"reason"`
 	Comment  string `json:"comment"`
 }
+
+type SchedulePublicationRequest struct {
+	StartAt           string `json:"start_at"`
+	EndAt             string `json:"end_at"`
+	SendNotifications bool   `json:"send_notifications"`
+}

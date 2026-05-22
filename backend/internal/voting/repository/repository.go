@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"golosdom-backend/internal/common/datetime"
 	"golosdom-backend/internal/voting/model"
 
 	"github.com/jackc/pgx/v5"
@@ -29,7 +30,12 @@ func (r *Repository) List(ctx context.Context, status string) ([]model.Voting, e
 
 	rows, err := r.db.Query(ctx, `
 		SELECT v.id, v.title, v.description, v.status, v.created_by,
-		       v.meeting_id::text, COALESCE(v.version, 1), v.review_deadline, v.created_at, v.updated_at,
+		       v.meeting_id::text, COALESCE(v.version, 1), v.review_deadline,
+		       v.publication_start_at, v.publication_end_at,
+		       COALESCE(v.publication_send_notifications, false),
+		       v.publication_scheduled_at,
+		       COALESCE(v.publication_status, 'not_scheduled'),
+		       v.created_at, v.updated_at,
 		       m.id::text, m.initiator_name, m.scheduled_at, m.location, m.agenda, m.meeting_form
 		FROM votings v
 		LEFT JOIN meetings m ON m.id = v.meeting_id
@@ -67,7 +73,12 @@ func (r *Repository) Get(ctx context.Context, id string) (model.Voting, error) {
 
 	row := r.db.QueryRow(ctx, `
 		SELECT v.id, v.title, v.description, v.status, v.created_by,
-		       v.meeting_id::text, COALESCE(v.version, 1), v.review_deadline, v.created_at, v.updated_at,
+		       v.meeting_id::text, COALESCE(v.version, 1), v.review_deadline,
+		       v.publication_start_at, v.publication_end_at,
+		       COALESCE(v.publication_send_notifications, false),
+		       v.publication_scheduled_at,
+		       COALESCE(v.publication_status, 'not_scheduled'),
+		       v.created_at, v.updated_at,
 		       m.id::text, m.initiator_name, m.scheduled_at, m.location, m.agenda, m.meeting_form
 		FROM votings v
 		LEFT JOIN meetings m ON m.id = v.meeting_id
@@ -101,7 +112,7 @@ func (r *Repository) UpdateDraft(ctx context.Context, voting model.Voting) error
 }
 
 func (r *Repository) Delete(ctx context.Context, id string) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM votings WHERE id = $1 AND status IN ('draft', 'revision_required')`, id)
+	_, err := r.db.Exec(ctx, `DELETE FROM votings WHERE id = $1 AND status IN ('draft', 'revision_required', 'pending_publish')`, id)
 	return err
 }
 
@@ -131,6 +142,26 @@ func (r *Repository) SubmitToCouncil(ctx context.Context, id string, version int
 	}
 
 	return tx.Commit(ctx)
+}
+
+func (r *Repository) SchedulePublication(ctx context.Context, id string, startAt, endAt time.Time, sendNotifications bool) error {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE votings
+		SET publication_start_at = $2,
+		    publication_end_at = $3,
+		    publication_send_notifications = $4,
+		    publication_scheduled_at = now(),
+		    publication_status = $5,
+		    updated_at = now()
+		WHERE id = $1 AND status = $6
+	`, id, startAt, endAt, sendNotifications, model.PublicationScheduled, model.StatusPendingPublish)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errors.New("voting is not pending publication")
+	}
+	return nil
 }
 
 func (r *Repository) CurrentApproval(ctx context.Context, votingID string) (model.ApprovalReview, error) {
@@ -254,7 +285,76 @@ func (r *Repository) syncReviewStatuses(ctx context.Context) error {
 	if err := r.FinalizeApprovalsIfMajorityReached(ctx); err != nil {
 		return err
 	}
-	return r.MarkExpiredReviews(ctx)
+	if err := r.MarkExpiredReviews(ctx); err != nil {
+		return err
+	}
+	return r.PublishDueScheduledVotings(ctx)
+}
+
+func (r *Repository) PublishDueScheduledVotings(ctx context.Context) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	rows, err := tx.Query(ctx, `
+		UPDATE votings
+		SET status = $1,
+		    publication_status = $2,
+		    updated_at = now()
+		WHERE status = $3
+		  AND publication_status = $4
+		  AND publication_start_at IS NOT NULL
+		  AND publication_start_at <= now()
+		RETURNING id, title, publication_end_at
+	`, model.StatusPublished, model.PublicationPublished, model.StatusPendingPublish, model.PublicationScheduled)
+	if err != nil {
+		return err
+	}
+
+	due := []duePublication{}
+	for rows.Next() {
+		var item duePublication
+		if err := rows.Scan(&item.ID, &item.Title, &item.EndAt); err != nil {
+			rows.Close()
+			return err
+		}
+		due = append(due, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	for _, item := range due {
+		message := fmt.Sprintf(
+			"Открыто голосование по опросному листу: %s. Вы можете принять участие в голосовании до %s.",
+			item.Title,
+			formatNotificationDate(item.EndAt),
+		)
+		_, err = tx.Exec(ctx, `
+			INSERT INTO notifications (id, user_id, type, title, message, voting_id)
+			SELECT $1 || '-' || owner.user_id,
+			       owner.user_id,
+			       $2,
+			       $3,
+			       $4,
+			       $5
+			FROM (
+				SELECT DISTINCT user_id
+				FROM property_owners
+				WHERE status = 'active'
+			) owner
+			ON CONFLICT DO NOTHING
+		`, "voting-published-"+item.ID, "voting_published", "Открыто голосование", message, item.ID)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) FinalizeApprovalIfMajorityReached(ctx context.Context, votingID string) error {
@@ -516,6 +616,8 @@ func (r *Repository) hydrateReview(ctx context.Context, review model.ApprovalRev
 		if err := rows.Scan(&vote.ID, &vote.ReviewID, &vote.VotingID, &vote.UserID, &vote.Decision, &vote.Comment, &vote.Reason, &vote.CreatedAt, &vote.UpdatedAt); err != nil {
 			return model.ApprovalReview{}, err
 		}
+		vote.CreatedAt = datetime.AsAstanaWallTime(vote.CreatedAt)
+		vote.UpdatedAt = datetime.AsAstanaWallTime(vote.UpdatedAt)
 		if vote.Decision == model.DecisionApprove {
 			review.ApproveCount++
 		}
@@ -552,10 +654,27 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
+type duePublication struct {
+	ID    string
+	Title string
+	EndAt *time.Time
+}
+
+func formatNotificationDate(value *time.Time) string {
+	if value == nil {
+		return "указанного срока"
+	}
+	return datetime.AsAstanaWallTime(*value).Format("02.01.2006, 15:04")
+}
+
 func scanVoting(row rowScanner) (model.Voting, error) {
 	var voting model.Voting
 	var meetingID *string
 	var reviewDeadline *time.Time
+	var publicationStartAt *time.Time
+	var publicationEndAt *time.Time
+	var publicationScheduledAt *time.Time
+	var publicationStatus string
 	var createdAt *time.Time
 	var updatedAt *time.Time
 	var joinedMeetingID *string
@@ -574,6 +693,11 @@ func scanVoting(row rowScanner) (model.Voting, error) {
 		&meetingID,
 		&voting.Version,
 		&reviewDeadline,
+		&publicationStartAt,
+		&publicationEndAt,
+		&voting.PublicationSendNotifications,
+		&publicationScheduledAt,
+		&publicationStatus,
 		&createdAt,
 		&updatedAt,
 		&joinedMeetingID,
@@ -588,14 +712,18 @@ func scanVoting(row rowScanner) (model.Voting, error) {
 	}
 
 	voting.MeetingID = meetingID
-	voting.ReviewDeadline = reviewDeadline
-	voting.CreatedAt = createdAt
-	voting.UpdatedAt = updatedAt
+	voting.ReviewDeadline = datetime.PtrAsAstanaWallTime(reviewDeadline)
+	voting.PublicationStartAt = datetime.PtrAsAstanaWallTime(publicationStartAt)
+	voting.PublicationEndAt = datetime.PtrAsAstanaWallTime(publicationEndAt)
+	voting.PublicationScheduledAt = datetime.PtrAsAstanaWallTime(publicationScheduledAt)
+	voting.PublicationStatus = publicationStatus
+	voting.CreatedAt = datetime.PtrAsAstanaWallTime(createdAt)
+	voting.UpdatedAt = datetime.PtrAsAstanaWallTime(updatedAt)
 
 	if joinedMeetingID != nil && scheduledAt != nil {
 		meeting := &model.Meeting{
 			ID:          *joinedMeetingID,
-			ScheduledAt: *scheduledAt,
+			ScheduledAt: datetime.AsAstanaWallTime(*scheduledAt),
 		}
 		if initiatorName != nil {
 			meeting.InitiatorName = *initiatorName
@@ -618,5 +746,8 @@ func scanVoting(row rowScanner) (model.Voting, error) {
 func scanReview(row rowScanner) (model.ApprovalReview, error) {
 	var review model.ApprovalReview
 	err := row.Scan(&review.ID, &review.VotingID, &review.Version, &review.Status, &review.Deadline, &review.CreatedAt, &review.UpdatedAt)
+	review.Deadline = datetime.AsAstanaWallTime(review.Deadline)
+	review.CreatedAt = datetime.AsAstanaWallTime(review.CreatedAt)
+	review.UpdatedAt = datetime.AsAstanaWallTime(review.UpdatedAt)
 	return review, err
 }

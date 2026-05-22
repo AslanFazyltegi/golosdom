@@ -3,8 +3,8 @@ package service
 import (
 	"context"
 	"strings"
-	"time"
 
+	"golosdom-backend/internal/common/datetime"
 	"golosdom-backend/internal/meetings/dto"
 	"golosdom-backend/internal/meetings/model"
 	"golosdom-backend/internal/meetings/repository"
@@ -19,12 +19,9 @@ func New(repo *repository.Repository) *Service {
 }
 
 func (s *Service) Create(ctx context.Context, req dto.CreateMeetingRequest, userID string) (*dto.MeetingResponse, error) {
-	scheduledAt, err := time.Parse("2006-01-02T15:04", req.ScheduledAt)
+	scheduledAt, err := datetime.ParseAstanaDateTime(req.ScheduledAt)
 	if err != nil {
-		scheduledAt, err = time.Parse(time.RFC3339, req.ScheduledAt)
-		if err != nil {
-			return nil, err
-		}
+		return nil, err
 	}
 
 	meetingForm := strings.TrimSpace(req.MeetingForm)
@@ -65,11 +62,11 @@ func toResponse(meeting *model.Meeting) *dto.MeetingResponse {
 	return &dto.MeetingResponse{
 		ID:            meeting.ID,
 		InitiatorName: meeting.InitiatorName,
-		ScheduledAt:   meeting.ScheduledAt,
+		ScheduledAt:   datetime.AsAstanaWallTime(meeting.ScheduledAt),
 		Location:      meeting.Location,
 		Agenda:        meeting.Agenda,
 		MeetingForm:   meeting.MeetingForm,
 		CreatedBy:     meeting.CreatedBy,
-		CreatedAt:     meeting.CreatedAt,
+		CreatedAt:     datetime.AsAstanaWallTime(meeting.CreatedAt),
 	}
 }
