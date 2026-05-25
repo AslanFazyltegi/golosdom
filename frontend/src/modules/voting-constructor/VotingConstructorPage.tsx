@@ -843,12 +843,7 @@ function PublicationScheduleDetails({ voting }: { voting: Voting }) {
           <div className="grid gap-1">
             <p>Начало голосования: {formatDate(scheduledStartAt)}</p>
             <p>Завершение голосования: {formatDate(scheduledEndAt)}</p>
-            <p>
-              Уведомление:{" "}
-              {voting.publication_send_notifications
-                ? "будет отправлено при открытии голосования"
-                : "не будет отправлено автоматически"}
-            </p>
+            <p>Уведомление: будет создано при открытии голосования</p>
           </div>
         </div>
       )}
@@ -930,9 +925,6 @@ function PublicationScheduleModal({
   const limits = getPublicationScheduleLimits(voting);
   const [startAt, setStartAt] = useState(() => getInitialPublicationStart(voting, limits));
   const [endAt, setEndAt] = useState(() => getInitialPublicationEnd(voting, limits));
-  const [sendNotifications, setSendNotifications] = useState(
-    Boolean(voting.publication_send_notifications),
-  );
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -953,7 +945,7 @@ function PublicationScheduleModal({
     const payload: VotingPublicationSchedulePayload = {
       start_at: formatPayloadDateTime(startDate),
       end_at: formatPayloadDateTime(endDate),
-      send_notifications: sendNotifications,
+      send_notifications: true,
     };
 
     try {
@@ -1007,16 +999,6 @@ function PublicationScheduleModal({
               onChange={(event) => setEndAt(event.target.value)}
               disabled={!limits || submitting}
             />
-          </label>
-          <label className="flex items-start gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={sendNotifications}
-              onChange={(event) => setSendNotifications(event.target.checked)}
-              disabled={!limits || submitting}
-            />
-            <span>Отправить уведомление собственникам при открытии голосования</span>
           </label>
         </div>
         {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
