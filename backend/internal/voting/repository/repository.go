@@ -19,6 +19,8 @@ type Repository struct {
 	db *pgxpool.Pool
 }
 
+var ErrOwnerAlreadyVoted = errors.New("owner already voted")
+
 func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
@@ -51,37 +53,21 @@ func (r *Repository) List(ctx context.Context, status, userID string) ([]model.V
 		    AND v.publication_end_at IS NOT NULL
 		    AND v.publication_start_at <= now()
 		    AND v.publication_end_at >= now()
-		    AND (
-		      $2 = ''
-		      OR NOT EXISTS (
-		        SELECT 1
-		        FROM voting_answers va
-		        WHERE va.voting_id = v.id
-		          AND va.voted_by_user_id = $2
-		      )
-		    )
 		  )
 		  OR (
-		    $1 = 'past'
+		    $1 IN ('past', 'completed')
 		    AND (
 		      v.status IN ('stopped', 'completed', 'expired')
-		      OR (
-		        $2 <> ''
-		        AND EXISTS (
-		          SELECT 1
-		          FROM voting_answers va
-		          WHERE va.voting_id = v.id
-		            AND va.voted_by_user_id = $2
-		        )
-		      )
+		      OR (v.status = 'published' AND v.publication_end_at IS NOT NULL AND v.publication_end_at < now())
 		    )
 		  )
 		  OR v.status = $1
 		)
 		ORDER BY
-		  CASE WHEN $1 IN ('published', 'active', 'past') THEN COALESCE(v.published_at, v.publication_start_at, v.updated_at, v.created_at) END DESC,
+		  CASE WHEN $1 IN ('past', 'completed') THEN COALESCE(v.completed_at, v.stopped_at, v.expired_at, v.publication_end_at, v.updated_at, v.created_at) END DESC,
+		  CASE WHEN $1 IN ('published', 'active') THEN COALESCE(v.published_at, v.publication_start_at, v.updated_at, v.created_at) END DESC,
 		  COALESCE(v.updated_at, v.created_at) DESC
-	`, status, userID)
+	`, status)
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +96,10 @@ func (r *Repository) List(ctx context.Context, status, userID string) ([]model.V
 }
 
 func (r *Repository) Get(ctx context.Context, id string) (model.Voting, error) {
+	return r.GetForUser(ctx, id, "")
+}
+
+func (r *Repository) GetForUser(ctx context.Context, id, userID string) (model.Voting, error) {
 	if err := r.syncReviewStatuses(ctx); err != nil {
 		return model.Voting{}, err
 	}
@@ -139,7 +129,7 @@ func (r *Repository) Get(ctx context.Context, id string) (model.Voting, error) {
 		return model.Voting{}, err
 	}
 	voting.Questions = questions
-	if err := r.hydrateVotingStats(ctx, &voting, ""); err != nil {
+	if err := r.hydrateVotingStats(ctx, &voting, userID); err != nil {
 		return model.Voting{}, err
 	}
 
@@ -621,6 +611,260 @@ func (r *Repository) hydrateVotingStats(ctx context.Context, voting *model.Votin
 	return nil
 }
 
+func (r *Repository) ownerVotingSubject(ctx context.Context, tx pgx.Tx, userID string) (string, string, error) {
+	var propertyID string
+	var votingGroupID string
+	err := tx.QueryRow(ctx, `
+		SELECT
+			po.property_id,
+			COALESCE(NULLIF(po.voting_group_id, ''), po.property_id) AS voting_group_id
+		FROM property_owners po
+		WHERE po.user_id = $1
+		  AND po.status = 'active'
+		ORDER BY po.is_primary DESC, po.created_at ASC, po.property_id ASC
+		LIMIT 1
+	`, userID).Scan(&propertyID, &votingGroupID)
+	if err == pgx.ErrNoRows {
+		return "", "", errors.New("У пользователя нет активного объекта имущества.")
+	}
+	return propertyID, votingGroupID, err
+}
+
+func (r *Repository) OwnerAlreadyVoted(ctx context.Context, votingID, userID string) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM voting_submissions vs
+			WHERE vs.voting_id = $1
+			  AND vs.user_id = $2
+			UNION
+			SELECT 1
+			FROM voting_answers va
+			WHERE va.voting_id = $1
+			  AND va.voted_by_user_id = $2
+		)
+	`, votingID, userID).Scan(&exists)
+	return exists, err
+}
+
+func (r *Repository) SubmitOwnerVote(ctx context.Context, votingID, userID, signatureMethod string, signedAt time.Time, answers []model.OwnerVotingAnswer) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var hasAnswers bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM voting_answers
+			WHERE voting_id = $1
+			  AND voted_by_user_id = $2
+		)
+	`, votingID, userID).Scan(&hasAnswers); err != nil {
+		return err
+	}
+	if hasAnswers {
+		return ErrOwnerAlreadyVoted
+	}
+
+	propertyID, votingGroupID, err := r.ownerVotingSubject(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+
+	submissionID := fmt.Sprintf("%s-submission-%s-%d", votingID, userID, time.Now().UnixNano())
+	_, err = tx.Exec(ctx, `
+		INSERT INTO voting_submissions (
+			id,
+			voting_id,
+			user_id,
+			signature_method,
+			signature_status,
+			signed_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, submissionID, votingID, userID, signatureMethod, model.SignatureSigned, signedAt)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return ErrOwnerAlreadyVoted
+		}
+		return err
+	}
+
+	payload := ownerAnswerPayload{Answers: make([]ownerAnswerPayloadItem, 0, len(answers))}
+	for _, answer := range answers {
+		payload.Answers = append(payload.Answers, ownerAnswerPayloadItem{
+			QuestionID: answer.QuestionID,
+			Answer:     answer.Answer,
+		})
+	}
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	answerID := fmt.Sprintf("%s-answer-%s-%d", votingID, userID, time.Now().UnixNano())
+	_, err = tx.Exec(ctx, `
+		INSERT INTO voting_answers (
+			id,
+			voting_id,
+			property_id,
+			voting_group_id,
+			voted_by_user_id,
+			answer,
+			signed_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+	`, answerID, votingID, propertyID, votingGroupID, userID, string(payloadJSON), signedAt)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return ErrOwnerAlreadyVoted
+		}
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (r *Repository) OwnerAnswers(ctx context.Context, votingID, userID string) ([]model.OwnerVotingAnswer, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT
+			va.id,
+			q.id,
+			q.text,
+			COALESCE(answer_item.answer, '') AS answer,
+			COALESCE(vs.signature_method, '') AS signature_method,
+			COALESCE(vs.signature_status, '') AS signature_status,
+			COALESCE(vs.signed_at, va.signed_at) AS signed_at,
+			COALESCE(va.signed_at, vs.created_at) AS created_at
+		FROM voting_answers va
+		CROSS JOIN LATERAL jsonb_to_recordset(
+			CASE
+				WHEN jsonb_typeof(va.answer->'answers') = 'array' THEN va.answer->'answers'
+				ELSE '[]'::jsonb
+			END
+		) AS answer_item(question_id text, answer text)
+		JOIN voting_questions q ON q.voting_id = va.voting_id AND q.id = answer_item.question_id
+		LEFT JOIN voting_submissions vs ON vs.voting_id = va.voting_id
+			AND vs.user_id = va.voted_by_user_id
+		WHERE va.voting_id = $1
+		  AND va.voted_by_user_id = $2
+		ORDER BY q.created_at ASC, q.id ASC
+	`, votingID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	answers := []model.OwnerVotingAnswer{}
+	for rows.Next() {
+		var answer model.OwnerVotingAnswer
+		var signedAt *time.Time
+		var createdAt *time.Time
+		if err := rows.Scan(
+			&answer.ID,
+			&answer.QuestionID,
+			&answer.QuestionText,
+			&answer.Answer,
+			&answer.SignatureMethod,
+			&answer.SignatureStatus,
+			&signedAt,
+			&createdAt,
+		); err != nil {
+			return nil, err
+		}
+		answer.VotingID = votingID
+		answer.SignedAt = datetime.PtrAsAstanaWallTime(signedAt)
+		answer.CreatedAt = datetime.PtrAsAstanaWallTime(createdAt)
+		answers = append(answers, answer)
+	}
+
+	return answers, rows.Err()
+}
+
+func (r *Repository) VotingResults(ctx context.Context, votingID string) ([]model.VotingResult, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT
+			q.id,
+			q.text,
+			COUNT(answer_value.answer) FILTER (WHERE answer_value.answer = 'for') AS for_count,
+			COUNT(answer_value.answer) FILTER (WHERE answer_value.answer = 'against') AS against_count,
+			COUNT(answer_value.answer) FILTER (WHERE answer_value.answer = 'abstain') AS abstain_count
+		FROM voting_questions q
+		LEFT JOIN LATERAL (
+			SELECT answer_item.answer
+			FROM voting_answers va
+			CROSS JOIN LATERAL jsonb_to_recordset(
+				CASE
+					WHEN jsonb_typeof(va.answer->'answers') = 'array' THEN va.answer->'answers'
+					ELSE '[]'::jsonb
+				END
+			) AS answer_item(question_id text, answer text)
+			WHERE va.voting_id = q.voting_id
+			  AND answer_item.question_id = q.id
+		) answer_value ON true
+		WHERE q.voting_id = $1
+		GROUP BY q.id, q.text, q.created_at
+		ORDER BY q.created_at ASC, q.id ASC
+	`, votingID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := []model.VotingResult{}
+	for rows.Next() {
+		var result model.VotingResult
+		if err := rows.Scan(
+			&result.QuestionID,
+			&result.QuestionText,
+			&result.ForCount,
+			&result.AgainstCount,
+			&result.AbstainCount,
+		); err != nil {
+			return nil, err
+		}
+		result.TotalCount = result.ForCount + result.AgainstCount + result.AbstainCount
+		results = append(results, result)
+	}
+
+	return results, rows.Err()
+}
+
+func (r *Repository) VotingBlank(ctx context.Context, votingID, userID string) (model.VotingBlank, error) {
+	voting, err := r.GetForUser(ctx, votingID, userID)
+	if err != nil {
+		return model.VotingBlank{}, err
+	}
+
+	blank := model.VotingBlank{
+		Voting:      voting,
+		OwnerName:   "Собственник",
+		GeneratedAt: datetime.Now(),
+	}
+
+	err = r.db.QueryRow(ctx, `
+		SELECT
+			COALESCE(u.full_name, u.email, 'Собственник') AS owner_name,
+			COALESCE(string_agg(DISTINCT b.building_name, ', '), '') AS building_name,
+			COALESCE(string_agg(DISTINCT p.number, ', '), '') AS property_label
+		FROM users u
+		LEFT JOIN property_owners po ON po.user_id = u.id AND po.status = 'active'
+		LEFT JOIN property p ON p.id = po.property_id
+		LEFT JOIN building b ON b.id = p.building_id
+		WHERE u.id = $1
+		GROUP BY u.id, u.full_name, u.email
+	`, userID).Scan(&blank.OwnerName, &blank.BuildingName, &blank.PropertyLabel)
+	if err != nil && err != pgx.ErrNoRows {
+		return model.VotingBlank{}, err
+	}
+
+	return blank, nil
+}
+
 func (r *Repository) publicationMeetingLabel(ctx context.Context, meetingID *string) (string, error) {
 	if meetingID == nil || *meetingID == "" {
 		return "опросному листу", nil
@@ -830,6 +1074,15 @@ type duePublication struct {
 	Title     string
 	EndAt     *time.Time
 	MeetingID *string
+}
+
+type ownerAnswerPayload struct {
+	Answers []ownerAnswerPayloadItem `json:"answers"`
+}
+
+type ownerAnswerPayloadItem struct {
+	QuestionID string `json:"question_id"`
+	Answer     string `json:"answer"`
 }
 
 func formatNotificationDate(value *time.Time) string {

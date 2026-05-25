@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"strings"
 	"time"
 
@@ -32,6 +33,10 @@ func (s *Service) List(status, userID string) ([]model.Voting, error) {
 
 func (s *Service) Get(id string) (model.Voting, error) {
 	return s.repo.Get(context.Background(), id)
+}
+
+func (s *Service) GetForUser(id, userID string) (model.Voting, error) {
+	return s.repo.GetForUser(context.Background(), id, userID)
 }
 
 func (s *Service) Create(createdBy, title, description, question string, options []string) (model.Voting, error) {
@@ -212,6 +217,139 @@ func (s *Service) StopVoting(id string) (model.Voting, error) {
 	return s.repo.Get(context.Background(), id)
 }
 
+func (s *Service) SubmitOwnerVote(votingID, userID string, req dto.OwnerVoteRequest) ([]model.OwnerVotingAnswer, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, errors.New("missing user")
+	}
+
+	signatureMethod := strings.TrimSpace(req.SignatureMethod)
+	if signatureMethod == "" {
+		signatureMethod = model.SignatureMockMGov
+	}
+	if signatureMethod != model.SignatureMockMGov && signatureMethod != model.SignatureMockECP {
+		return nil, errors.New("invalid signature method")
+	}
+
+	voting, err := s.repo.GetForUser(context.Background(), votingID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	alreadyVoted, err := s.repo.OwnerAlreadyVoted(context.Background(), votingID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if alreadyVoted {
+		return nil, errors.New("Вы уже проголосовали по данному опроснику.")
+	}
+
+	if err := validateOwnerVotingIsActive(voting, datetime.Now()); err != nil {
+		return nil, err
+	}
+
+	answers, err := validateOwnerVoteAnswers(voting, req.Answers)
+	if err != nil {
+		return nil, err
+	}
+
+	signedAt := datetime.Now()
+	if err := s.repo.SubmitOwnerVote(context.Background(), votingID, userID, signatureMethod, signedAt, answers); err != nil {
+		if errors.Is(err, repository.ErrOwnerAlreadyVoted) {
+			return nil, errors.New("Вы уже проголосовали по данному опроснику.")
+		}
+		return nil, err
+	}
+
+	return s.repo.OwnerAnswers(context.Background(), votingID, userID)
+}
+
+func (s *Service) OwnerAnswers(votingID, userID string) ([]model.OwnerVotingAnswer, error) {
+	if _, err := s.repo.GetForUser(context.Background(), votingID, userID); err != nil {
+		return nil, err
+	}
+
+	answers, err := s.repo.OwnerAnswers(context.Background(), votingID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if len(answers) == 0 {
+		return nil, errors.New("Вы еще не голосовали по данному опроснику.")
+	}
+	return answers, nil
+}
+
+func (s *Service) VotingResults(votingID string) ([]model.VotingResult, error) {
+	if _, err := s.repo.Get(context.Background(), votingID); err != nil {
+		return nil, err
+	}
+	return s.repo.VotingResults(context.Background(), votingID)
+}
+
+func (s *Service) VotingBlankHTML(votingID, userID string) (string, string, error) {
+	blank, err := s.repo.VotingBlank(context.Background(), votingID, userID)
+	if err != nil {
+		return "", "", err
+	}
+
+	title := strings.TrimSpace(blank.Voting.Title)
+	if title == "" {
+		title = "Опросный лист"
+	}
+
+	var builder strings.Builder
+	builder.WriteString("<!doctype html><html><head><meta charset=\"utf-8\"><title>")
+	builder.WriteString(html.EscapeString(title))
+	builder.WriteString("</title><style>body{font-family:Arial,sans-serif;line-height:1.45;color:#0f172a;padding:32px;}h1{font-size:24px;margin:0 0 16px;}h2{font-size:18px;margin:24px 0 8px;}table{width:100%;border-collapse:collapse;margin-top:12px;}td,th{border:1px solid #cbd5e1;padding:10px;text-align:left;vertical-align:top}.muted{color:#475569}.sign{margin-top:36px;display:grid;grid-template-columns:1fr 1fr;gap:24px}.line{border-bottom:1px solid #0f172a;height:28px}</style></head><body>")
+	builder.WriteString("<h1>")
+	builder.WriteString(html.EscapeString(title))
+	builder.WriteString("</h1>")
+
+	if blank.BuildingName != "" {
+		builder.WriteString("<p><strong>ОСИ/ЖК:</strong> ")
+		builder.WriteString(html.EscapeString(blank.BuildingName))
+		builder.WriteString("</p>")
+	}
+	if blank.PropertyLabel != "" {
+		builder.WriteString("<p><strong>Объект имущества:</strong> ")
+		builder.WriteString(html.EscapeString(blank.PropertyLabel))
+		builder.WriteString("</p>")
+	}
+	builder.WriteString("<p><strong>ФИО собственника:</strong> ")
+	builder.WriteString(html.EscapeString(blank.OwnerName))
+	builder.WriteString("</p>")
+	if blank.Voting.Meeting != nil {
+		builder.WriteString("<p><strong>Дата собрания:</strong> ")
+		builder.WriteString(html.EscapeString(blank.Voting.Meeting.ScheduledAt.Format("02.01.2006 15:04")))
+		builder.WriteString("</p>")
+	}
+	if blank.Voting.PublicationEndAt != nil {
+		builder.WriteString("<p><strong>Крайний срок голосования:</strong> ")
+		builder.WriteString(html.EscapeString(blank.Voting.PublicationEndAt.Format("02.01.2006 15:04")))
+		builder.WriteString("</p>")
+	}
+
+	builder.WriteString("<h2>Вопросы</h2><table><thead><tr><th>№</th><th>Вопрос</th><th>За</th><th>Против</th><th>Воздержусь</th></tr></thead><tbody>")
+	for i, question := range blank.Voting.Questions {
+		builder.WriteString("<tr><td>")
+		builder.WriteString(fmt.Sprintf("%d", i+1))
+		builder.WriteString("</td><td>")
+		builder.WriteString(html.EscapeString(question.Text))
+		builder.WriteString("</td><td>□</td><td>□</td><td>□</td></tr>")
+	}
+	builder.WriteString("</tbody></table>")
+
+	builder.WriteString("<div class=\"sign\"><div><p class=\"muted\">Дата заполнения</p><div class=\"line\"></div></div><div><p class=\"muted\">Подпись собственника</p><div class=\"line\"></div></div></div>")
+	builder.WriteString("<p class=\"muted\">Бланк сформирован: ")
+	builder.WriteString(html.EscapeString(blank.GeneratedAt.Format("02.01.2006 15:04")))
+	builder.WriteString("</p></body></html>")
+
+	filename := strings.ReplaceAll(strings.ToLower(title), " ", "-")
+	if filename == "" {
+		filename = "voting-blank"
+	}
+	return builder.String(), filename + ".html", nil
+}
+
 func (s *Service) CurrentApproval(id string) (model.ApprovalReview, error) {
 	return s.repo.CurrentApproval(context.Background(), id)
 }
@@ -267,6 +405,96 @@ func (s *Service) Vote(votingID, userID string, req dto.ApprovalVoteRequest) (mo
 	}
 
 	return s.repo.Vote(context.Background(), review, vote)
+}
+
+func validateOwnerVotingIsActive(voting model.Voting, now time.Time) error {
+	if voting.Status != model.StatusPublished {
+		if voting.Status == model.StatusStopped {
+			return errors.New("Голосование остановлено председателем.")
+		}
+		if voting.Status == model.StatusCompleted || voting.Status == model.StatusExpired {
+			return errors.New("Голосование завершено.")
+		}
+		return errors.New("Опросник не опубликован.")
+	}
+	if voting.PublicationStatus != model.PublicationPublished {
+		return errors.New("Опросник не опубликован.")
+	}
+	if voting.PublicationStartAt == nil || voting.PublicationEndAt == nil {
+		return errors.New("Период сбора голосов не указан.")
+	}
+	if now.Before(*voting.PublicationStartAt) {
+		return errors.New("Голосование еще не началось.")
+	}
+	if now.After(*voting.PublicationEndAt) {
+		return errors.New("Истек крайний срок голосования.")
+	}
+	if voting.StoppedAt != nil {
+		return errors.New("Голосование остановлено председателем.")
+	}
+	return nil
+}
+
+func validateOwnerVoteAnswers(voting model.Voting, requestAnswers []dto.OwnerVoteAnswerRequest) ([]model.OwnerVotingAnswer, error) {
+	if len(voting.Questions) == 0 {
+		return nil, errors.New("У опросника нет вопросов.")
+	}
+	if len(requestAnswers) != len(voting.Questions) {
+		return nil, errors.New("Количество ответов должно совпадать с количеством вопросов.")
+	}
+
+	questions := make(map[string]model.Question, len(voting.Questions))
+	for _, question := range voting.Questions {
+		questions[question.ID] = question
+	}
+
+	seen := make(map[string]bool, len(requestAnswers))
+	answers := make([]model.OwnerVotingAnswer, 0, len(requestAnswers))
+	for _, item := range requestAnswers {
+		questionID := strings.TrimSpace(item.QuestionID)
+		answer := strings.TrimSpace(item.Answer)
+		if questionID == "" {
+			return nil, errors.New("question_id is required")
+		}
+		if seen[questionID] {
+			return nil, errors.New("По каждому вопросу должен быть только один ответ.")
+		}
+		question, exists := questions[questionID]
+		if !exists {
+			return nil, errors.New("В ответах есть вопрос, которого нет в опроснике.")
+		}
+		if !validOwnerAnswer(answer) {
+			return nil, errors.New("Допустимые значения ответа: for, against, abstain.")
+		}
+		seen[questionID] = true
+		answers = append(answers, model.OwnerVotingAnswer{
+			VotingID:     voting.ID,
+			QuestionID:   question.ID,
+			QuestionText: question.Text,
+			Answer:       answer,
+		})
+	}
+
+	for _, question := range voting.Questions {
+		if !seen[question.ID] {
+			return nil, fmt.Errorf("Ответьте на вопрос №%d", questionIndex(voting.Questions, question.ID)+1)
+		}
+	}
+
+	return answers, nil
+}
+
+func validOwnerAnswer(answer string) bool {
+	return answer == model.AnswerFor || answer == model.AnswerAgainst || answer == model.AnswerAbstain
+}
+
+func questionIndex(questions []model.Question, questionID string) int {
+	for i, question := range questions {
+		if question.ID == questionID {
+			return i
+		}
+	}
+	return 0
 }
 
 func userAlreadyVoted(votes []model.ApprovalVote, userID string) bool {

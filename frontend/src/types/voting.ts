@@ -4,6 +4,10 @@ export type VotingQuestion = {
   options?: string[] | null;
 };
 
+export type VotingAnswerValue = "for" | "against" | "abstain";
+
+export type VotingSignatureMock = "MOCK_MGOV" | "MOCK_ECP";
+
 export type VotingMeeting = {
   id: string;
   initiator_name: string;
@@ -88,6 +92,35 @@ export type VotingSavePayload = VotingDraftPayload | VotingCouncilSubmitPayload;
 export type VotingPublicationSchedulePayload = {
   start_at: string;
   send_notifications: boolean;
+};
+
+export type VotingResult = {
+  question_id: string;
+  question_text: string;
+  for_count: number;
+  against_count: number;
+  abstain_count: number;
+  total_count: number;
+};
+
+export type OwnerVotingAnswer = {
+  id?: string;
+  voting_id: string;
+  question_id: string;
+  question_text: string;
+  answer: VotingAnswerValue;
+  signature_method?: VotingSignatureMock | string;
+  signature_status?: "signed" | string;
+  signed_at?: string | null;
+  created_at?: string | null;
+};
+
+export type OwnerVotingSubmission = {
+  answers: Array<{
+    question_id: string;
+    answer: VotingAnswerValue;
+  }>;
+  signature_method: VotingSignatureMock;
 };
 
 export type VotingStatus =

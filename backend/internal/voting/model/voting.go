@@ -23,6 +23,14 @@ const (
 	DecisionApprove       = "approve"
 	DecisionRevision      = "revision"
 	NoMajorityExplanation = "Не набрано большинство Совета дома до дедлайна"
+
+	AnswerFor     = "for"
+	AnswerAgainst = "against"
+	AnswerAbstain = "abstain"
+
+	SignatureMockMGov = "MOCK_MGOV"
+	SignatureMockECP  = "MOCK_ECP"
+	SignatureSigned   = "signed"
 )
 
 type Voting struct {
@@ -94,4 +102,33 @@ type ApprovalVote struct {
 	Reason    string    `json:"reason,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type OwnerVotingAnswer struct {
+	ID              string     `json:"id,omitempty"`
+	VotingID        string     `json:"voting_id"`
+	QuestionID      string     `json:"question_id"`
+	QuestionText    string     `json:"question_text"`
+	Answer          string     `json:"answer"`
+	SignatureMethod string     `json:"signature_method,omitempty"`
+	SignatureStatus string     `json:"signature_status,omitempty"`
+	SignedAt        *time.Time `json:"signed_at,omitempty"`
+	CreatedAt       *time.Time `json:"created_at,omitempty"`
+}
+
+type VotingResult struct {
+	QuestionID   string `json:"question_id"`
+	QuestionText string `json:"question_text"`
+	ForCount     int    `json:"for_count"`
+	AgainstCount int    `json:"against_count"`
+	AbstainCount int    `json:"abstain_count"`
+	TotalCount   int    `json:"total_count"`
+}
+
+type VotingBlank struct {
+	Voting        Voting
+	OwnerName     string
+	BuildingName  string
+	GeneratedAt   time.Time
+	PropertyLabel string
 }

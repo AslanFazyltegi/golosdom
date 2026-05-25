@@ -30,3 +30,13 @@ type SchedulePublicationRequest struct {
 	StartAt           string `json:"start_at"`
 	SendNotifications bool   `json:"send_notifications"`
 }
+
+type OwnerVoteAnswerRequest struct {
+	QuestionID string `json:"question_id"`
+	Answer     string `json:"answer"`
+}
+
+type OwnerVoteRequest struct {
+	Answers         []OwnerVoteAnswerRequest `json:"answers"`
+	SignatureMethod string                   `json:"signature_method"`
+}

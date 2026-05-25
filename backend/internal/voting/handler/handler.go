@@ -24,8 +24,15 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	if status == "active" || status == "past" || status == "completed" {
+		if !requireOwner(w, r) {
+			return
+		}
+	}
+
 	votings, err := h.service.List(
-		strings.TrimSpace(r.URL.Query().Get("status")),
+		status,
 		r.Header.Get("X-User-ID"),
 	)
 	if err != nil {
@@ -103,9 +110,26 @@ func (h *Handler) VotingByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if action == "" && r.Method == http.MethodGet && (id == "active" || id == "completed") {
+		if !requireOwner(w, r) {
+			return
+		}
+		status := id
+		if id == "completed" {
+			status = "past"
+		}
+		votings, err := h.service.List(status, r.Header.Get("X-User-ID"))
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		response.JSON(w, http.StatusOK, votings)
+		return
+	}
+
 	switch {
 	case action == "" && r.Method == http.MethodGet:
-		voting, err := h.service.Get(id)
+		voting, err := h.service.GetForUser(id, r.Header.Get("X-User-ID"))
 		if err != nil {
 			response.Error(w, http.StatusNotFound, "voting not found")
 			return
@@ -134,6 +158,14 @@ func (h *Handler) VotingByID(w http.ResponseWriter, r *http.Request) {
 		h.approval(w, r, id)
 	case action == "approval/vote" && r.Method == http.MethodPost:
 		h.vote(w, r, id)
+	case action == "vote" && r.Method == http.MethodPost:
+		h.ownerVote(w, r, id)
+	case action == "my-vote" && r.Method == http.MethodGet:
+		h.myVote(w, r, id)
+	case action == "results" && r.Method == http.MethodGet:
+		h.results(w, r, id)
+	case action == "blank" && r.Method == http.MethodGet:
+		h.blank(w, r, id)
 	default:
 		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
@@ -245,6 +277,72 @@ func (h *Handler) vote(w http.ResponseWriter, r *http.Request, id string) {
 	response.JSON(w, http.StatusOK, approval)
 }
 
+func (h *Handler) ownerVote(w http.ResponseWriter, r *http.Request, id string) {
+	if !requireOwner(w, r) {
+		return
+	}
+
+	var req dto.OwnerVoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	answers, err := h.service.SubmitOwnerVote(id, r.Header.Get("X-User-ID"), req)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]any{
+		"message": "Ваш голос успешно принят и подписан.",
+		"answers": answers,
+	})
+}
+
+func (h *Handler) myVote(w http.ResponseWriter, r *http.Request, id string) {
+	if !requireOwner(w, r) {
+		return
+	}
+
+	answers, err := h.service.OwnerAnswers(id, r.Header.Get("X-User-ID"))
+	if err != nil {
+		response.Error(w, http.StatusNotFound, err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, answers)
+}
+
+func (h *Handler) results(w http.ResponseWriter, r *http.Request, id string) {
+	if !requireOwner(w, r) {
+		return
+	}
+
+	results, err := h.service.VotingResults(id)
+	if err != nil {
+		response.Error(w, http.StatusNotFound, "voting not found")
+		return
+	}
+	response.JSON(w, http.StatusOK, results)
+}
+
+func (h *Handler) blank(w http.ResponseWriter, r *http.Request, id string) {
+	if !requireOwner(w, r) {
+		return
+	}
+
+	html, filename, err := h.service.VotingBlankHTML(id, r.Header.Get("X-User-ID"))
+	if err != nil {
+		response.Error(w, http.StatusNotFound, "voting not found")
+		return
+	}
+
+	filename = strings.ReplaceAll(filename, `"`, "")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(html))
+}
+
 func splitVotingPath(path string) (string, string) {
 	rest := strings.TrimPrefix(path, "/api/v1/votings/")
 	parts := strings.Split(rest, "/")
@@ -277,6 +375,18 @@ func requireCouncil(w http.ResponseWriter, r *http.Request) bool {
 	roles := r.Header.Get("X-User-Roles")
 	if !hasRole(roles, "CHAIRMAN") && !hasRole(roles, "COUNCIL_MEMBER") {
 		response.Error(w, http.StatusForbidden, "only council members can perform this action")
+		return false
+	}
+	return true
+}
+
+func requireOwner(w http.ResponseWriter, r *http.Request) bool {
+	if r.Header.Get("X-User-ID") == "" {
+		response.Error(w, http.StatusUnauthorized, "missing user")
+		return false
+	}
+	if !hasRole(r.Header.Get("X-User-Roles"), "OWNER") {
+		response.Error(w, http.StatusForbidden, "only owners can perform this action")
 		return false
 	}
 	return true
