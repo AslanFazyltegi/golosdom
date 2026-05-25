@@ -73,3 +73,9 @@ export function scheduleVotingPublication(
     body: JSON.stringify(payload),
   }) as Promise<Voting>;
 }
+
+export function stopVoting(id: string): Promise<Voting> {
+  return apiFetch(`/api/v1/votings/${id}/stop`, {
+    method: "POST",
+  }) as Promise<Voting>;
+}

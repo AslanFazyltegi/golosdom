@@ -23,7 +23,7 @@ func New(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) List(ctx context.Context, status string) ([]model.Voting, error) {
+func (r *Repository) List(ctx context.Context, status, userID string) ([]model.Voting, error) {
 	if err := r.syncReviewStatuses(ctx); err != nil {
 		return nil, err
 	}
@@ -35,13 +35,53 @@ func (r *Repository) List(ctx context.Context, status string) ([]model.Voting, e
 		       COALESCE(v.publication_send_notifications, false),
 		       v.publication_scheduled_at,
 		       COALESCE(v.publication_status, 'not_scheduled'),
+		       v.published_at, v.min_stop_at, v.stopped_at, v.completed_at, v.expired_at,
 		       v.created_at, v.updated_at,
 		       m.id::text, m.initiator_name, m.scheduled_at, m.location, m.agenda, m.meeting_form
 		FROM votings v
 		LEFT JOIN meetings m ON m.id = v.meeting_id
-		WHERE ($1 = '' OR v.status = $1)
-		ORDER BY COALESCE(v.updated_at, v.created_at) DESC
-	`, status)
+		WHERE (
+		  $1 = ''
+		  OR ($1 = 'published' AND v.status IN ('published', 'stopped', 'completed', 'expired'))
+		  OR (
+		    $1 = 'active'
+		    AND v.status = 'published'
+		    AND COALESCE(v.publication_status, 'not_scheduled') = 'published'
+		    AND v.publication_start_at IS NOT NULL
+		    AND v.publication_end_at IS NOT NULL
+		    AND v.publication_start_at <= now()
+		    AND v.publication_end_at >= now()
+		    AND (
+		      $2 = ''
+		      OR NOT EXISTS (
+		        SELECT 1
+		        FROM voting_answers va
+		        WHERE va.voting_id = v.id
+		          AND va.voted_by_user_id = $2
+		      )
+		    )
+		  )
+		  OR (
+		    $1 = 'past'
+		    AND (
+		      v.status IN ('stopped', 'completed', 'expired')
+		      OR (
+		        $2 <> ''
+		        AND EXISTS (
+		          SELECT 1
+		          FROM voting_answers va
+		          WHERE va.voting_id = v.id
+		            AND va.voted_by_user_id = $2
+		        )
+		      )
+		    )
+		  )
+		  OR v.status = $1
+		)
+		ORDER BY
+		  CASE WHEN $1 IN ('published', 'active', 'past') THEN COALESCE(v.published_at, v.publication_start_at, v.updated_at, v.created_at) END DESC,
+		  COALESCE(v.updated_at, v.created_at) DESC
+	`, status, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +100,9 @@ func (r *Repository) List(ctx context.Context, status string) ([]model.Voting, e
 		}
 
 		voting.Questions = questions
+		if err := r.hydrateVotingStats(ctx, &voting, userID); err != nil {
+			return nil, err
+		}
 		votings = append(votings, voting)
 	}
 
@@ -78,6 +121,7 @@ func (r *Repository) Get(ctx context.Context, id string) (model.Voting, error) {
 		       COALESCE(v.publication_send_notifications, false),
 		       v.publication_scheduled_at,
 		       COALESCE(v.publication_status, 'not_scheduled'),
+		       v.published_at, v.min_stop_at, v.stopped_at, v.completed_at, v.expired_at,
 		       v.created_at, v.updated_at,
 		       m.id::text, m.initiator_name, m.scheduled_at, m.location, m.agenda, m.meeting_form
 		FROM votings v
@@ -95,6 +139,9 @@ func (r *Repository) Get(ctx context.Context, id string) (model.Voting, error) {
 		return model.Voting{}, err
 	}
 	voting.Questions = questions
+	if err := r.hydrateVotingStats(ctx, &voting, ""); err != nil {
+		return model.Voting{}, err
+	}
 
 	return voting, nil
 }
@@ -144,7 +191,7 @@ func (r *Repository) SubmitToCouncil(ctx context.Context, id string, version int
 	return tx.Commit(ctx)
 }
 
-func (r *Repository) SchedulePublication(ctx context.Context, id string, startAt, endAt time.Time, sendNotifications bool) error {
+func (r *Repository) SchedulePublication(ctx context.Context, id string, startAt, endAt, minStopAt time.Time, sendNotifications bool) error {
 	tag, err := r.db.Exec(ctx, `
 		UPDATE votings
 		SET publication_start_at = $2,
@@ -152,9 +199,14 @@ func (r *Repository) SchedulePublication(ctx context.Context, id string, startAt
 		    publication_send_notifications = $4,
 		    publication_scheduled_at = now(),
 		    publication_status = $5,
+		    min_stop_at = $7,
+		    published_at = NULL,
+		    stopped_at = NULL,
+		    completed_at = NULL,
+		    expired_at = NULL,
 		    updated_at = now()
 		WHERE id = $1 AND status = $6
-	`, id, startAt, endAt, sendNotifications, model.PublicationScheduled, model.StatusPendingPublish)
+	`, id, startAt, endAt, sendNotifications, model.PublicationScheduled, model.StatusPendingPublish, minStopAt)
 	if err != nil {
 		return err
 	}
@@ -288,7 +340,10 @@ func (r *Repository) syncReviewStatuses(ctx context.Context) error {
 	if err := r.MarkExpiredReviews(ctx); err != nil {
 		return err
 	}
-	return r.PublishDueScheduledVotings(ctx)
+	if err := r.PublishDueScheduledVotings(ctx); err != nil {
+		return err
+	}
+	return r.ExpirePublishedVotings(ctx)
 }
 
 func (r *Repository) PublishDueScheduledVotings(ctx context.Context) error {
@@ -302,12 +357,14 @@ func (r *Repository) PublishDueScheduledVotings(ctx context.Context) error {
 		UPDATE votings
 		SET status = $1,
 		    publication_status = $2,
+		    published_at = COALESCE(published_at, publication_start_at),
+		    min_stop_at = COALESCE(min_stop_at, publication_start_at + interval '7 days'),
 		    updated_at = now()
 		WHERE status = $3
 		  AND publication_status = $4
 		  AND publication_start_at IS NOT NULL
 		  AND publication_start_at <= now()
-		RETURNING id, title, publication_end_at
+		RETURNING id, title, publication_end_at, meeting_id::text
 	`, model.StatusPublished, model.PublicationPublished, model.StatusPendingPublish, model.PublicationScheduled)
 	if err != nil {
 		return err
@@ -316,7 +373,7 @@ func (r *Repository) PublishDueScheduledVotings(ctx context.Context) error {
 	due := []duePublication{}
 	for rows.Next() {
 		var item duePublication
-		if err := rows.Scan(&item.ID, &item.Title, &item.EndAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.Title, &item.EndAt, &item.MeetingID); err != nil {
 			rows.Close()
 			return err
 		}
@@ -329,32 +386,76 @@ func (r *Repository) PublishDueScheduledVotings(ctx context.Context) error {
 	rows.Close()
 
 	for _, item := range due {
+		meetingTitle, err := r.publicationMeetingLabel(ctx, item.MeetingID)
+		if err != nil {
+			return err
+		}
 		message := fmt.Sprintf(
-			"Открыто голосование по опросному листу: %s. Вы можете принять участие в голосовании до %s.",
-			item.Title,
-			formatNotificationDate(item.EndAt),
+			"Вам доступно голосование по собранию: %s.",
+			meetingTitle,
 		)
 		_, err = tx.Exec(ctx, `
-			INSERT INTO notifications (id, user_id, type, title, message, voting_id)
+			INSERT INTO notifications (id, user_id, type, title, message, voting_id, action_label, action_component)
 			SELECT $1 || '-' || owner.user_id,
 			       owner.user_id,
 			       $2,
 			       $3,
 			       $4,
-			       $5
+			       $5,
+			       $6,
+			       $7
 			FROM (
 				SELECT DISTINCT user_id
 				FROM property_owners
 				WHERE status = 'active'
 			) owner
+			WHERE NOT EXISTS (
+				SELECT 1
+				FROM voting_answers va
+				WHERE va.voting_id = $5
+				  AND va.voted_by_user_id = owner.user_id
+			)
 			ON CONFLICT DO NOTHING
-		`, "voting-published-"+item.ID, "voting_published", "Открыто голосование", message, item.ID)
+		`, "voting-published-"+item.ID, "voting_published", "Открыто голосование", message, item.ID, "Перейти к голосованию", "votings_active")
 		if err != nil {
 			return err
 		}
 	}
 
 	return tx.Commit(ctx)
+}
+
+func (r *Repository) ExpirePublishedVotings(ctx context.Context) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE votings
+		SET status = $1,
+		    expired_at = COALESCE(expired_at, now()),
+		    completed_at = COALESCE(completed_at, now()),
+		    updated_at = now()
+		WHERE status = $2
+		  AND publication_end_at IS NOT NULL
+		  AND publication_end_at < now()
+	`, model.StatusExpired, model.StatusPublished)
+	return err
+}
+
+func (r *Repository) StopVoting(ctx context.Context, id string) error {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE votings
+		SET status = $2,
+		    stopped_at = COALESCE(stopped_at, now()),
+		    completed_at = COALESCE(completed_at, now()),
+		    updated_at = now()
+		WHERE id = $1
+		  AND status = $3
+	`, id, model.StatusStopped, model.StatusPublished)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errors.New("voting is not active")
+	}
+	return nil
 }
 
 func (r *Repository) FinalizeApprovalIfMajorityReached(ctx context.Context, votingID string) error {
@@ -470,6 +571,76 @@ func (r *Repository) CouncilMemberCount(ctx context.Context) (int, error) {
 		WHERE r.code IN ('COUNCIL_MEMBER', 'CHAIRMAN')
 	`).Scan(&count)
 	return count, err
+}
+
+func (r *Repository) VotingParticipationStats(ctx context.Context, votingID, userID string) (int, int, bool, error) {
+	var total int
+	if err := r.db.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT user_id)
+		FROM property_owners
+		WHERE status = 'active'
+	`).Scan(&total); err != nil {
+		return 0, 0, false, err
+	}
+
+	var voted int
+	if err := r.db.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT voted_by_user_id)
+		FROM voting_answers
+		WHERE voting_id = $1
+	`, votingID).Scan(&voted); err != nil {
+		return 0, 0, false, err
+	}
+
+	userHasVoted := false
+	if userID != "" {
+		err := r.db.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM voting_answers
+				WHERE voting_id = $1
+				  AND voted_by_user_id = $2
+			)
+		`, votingID, userID).Scan(&userHasVoted)
+		if err != nil {
+			return 0, 0, false, err
+		}
+	}
+
+	return total, voted, userHasVoted, nil
+}
+
+func (r *Repository) hydrateVotingStats(ctx context.Context, voting *model.Voting, userID string) error {
+	total, voted, userHasVoted, err := r.VotingParticipationStats(ctx, voting.ID, userID)
+	if err != nil {
+		return err
+	}
+	voting.TotalOwnersCount = total
+	voting.VotedOwnersCount = voted
+	voting.UserHasVoted = userHasVoted
+	return nil
+}
+
+func (r *Repository) publicationMeetingLabel(ctx context.Context, meetingID *string) (string, error) {
+	if meetingID == nil || *meetingID == "" {
+		return "опросному листу", nil
+	}
+
+	var location string
+	var scheduledAt time.Time
+	err := r.db.QueryRow(ctx, `
+		SELECT location, scheduled_at
+		FROM meetings
+		WHERE id = $1
+	`, *meetingID).Scan(&location, &scheduledAt)
+	if err == pgx.ErrNoRows {
+		return "опросному листу", nil
+	}
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%s, %s", location, datetime.AsAstanaWallTime(scheduledAt).Format("02.01.2006, 15:04")), nil
 }
 
 func (r *Repository) saveVoting(ctx context.Context, voting model.Voting, status string) error {
@@ -655,9 +826,10 @@ type rowScanner interface {
 }
 
 type duePublication struct {
-	ID    string
-	Title string
-	EndAt *time.Time
+	ID        string
+	Title     string
+	EndAt     *time.Time
+	MeetingID *string
 }
 
 func formatNotificationDate(value *time.Time) string {
@@ -675,6 +847,11 @@ func scanVoting(row rowScanner) (model.Voting, error) {
 	var publicationEndAt *time.Time
 	var publicationScheduledAt *time.Time
 	var publicationStatus string
+	var publishedAt *time.Time
+	var minStopAt *time.Time
+	var stoppedAt *time.Time
+	var completedAt *time.Time
+	var expiredAt *time.Time
 	var createdAt *time.Time
 	var updatedAt *time.Time
 	var joinedMeetingID *string
@@ -698,6 +875,11 @@ func scanVoting(row rowScanner) (model.Voting, error) {
 		&voting.PublicationSendNotifications,
 		&publicationScheduledAt,
 		&publicationStatus,
+		&publishedAt,
+		&minStopAt,
+		&stoppedAt,
+		&completedAt,
+		&expiredAt,
 		&createdAt,
 		&updatedAt,
 		&joinedMeetingID,
@@ -717,6 +899,11 @@ func scanVoting(row rowScanner) (model.Voting, error) {
 	voting.PublicationEndAt = datetime.PtrAsAstanaWallTime(publicationEndAt)
 	voting.PublicationScheduledAt = datetime.PtrAsAstanaWallTime(publicationScheduledAt)
 	voting.PublicationStatus = publicationStatus
+	voting.PublishedAt = datetime.PtrAsAstanaWallTime(publishedAt)
+	voting.MinStopAt = datetime.PtrAsAstanaWallTime(minStopAt)
+	voting.StoppedAt = datetime.PtrAsAstanaWallTime(stoppedAt)
+	voting.CompletedAt = datetime.PtrAsAstanaWallTime(completedAt)
+	voting.ExpiredAt = datetime.PtrAsAstanaWallTime(expiredAt)
 	voting.CreatedAt = datetime.PtrAsAstanaWallTime(createdAt)
 	voting.UpdatedAt = datetime.PtrAsAstanaWallTime(updatedAt)
 

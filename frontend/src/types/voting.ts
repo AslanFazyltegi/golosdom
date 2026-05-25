@@ -27,6 +27,14 @@ export type Voting = {
   publication_send_notifications?: boolean;
   publication_scheduled_at?: string | null;
   publication_status?: string | null;
+  published_at?: string | null;
+  min_stop_at?: string | null;
+  stopped_at?: string | null;
+  completed_at?: string | null;
+  expired_at?: string | null;
+  total_owners_count?: number;
+  voted_owners_count?: number;
+  user_has_voted?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
   meeting?: VotingMeeting | null;
@@ -79,7 +87,6 @@ export type VotingSavePayload = VotingDraftPayload | VotingCouncilSubmitPayload;
 
 export type VotingPublicationSchedulePayload = {
   start_at: string;
-  end_at: string;
   send_notifications: boolean;
 };
 
@@ -88,4 +95,7 @@ export type VotingStatus =
   | "council_review"
   | "revision_required"
   | "pending_publish"
-  | "published";
+  | "published"
+  | "stopped"
+  | "completed"
+  | "expired";

@@ -24,7 +24,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	votings, err := h.service.List(strings.TrimSpace(r.URL.Query().Get("status")))
+	votings, err := h.service.List(
+		strings.TrimSpace(r.URL.Query().Get("status")),
+		r.Header.Get("X-User-ID"),
+	)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, err.Error())
 		return
@@ -125,6 +128,8 @@ func (h *Handler) VotingByID(w http.ResponseWriter, r *http.Request) {
 		h.resubmitToCouncil(w, r, id)
 	case action == "schedule-publication" && r.Method == http.MethodPost:
 		h.schedulePublication(w, r, id)
+	case action == "stop" && r.Method == http.MethodPost:
+		h.stopVoting(w, r, id)
 	case action == "approval" && r.Method == http.MethodGet:
 		h.approval(w, r, id)
 	case action == "approval/vote" && r.Method == http.MethodPost:
@@ -189,6 +194,19 @@ func (h *Handler) schedulePublication(w http.ResponseWriter, r *http.Request, id
 	}
 
 	voting, err := h.service.SchedulePublication(id, req)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, voting)
+}
+
+func (h *Handler) stopVoting(w http.ResponseWriter, r *http.Request, id string) {
+	if !requireChairman(w, r) {
+		return
+	}
+
+	voting, err := h.service.StopVoting(id)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, err.Error())
 		return

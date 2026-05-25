@@ -23,11 +23,11 @@ func New(repo *repository.Repository) *Service {
 	return &Service{repo: repo}
 }
 
-func (s *Service) List(status string) ([]model.Voting, error) {
+func (s *Service) List(status, userID string) ([]model.Voting, error) {
 	if status != "" && !validVotingStatus(status) {
 		return nil, errors.New("invalid voting status")
 	}
-	return s.repo.List(context.Background(), status)
+	return s.repo.List(context.Background(), status, userID)
 }
 
 func (s *Service) Get(id string) (model.Voting, error) {
@@ -167,16 +167,46 @@ func (s *Service) SchedulePublication(id string, req dto.SchedulePublicationRequ
 	if err != nil {
 		return model.Voting{}, errors.New("invalid publication start date")
 	}
-	endAt, err := parsePublicationDateTime(req.EndAt)
-	if err != nil {
-		return model.Voting{}, errors.New("invalid publication end date")
-	}
+	endAt := publicationDeadline(voting.Meeting.ScheduledAt)
+	minStopAt := startAt.AddDate(0, 0, minPublicationVotingDays)
 
 	if err := validatePublicationSchedule(voting.Meeting.ScheduledAt, startAt, endAt); err != nil {
 		return model.Voting{}, err
 	}
 
-	if err := s.repo.SchedulePublication(context.Background(), id, startAt, endAt, req.SendNotifications); err != nil {
+	if err := s.repo.SchedulePublication(context.Background(), id, startAt, endAt, minStopAt, true); err != nil {
+		return model.Voting{}, err
+	}
+	return s.repo.Get(context.Background(), id)
+}
+
+func (s *Service) StopVoting(id string) (model.Voting, error) {
+	voting, err := s.repo.Get(context.Background(), id)
+	if err != nil {
+		return model.Voting{}, err
+	}
+	if voting.Status != model.StatusPublished {
+		return model.Voting{}, errors.New("voting is not active")
+	}
+	if voting.PublicationStartAt == nil || voting.PublicationEndAt == nil {
+		return model.Voting{}, errors.New("voting publication dates are not set")
+	}
+
+	now := datetime.Now()
+	minStopAt := voting.PublicationStartAt.AddDate(0, 0, minPublicationVotingDays)
+	if voting.MinStopAt != nil {
+		minStopAt = *voting.MinStopAt
+	}
+	if now.Before(minStopAt) {
+		return model.Voting{}, fmt.Errorf("Остановить можно после минимального срока голосования — %d дней.", minPublicationVotingDays)
+	}
+
+	hasEnoughVotes := voting.VotedOwnersCount > voting.TotalOwnersCount/2
+	if !hasEnoughVotes && now.Before(*voting.PublicationEndAt) {
+		return model.Voting{}, errors.New("Недостаточно голосов для досрочного завершения. Голосование можно завершить автоматически по истечении максимального срока.")
+	}
+
+	if err := s.repo.StopVoting(context.Background(), id); err != nil {
 		return model.Voting{}, err
 	}
 	return s.repo.Get(context.Background(), id)
@@ -343,27 +373,24 @@ func parsePublicationDateTime(value string) (time.Time, error) {
 func validatePublicationSchedule(meetingAt, startAt, endAt time.Time) error {
 	meetingDate := dateOnly(meetingAt)
 	earliestStartDate := meetingDate.AddDate(0, 0, 1)
-	finalDeadlineDate := meetingDate.AddDate(0, 2, 0)
-	finalDeadlineEnd := endOfDay(finalDeadlineDate)
-	latestStartDate := finalDeadlineDate.AddDate(0, 0, -minPublicationVotingDays)
+	finalDeadlineEnd := publicationDeadline(meetingAt)
+	latestStartDate := dateOnly(finalDeadlineEnd).AddDate(0, 0, -minPublicationVotingDays)
 
 	if startAt.Before(earliestStartDate) {
 		return fmt.Errorf("Дата начала не может быть раньше %s.", formatPublicationDate(earliestStartDate))
 	}
 	if startAt.After(endOfDay(latestStartDate)) {
-		return errors.New("Нельзя выбрать эту дату начала: 7 дней голосования не помещаются в допустимый срок.")
+		return errors.New("Нельзя запланировать публикацию на эту дату: голосование должно длиться не менее 7 дней и завершиться не позднее 2 месяцев с даты собрания.")
 	}
 	if startAt.AddDate(0, 0, minPublicationVotingDays).After(finalDeadlineEnd) {
-		return errors.New("Нельзя выбрать эту дату начала: 7 дней голосования не помещаются в допустимый срок.")
-	}
-	if endAt.Before(startAt.AddDate(0, 0, minPublicationVotingDays)) {
-		return fmt.Errorf("Минимальная длительность голосования — %d дней.", minPublicationVotingDays)
-	}
-	if endAt.After(finalDeadlineEnd) {
-		return fmt.Errorf("Дата завершения не может быть позже %s.", formatPublicationDate(finalDeadlineDate))
+		return errors.New("Нельзя запланировать публикацию на эту дату: голосование должно длиться не менее 7 дней и завершиться не позднее 2 месяцев с даты собрания.")
 	}
 
 	return nil
+}
+
+func publicationDeadline(meetingAt time.Time) time.Time {
+	return endOfDay(dateOnly(meetingAt).AddDate(0, 2, 0))
 }
 
 func isPublicationSchedulingExpired(voting model.Voting, now time.Time) bool {
@@ -409,7 +436,16 @@ func normalizeID(id *string) *string {
 
 func validVotingStatus(status string) bool {
 	switch status {
-	case model.StatusDraft, model.StatusCouncilReview, model.StatusRevisionRequired, model.StatusPendingPublish, model.StatusPublished:
+	case model.StatusDraft,
+		model.StatusCouncilReview,
+		model.StatusRevisionRequired,
+		model.StatusPendingPublish,
+		model.StatusPublished,
+		model.StatusStopped,
+		model.StatusCompleted,
+		model.StatusExpired,
+		"active",
+		"past":
 		return true
 	default:
 		return false

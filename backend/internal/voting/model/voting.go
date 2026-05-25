@@ -8,6 +8,9 @@ const (
 	StatusRevisionRequired = "revision_required"
 	StatusPendingPublish   = "pending_publish"
 	StatusPublished        = "published"
+	StatusStopped          = "stopped"
+	StatusCompleted        = "completed"
+	StatusExpired          = "expired"
 
 	PublicationNotScheduled = "not_scheduled"
 	PublicationScheduled    = "scheduled"
@@ -36,6 +39,14 @@ type Voting struct {
 	PublicationSendNotifications bool       `json:"publication_send_notifications"`
 	PublicationScheduledAt       *time.Time `json:"publication_scheduled_at,omitempty"`
 	PublicationStatus            string     `json:"publication_status,omitempty"`
+	PublishedAt                  *time.Time `json:"published_at,omitempty"`
+	MinStopAt                    *time.Time `json:"min_stop_at,omitempty"`
+	StoppedAt                    *time.Time `json:"stopped_at,omitempty"`
+	CompletedAt                  *time.Time `json:"completed_at,omitempty"`
+	ExpiredAt                    *time.Time `json:"expired_at,omitempty"`
+	TotalOwnersCount             int        `json:"total_owners_count"`
+	VotedOwnersCount             int        `json:"voted_owners_count"`
+	UserHasVoted                 bool       `json:"user_has_voted"`
 	CreatedAt                    *time.Time `json:"created_at,omitempty"`
 	UpdatedAt                    *time.Time `json:"updated_at,omitempty"`
 	Meeting                      *Meeting   `json:"meeting,omitempty"`
