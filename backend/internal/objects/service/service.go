@@ -26,9 +26,9 @@ func (s *Service) GetObjects(
 	userID string,
 ) (any, error) {
 
-	role = strings.ToUpper(role)
+	role = strings.ToUpper(strings.TrimSpace(role))
 
-	if role == "CHAIRMAN" {
+	if isBuildingRole(role) {
 
 		building, err := s.repo.GetBuilding(
 			context.Background(),
@@ -41,11 +41,12 @@ func (s *Service) GetObjects(
 		return dto.BuildingResponse{
 			Type: "building",
 
-			City:         building.City,
-			District:     building.District,
-			BuildingName: building.BuildingName,
-			Street:       building.Street,
-			HouseNumber:  building.HouseNumber,
+			City:          building.City,
+			District:      building.District,
+			BuildingName:  building.BuildingName,
+			Street:        building.Street,
+			HouseNumber:   building.HouseNumber,
+			HouseFraction: building.HouseFraction,
 
 			FloorsCount:    building.FloorsCount,
 			EntrancesCount: building.EntrancesCount,
@@ -86,4 +87,13 @@ func (s *Service) GetObjects(
 	}
 
 	return result, nil
+}
+
+func isBuildingRole(role string) bool {
+	switch role {
+	case "CHAIRMAN", "COUNCIL_MEMBER", "AUDITOR", "SYSTEM_ADMIN":
+		return true
+	default:
+		return false
+	}
 }

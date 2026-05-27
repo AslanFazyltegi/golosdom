@@ -3,19 +3,20 @@ package dto
 type BuildingResponse struct {
 	Type string `json:"type"`
 
-	City         string `json:"city"`
-	District     string `json:"district"`
-	BuildingName string `json:"building_name"`
-	Street       string `json:"street"`
-	HouseNumber  string `json:"house_number"`
+	City          string  `json:"city"`
+	District      *string `json:"district"`
+	BuildingName  *string `json:"building_name"`
+	Street        string  `json:"street"`
+	HouseNumber   string  `json:"house_number"`
+	HouseFraction *string `json:"house_fraction"`
 
-	FloorsCount    int `json:"floors_count"`
-	EntrancesCount int `json:"entrances_count"`
+	FloorsCount    *int `json:"floors_count"`
+	EntrancesCount *int `json:"entrances_count"`
 
-	ApartmentsCount int `json:"apartments_count"`
-	CommercialCount int `json:"commercial_units_count"`
-	StorageCount    int `json:"storerooms_count"`
-	ParkingCount    int `json:"parking_spaces_count"`
+	ApartmentsCount *int `json:"apartments_count"`
+	CommercialCount *int `json:"commercial_units_count"`
+	StorageCount    *int `json:"storerooms_count"`
+	ParkingCount    *int `json:"parking_spaces_count"`
 }
 
 type PropertyResponse struct {

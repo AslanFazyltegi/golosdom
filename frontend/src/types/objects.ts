@@ -1,16 +1,17 @@
 export type BuildingObject = {
   type: "building";
   city: string;
-  district: string;
-  building_name: string,
+  district: string | null;
+  building_name: string | null;
   street: string;
   house_number: string;
-  floors_count: number;
-  entrances_count: number;
-  apartments_count: number;
-  commercial_units_count: number;
-  storerooms_count: number;
-  parking_spaces_count: number;
+  house_fraction: string | null;
+  floors_count: number | null;
+  entrances_count: number | null;
+  apartments_count: number | null;
+  commercial_units_count: number | null;
+  storerooms_count: number | null;
+  parking_spaces_count: number | null;
 };
 
 export type PropertyObject = {

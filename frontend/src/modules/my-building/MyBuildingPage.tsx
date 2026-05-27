@@ -9,16 +9,19 @@ type OwnerObject = {
   status: string;
 };
 
+const BUILDING_INFO_ROLES = new Set([
+  "CHAIRMAN",
+  "COUNCIL_MEMBER",
+  "AUDITOR",
+  "SYSTEM_ADMIN",
+]);
+
 export function MyBuildingPage({ activeRole, objects }: CabinetModuleProps) {
   if (!objects) {
     return <Placeholder title="Мои объекты" text="Загрузка данных..." />;
   }
 
-  if (
-    activeRole === "CHAIRMAN" ||
-    activeRole === "COUNCIL_MEMBER" ||
-    activeRole === "AUDITOR"
-  ) {
+  if (BUILDING_INFO_ROLES.has(activeRole.trim().toUpperCase())) {
     const building = objects as BuildingObjects;
 
     return (
@@ -33,7 +36,7 @@ export function MyBuildingPage({ activeRole, objects }: CabinetModuleProps) {
             <InfoCard label="Район" value={building.district} />
             <InfoCard label="Наименование ЖК" value={building.building_name} />
             <InfoCard label="Улица" value={building.street} />
-            <InfoCard label="Дом" value={building.house_number} />
+            <InfoCard label="Дом" value={formatHouse(building)} />
             <InfoCard label="Этажность" value={building.floors_count} />
             <InfoCard label="Подъезды" value={building.entrances_count} />
             <InfoCard label="Квартиры" value={building.apartments_count} />
@@ -83,9 +86,28 @@ function InfoCard({ label, value }: { label: string; value: unknown }) {
   return (
     <div className="rounded-xl bg-slate-50 p-4">
       <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-1 text-xl font-bold">{String(value ?? "—")}</p>
+      <p className="mt-1 text-xl font-bold">{formatValue(value)}</p>
     </div>
   );
+}
+
+function formatHouse(building: BuildingObjects) {
+  return [stringValue(building.house_number), stringValue(building.house_fraction)]
+    .filter(Boolean)
+    .join("/");
+}
+
+function formatValue(value: unknown) {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "string" && value.trim() === "") return "—";
+
+  return String(value);
+}
+
+function stringValue(value: unknown) {
+  if (typeof value !== "string") return "";
+
+  return value.trim();
 }
 
 function propertyTypeLabel(type: string) {
