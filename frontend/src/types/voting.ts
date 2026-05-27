@@ -39,9 +39,14 @@ export type Voting = {
   publication_status?: string | null;
   published_at?: string | null;
   min_stop_at?: string | null;
+  can_stop?: boolean;
+  stop_available_at?: string | null;
+  stop_block_reason?: string | null;
   stopped_at?: string | null;
   completed_at?: string | null;
   expired_at?: string | null;
+  completion_reason?: string | null;
+  completion_type?: "manual_stop" | "deadline_expired" | string | null;
   total_owners_count?: number;
   voted_owners_count?: number;
   user_has_voted?: boolean;
@@ -83,6 +88,7 @@ export type VotingDraftPayload = {
   title: string;
   description: string;
   category: VotingCategory;
+  meeting_id?: string | null;
   questions: Array<{
     id: string;
     text: string;
@@ -99,6 +105,10 @@ export type VotingSavePayload = VotingDraftPayload | VotingCouncilSubmitPayload;
 export type VotingPublicationSchedulePayload = {
   start_at: string;
   send_notifications: boolean;
+};
+
+export type StopVotingPayload = {
+  reason: string;
 };
 
 export type VotingResult = {

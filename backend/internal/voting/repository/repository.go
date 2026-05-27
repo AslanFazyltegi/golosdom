@@ -30,6 +30,7 @@ func (r *Repository) List(ctx context.Context, status, userID string) ([]model.V
 		return nil, err
 	}
 
+	now := datetime.Now()
 	rows, err := r.db.Query(ctx, `
 		SELECT v.id, v.title, v.description, v.status, v.created_by,
 		       COALESCE(NULLIF(v.category, ''), 'general'),
@@ -39,36 +40,42 @@ func (r *Repository) List(ctx context.Context, status, userID string) ([]model.V
 		       v.publication_scheduled_at,
 		       COALESCE(v.publication_status, 'not_scheduled'),
 		       v.published_at, v.min_stop_at, v.stopped_at, v.completed_at, v.expired_at,
+		       COALESCE(v.completion_reason, ''), COALESCE(v.completion_type, ''),
 		       v.created_at, v.updated_at,
 		       m.id::text, m.initiator_name, m.scheduled_at, m.location, m.agenda, m.meeting_form
 		FROM votings v
 		LEFT JOIN meetings m ON m.id = v.meeting_id
 		WHERE (
 		  $1 = ''
-		  OR ($1 = 'published' AND v.status IN ('published', 'stopped', 'completed', 'expired'))
+		  OR (
+		    $1 = 'published'
+		    AND v.status IN ('published', 'stopped', 'completed', 'expired')
+		    AND COALESCE(v.publication_status, 'not_scheduled') = 'published'
+		    AND v.published_at IS NOT NULL
+		  )
 		  OR (
 		    $1 = 'active'
 		    AND v.status = 'published'
 		    AND COALESCE(v.publication_status, 'not_scheduled') = 'published'
 		    AND v.publication_start_at IS NOT NULL
 		    AND v.publication_end_at IS NOT NULL
-		    AND v.publication_start_at <= now()
-		    AND v.publication_end_at >= now()
+		    AND v.publication_start_at <= $2
+		    AND v.publication_end_at >= $2
 		  )
 		  OR (
 		    $1 IN ('past', 'completed')
 		    AND (
 		      v.status IN ('stopped', 'completed', 'expired')
-		      OR (v.status = 'published' AND v.publication_end_at IS NOT NULL AND v.publication_end_at < now())
+		      OR (v.status = 'published' AND v.publication_end_at IS NOT NULL AND v.publication_end_at < $2)
 		    )
 		  )
-		  OR v.status = $1
+		  OR ($1 NOT IN ('published', 'active', 'past', 'completed') AND v.status = $1)
 		)
 		ORDER BY
 		  CASE WHEN $1 IN ('past', 'completed') THEN COALESCE(v.completed_at, v.stopped_at, v.expired_at, v.publication_end_at, v.updated_at, v.created_at) END DESC,
 		  CASE WHEN $1 IN ('published', 'active') THEN COALESCE(v.published_at, v.publication_start_at, v.updated_at, v.created_at) END DESC,
 		  COALESCE(v.updated_at, v.created_at) DESC
-	`, status)
+	`, status, now)
 	if err != nil {
 		return nil, err
 	}
@@ -90,6 +97,7 @@ func (r *Repository) List(ctx context.Context, status, userID string) ([]model.V
 		if err := r.hydrateVotingStats(ctx, &voting, userID); err != nil {
 			return nil, err
 		}
+		enrichStopAvailability(&voting, now)
 		votings = append(votings, voting)
 	}
 
@@ -114,6 +122,7 @@ func (r *Repository) GetForUser(ctx context.Context, id, userID string) (model.V
 		       v.publication_scheduled_at,
 		       COALESCE(v.publication_status, 'not_scheduled'),
 		       v.published_at, v.min_stop_at, v.stopped_at, v.completed_at, v.expired_at,
+		       COALESCE(v.completion_reason, ''), COALESCE(v.completion_type, ''),
 		       v.created_at, v.updated_at,
 		       m.id::text, m.initiator_name, m.scheduled_at, m.location, m.agenda, m.meeting_form
 		FROM votings v
@@ -134,6 +143,7 @@ func (r *Repository) GetForUser(ctx context.Context, id, userID string) (model.V
 	if err := r.hydrateVotingStats(ctx, &voting, userID); err != nil {
 		return model.Voting{}, err
 	}
+	enrichStopAvailability(&voting, datetime.Now())
 
 	return voting, nil
 }
@@ -196,6 +206,8 @@ func (r *Repository) SchedulePublication(ctx context.Context, id string, startAt
 		    stopped_at = NULL,
 		    completed_at = NULL,
 		    expired_at = NULL,
+		    completion_reason = NULL,
+		    completion_type = NULL,
 		    updated_at = now()
 		WHERE id = $1 AND status = $6
 	`, id, startAt, endAt, sendNotifications, model.PublicationScheduled, model.StatusPendingPublish, minStopAt)
@@ -332,13 +344,14 @@ func (r *Repository) syncReviewStatuses(ctx context.Context) error {
 	if err := r.MarkExpiredReviews(ctx); err != nil {
 		return err
 	}
-	if err := r.PublishDueScheduledVotings(ctx); err != nil {
+	now := datetime.Now()
+	if err := r.PublishDueScheduledVotings(ctx, now); err != nil {
 		return err
 	}
-	return r.ExpirePublishedVotings(ctx)
+	return r.ExpirePublishedVotings(ctx, now)
 }
 
-func (r *Repository) PublishDueScheduledVotings(ctx context.Context) error {
+func (r *Repository) PublishDueScheduledVotings(ctx context.Context, now time.Time) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -350,14 +363,14 @@ func (r *Repository) PublishDueScheduledVotings(ctx context.Context) error {
 		SET status = $1,
 		    publication_status = $2,
 		    published_at = COALESCE(published_at, publication_start_at),
-		    min_stop_at = COALESCE(min_stop_at, publication_start_at + interval '7 days'),
-		    updated_at = now()
+		    min_stop_at = COALESCE(min_stop_at, COALESCE(published_at, publication_start_at) + interval '7 days'),
+		    updated_at = $5
 		WHERE status = $3
 		  AND publication_status = $4
 		  AND publication_start_at IS NOT NULL
-		  AND publication_start_at <= now()
+		  AND publication_start_at <= $5
 		RETURNING id, title, publication_end_at, meeting_id::text
-	`, model.StatusPublished, model.PublicationPublished, model.StatusPendingPublish, model.PublicationScheduled)
+	`, model.StatusPublished, model.PublicationPublished, model.StatusPendingPublish, model.PublicationScheduled, now)
 	if err != nil {
 		return err
 	}
@@ -417,30 +430,34 @@ func (r *Repository) PublishDueScheduledVotings(ctx context.Context) error {
 	return tx.Commit(ctx)
 }
 
-func (r *Repository) ExpirePublishedVotings(ctx context.Context) error {
+func (r *Repository) ExpirePublishedVotings(ctx context.Context, now time.Time) error {
 	_, err := r.db.Exec(ctx, `
 		UPDATE votings
 		SET status = $1,
-		    expired_at = COALESCE(expired_at, now()),
-		    completed_at = COALESCE(completed_at, now()),
-		    updated_at = now()
+		    expired_at = COALESCE(expired_at, $3),
+		    completed_at = COALESCE(completed_at, $3),
+		    completion_reason = COALESCE(NULLIF(completion_reason, ''), $4),
+		    completion_type = COALESCE(NULLIF(completion_type, ''), $5),
+		    updated_at = $3
 		WHERE status = $2
 		  AND publication_end_at IS NOT NULL
-		  AND publication_end_at < now()
-	`, model.StatusExpired, model.StatusPublished)
+		  AND publication_end_at < $3
+	`, model.StatusCompleted, model.StatusPublished, now, model.DeadlineExpiredReason, model.CompletionTypeDeadlineExpired)
 	return err
 }
 
-func (r *Repository) StopVoting(ctx context.Context, id string) error {
+func (r *Repository) StopVoting(ctx context.Context, id string, stoppedAt time.Time, reason string) error {
 	tag, err := r.db.Exec(ctx, `
 		UPDATE votings
 		SET status = $2,
-		    stopped_at = COALESCE(stopped_at, now()),
-		    completed_at = COALESCE(completed_at, now()),
-		    updated_at = now()
+		    stopped_at = COALESCE(stopped_at, $4),
+		    completed_at = COALESCE(completed_at, $4),
+		    completion_reason = $5,
+		    completion_type = $6,
+		    updated_at = $4
 		WHERE id = $1
 		  AND status = $3
-	`, id, model.StatusStopped, model.StatusPublished)
+	`, id, model.StatusStopped, model.StatusPublished, stoppedAt, reason, model.CompletionTypeManualStop)
 	if err != nil {
 		return err
 	}
@@ -611,6 +628,43 @@ func (r *Repository) hydrateVotingStats(ctx context.Context, voting *model.Votin
 	voting.VotedOwnersCount = voted
 	voting.UserHasVoted = userHasVoted
 	return nil
+}
+
+func enrichStopAvailability(voting *model.Voting, now time.Time) {
+	voting.CanStop = false
+	voting.StopAvailableAt = nil
+	voting.StopBlockReason = ""
+
+	startAt := actualVotingStartAt(*voting)
+	if startAt == nil {
+		if voting.Status == model.StatusPublished {
+			voting.StopBlockReason = "Для остановки голосования не хватает даты публикации."
+		}
+		return
+	}
+
+	stopAvailableAt := startAt.AddDate(0, 0, 7)
+	voting.StopAvailableAt = &stopAvailableAt
+
+	if voting.Status != model.StatusPublished {
+		return
+	}
+	if voting.PublicationEndAt != nil && now.After(*voting.PublicationEndAt) {
+		return
+	}
+	if now.Before(stopAvailableAt) {
+		voting.StopBlockReason = "Остановить можно после минимального срока голосования — 7 дней."
+		return
+	}
+
+	voting.CanStop = true
+}
+
+func actualVotingStartAt(voting model.Voting) *time.Time {
+	if voting.PublishedAt != nil {
+		return voting.PublishedAt
+	}
+	return voting.PublicationStartAt
 }
 
 func (r *Repository) ownerVotingSubject(ctx context.Context, tx pgx.Tx, userID string) (string, string, error) {
@@ -1113,6 +1167,8 @@ func scanVoting(row rowScanner) (model.Voting, error) {
 	var stoppedAt *time.Time
 	var completedAt *time.Time
 	var expiredAt *time.Time
+	var completionReason string
+	var completionType string
 	var createdAt *time.Time
 	var updatedAt *time.Time
 	var joinedMeetingID *string
@@ -1142,6 +1198,8 @@ func scanVoting(row rowScanner) (model.Voting, error) {
 		&stoppedAt,
 		&completedAt,
 		&expiredAt,
+		&completionReason,
+		&completionType,
 		&createdAt,
 		&updatedAt,
 		&joinedMeetingID,
@@ -1166,6 +1224,8 @@ func scanVoting(row rowScanner) (model.Voting, error) {
 	voting.StoppedAt = datetime.PtrAsAstanaWallTime(stoppedAt)
 	voting.CompletedAt = datetime.PtrAsAstanaWallTime(completedAt)
 	voting.ExpiredAt = datetime.PtrAsAstanaWallTime(expiredAt)
+	voting.CompletionReason = completionReason
+	voting.CompletionType = completionType
 	voting.CreatedAt = datetime.PtrAsAstanaWallTime(createdAt)
 	voting.UpdatedAt = datetime.PtrAsAstanaWallTime(updatedAt)
 

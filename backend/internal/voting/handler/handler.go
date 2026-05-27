@@ -238,7 +238,13 @@ func (h *Handler) stopVoting(w http.ResponseWriter, r *http.Request, id string) 
 		return
 	}
 
-	voting, err := h.service.StopVoting(id)
+	var req dto.StopVotingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	voting, err := h.service.StopVoting(id, req.Reason)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, err.Error())
 		return

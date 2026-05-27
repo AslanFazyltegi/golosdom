@@ -33,6 +33,10 @@ type SchedulePublicationRequest struct {
 	SendNotifications bool   `json:"send_notifications"`
 }
 
+type StopVotingRequest struct {
+	Reason string `json:"reason"`
+}
+
 type OwnerVoteAnswerRequest struct {
 	QuestionID string `json:"question_id"`
 	Answer     string `json:"answer"`

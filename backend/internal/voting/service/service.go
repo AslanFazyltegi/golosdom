@@ -186,7 +186,12 @@ func (s *Service) SchedulePublication(id string, req dto.SchedulePublicationRequ
 	return s.repo.Get(context.Background(), id)
 }
 
-func (s *Service) StopVoting(id string) (model.Voting, error) {
+func (s *Service) StopVoting(id, reason string) (model.Voting, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		return model.Voting{}, errors.New("Укажите причину остановки голосования.")
+	}
+
 	voting, err := s.repo.Get(context.Background(), id)
 	if err != nil {
 		return model.Voting{}, err
@@ -194,25 +199,22 @@ func (s *Service) StopVoting(id string) (model.Voting, error) {
 	if voting.Status != model.StatusPublished {
 		return model.Voting{}, errors.New("voting is not active")
 	}
-	if voting.PublicationStartAt == nil || voting.PublicationEndAt == nil {
+	startAt := actualVotingStartAt(voting)
+	if startAt == nil || voting.PublicationEndAt == nil {
 		return model.Voting{}, errors.New("voting publication dates are not set")
 	}
 
 	now := datetime.Now()
-	minStopAt := voting.PublicationStartAt.AddDate(0, 0, minPublicationVotingDays)
-	if voting.MinStopAt != nil {
-		minStopAt = *voting.MinStopAt
-	}
+	minStopAt := startAt.AddDate(0, 0, minPublicationVotingDays)
 	if now.Before(minStopAt) {
 		return model.Voting{}, fmt.Errorf("Остановить можно после минимального срока голосования — %d дней.", minPublicationVotingDays)
 	}
 
-	hasEnoughVotes := voting.VotedOwnersCount > voting.TotalOwnersCount/2
-	if !hasEnoughVotes && now.Before(*voting.PublicationEndAt) {
-		return model.Voting{}, errors.New("Недостаточно голосов для досрочного завершения. Голосование можно завершить автоматически по истечении максимального срока.")
+	if now.After(*voting.PublicationEndAt) {
+		return model.Voting{}, errors.New("voting is not active")
 	}
 
-	if err := s.repo.StopVoting(context.Background(), id); err != nil {
+	if err := s.repo.StopVoting(context.Background(), id, now, reason); err != nil {
 		return model.Voting{}, err
 	}
 	return s.repo.Get(context.Background(), id)
@@ -622,6 +624,13 @@ func validatePublicationSchedule(meetingAt, startAt, endAt time.Time) error {
 	}
 
 	return nil
+}
+
+func actualVotingStartAt(voting model.Voting) *time.Time {
+	if voting.PublishedAt != nil {
+		return voting.PublishedAt
+	}
+	return voting.PublicationStartAt
 }
 
 func publicationDeadline(meetingAt time.Time) time.Time {

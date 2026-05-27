@@ -8,6 +8,7 @@ import type {
   VotingPublicationSchedulePayload,
   VotingResult,
   VotingSavePayload,
+  StopVotingPayload,
 } from "@/types/voting";
 
 const API_BASE_URL = "http://localhost:8080";
@@ -136,9 +137,10 @@ export function scheduleVotingPublication(
   }) as Promise<Voting>;
 }
 
-export function stopVoting(id: string): Promise<Voting> {
+export function stopVoting(id: string, payload: StopVotingPayload): Promise<Voting> {
   return apiFetch(`/api/v1/votings/${id}/stop`, {
     method: "POST",
+    body: JSON.stringify(payload),
   }) as Promise<Voting>;
 }
 

@@ -225,9 +225,6 @@ function OwnerVotingCard({
   const [results, setResults] = useState<VotingResult[]>([]);
   const [resultsError, setResultsError] = useState("");
   const [downloading, setDownloading] = useState(false);
-  const questions = voting.questions ?? [];
-  const visibleQuestions = expanded ? questions : questions.slice(0, 3);
-  const hasMoreQuestions = questions.length > visibleQuestions.length;
   const hasVoted = Boolean(voting.user_has_voted);
 
   useEffect(() => {
@@ -294,21 +291,6 @@ function OwnerVotingCard({
         )}
       </div>
 
-      {mode === "completed" && (
-        <div className="mb-4 grid gap-2">
-          {visibleQuestions.map((question, index) => (
-            <div key={`${question.id}-${index}`} className="rounded-md border p-3">
-              <p className="font-medium">
-                {index + 1}. {question.text}
-              </p>
-            </div>
-          ))}
-          {hasMoreQuestions && (
-            <p className="text-sm text-slate-500">Еще вопросов: {questions.length - visibleQuestions.length}</p>
-          )}
-        </div>
-      )}
-
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
@@ -317,7 +299,7 @@ function OwnerVotingCard({
         {expanded ? "Свернуть" : "Развернуть"}
       </button>
 
-      {(mode === "completed" || expanded) && (
+      {expanded && (
         <VotingResultsBlock results={results} error={resultsError} />
       )}
 
@@ -332,7 +314,7 @@ function OwnerVotingCard({
             </Button>
           </>
         )}
-        {hasVoted && (
+        {hasVoted && (mode !== "completed" || expanded) && (
           <Button onClick={onViewAnswers}>Посмотреть мои ответы</Button>
         )}
       </div>
@@ -655,16 +637,17 @@ function getVotingStatusLabel(status: string) {
     published: "Идет голосование",
     stopped: "Остановлено",
     completed: "Завершено",
-    expired: "Срок истек",
+    expired: "Завершено",
   };
   return labels[status] || status;
 }
 
 function getCompletionReason(voting: Voting) {
-  if (voting.status === "stopped" || voting.stopped_at) {
+  if (voting.completion_reason) return voting.completion_reason;
+  if (voting.completion_type === "manual_stop" || voting.status === "stopped") {
     return "Остановлено председателем";
   }
-  return "Истёк крайний срок голосования";
+  return "Истёк установленный законодательством срок для сбора голосов.";
 }
 
 function formatCompletionDate(voting: Voting) {

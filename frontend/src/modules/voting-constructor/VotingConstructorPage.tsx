@@ -262,7 +262,9 @@ function VotingWizard({
   }
 
   async function saveDraft() {
-    return persistVoting(buildDraftPayload(title, description, votingCategory, questions));
+    return persistVoting(
+      buildDraftPayload(title, description, votingCategory, meetingID, questions),
+    );
   }
 
   async function saveForCouncilSubmit() {
@@ -704,7 +706,25 @@ function VotingPublishedPage({ isChairman }: { isChairman: boolean }) {
   }
 
   useEffect(() => {
-    void load();
+    let active = true;
+
+    fetchVotings("published")
+      .then((items) => {
+        if (!active) return;
+        setVotings(Array.isArray(items) ? items : []);
+        setError("");
+      })
+      .catch((err) => {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Не удалось загрузить опубликованные опросники");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
@@ -868,6 +888,9 @@ function VotingCard({
         <div>
           <h2 className="text-xl font-semibold">{voting.title}</h2>
           <p className="text-sm text-slate-500">Версия {voting.version || 1}</p>
+          <p className="text-sm text-slate-500">
+            Категория: {getVotingCategoryLabel(voting.category)}
+          </p>
           {voting.description && <p className="mt-1 text-slate-600">{voting.description}</p>}
         </div>
         <div className="flex flex-wrap gap-2">{children}</div>
@@ -908,16 +931,26 @@ function PublishedVotingCard({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [error, setError] = useState("");
+  const [stopReason, setStopReason] = useState("");
+  const [stopReasonError, setStopReasonError] = useState("");
   const stopState = getVotingStopState(voting);
   const questions = voting.questions ?? [];
   const publishedAt = voting.published_at ?? voting.publication_start_at;
 
   async function confirmStop() {
+    const reason = stopReason.trim();
+    if (!reason) {
+      setStopReasonError("Укажите причину остановки голосования.");
+      return;
+    }
+
     try {
       setStopping(true);
       setError("");
-      await stopVoting(voting.id);
+      setStopReasonError("");
+      await stopVoting(voting.id, { reason });
       setConfirmOpen(false);
+      setStopReason("");
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось остановить голосование");
@@ -932,12 +965,15 @@ function PublishedVotingCard({
         <div>
           <h2 className="text-xl font-semibold">{voting.title}</h2>
           <p className="text-sm text-slate-500">Версия {voting.version || 1}</p>
+          <p className="text-sm text-slate-500">
+            Категория: {getVotingCategoryLabel(voting.category)}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => setExpanded((value) => !value)}>
             {expanded ? "Свернуть" : "Развернуть"}
           </Button>
-          {isChairman && stopState.showButton && (
+          {isChairman && voting.status === "published" && stopState.showButton && (
             <Button
               variant="primary"
               onClick={() => setConfirmOpen(true)}
@@ -965,6 +1001,11 @@ function PublishedVotingCard({
           {stopState.message}
         </p>
       )}
+      {voting.status !== "published" && getVotingCompletionReason(voting) && (
+        <p className="mb-4 rounded-md bg-slate-50 p-3 text-sm text-slate-700">
+          Причина завершения: {getVotingCompletionReason(voting)}
+        </p>
+      )}
       {error && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 
       {expanded && (
@@ -976,7 +1017,7 @@ function PublishedVotingCard({
             <p>Обновлено: {voting.updated_at ? formatDate(voting.updated_at) : "Не указано"}</p>
             <p>Минимальная дата остановки: {stopState.minStopAt ? formatDate(stopState.minStopAt) : "Не указана"}</p>
             {voting.stopped_at && <p>Остановлено: {formatDate(voting.stopped_at)}</p>}
-            {voting.expired_at && <p>Срок истек: {formatDate(voting.expired_at)}</p>}
+            {voting.completed_at && <p>Завершено: {formatDate(voting.completed_at)}</p>}
           </div>
         </div>
       )}
@@ -984,7 +1025,17 @@ function PublishedVotingCard({
       {confirmOpen && (
         <ConfirmStopModal
           submitting={stopping}
-          onCancel={() => setConfirmOpen(false)}
+          reason={stopReason}
+          reasonError={stopReasonError}
+          onReasonChange={(value) => {
+            setStopReason(value);
+            if (stopReasonError) setStopReasonError("");
+          }}
+          onCancel={() => {
+            setConfirmOpen(false);
+            setStopReason("");
+            setStopReasonError("");
+          }}
           onConfirm={confirmStop}
         />
       )}
@@ -994,10 +1045,16 @@ function PublishedVotingCard({
 
 function ConfirmStopModal({
   submitting,
+  reason,
+  reasonError,
+  onReasonChange,
   onCancel,
   onConfirm,
 }: {
   submitting: boolean;
+  reason: string;
+  reasonError: string;
+  onReasonChange: (value: string) => void;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -1006,15 +1063,25 @@ function ConfirmStopModal({
       <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
         <h2 className="mb-3 text-xl font-semibold">Остановить голосование?</h2>
         <p className="text-slate-600">
-          После остановки собственники больше не смогут голосовать по этому опросному листу.
-          Действие нельзя отменить.
+          Вы уверены, что хотите остановить голосование? После остановки собственники больше не смогут голосовать.
         </p>
+        <label className="mt-4 block text-sm font-medium text-slate-700" htmlFor="stop-reason">
+          Причина остановки
+        </label>
+        <textarea
+          id="stop-reason"
+          className="mt-2 min-h-24 w-full rounded-md border px-3 py-2 text-sm outline-none focus:border-blue-500"
+          value={reason}
+          onChange={(event) => onReasonChange(event.target.value)}
+          disabled={submitting}
+        />
+        {reasonError && <p className="mt-2 text-sm text-red-600">{reasonError}</p>}
         <div className="mt-6 flex justify-end gap-3">
           <Button onClick={onCancel} disabled={submitting}>
             Отмена
           </Button>
           <Button variant="primary" onClick={onConfirm} disabled={submitting}>
-            Да, остановить
+            Остановить голосование
           </Button>
         </div>
       </div>
@@ -1609,12 +1676,14 @@ function buildDraftPayload(
   title: string,
   description: string,
   category: VotingCategory,
+  meetingID: string,
   questions: VotingQuestion[],
 ): VotingDraftPayload {
   return {
     title,
     description,
     category,
+    meeting_id: meetingID || null,
     questions: buildQuestionPayload(questions),
   };
 }
@@ -1627,7 +1696,7 @@ function buildCouncilSubmitPayload(
   questions: VotingQuestion[],
 ): VotingCouncilSubmitPayload {
   return {
-    ...buildDraftPayload(title, description, category, questions),
+    ...buildDraftPayload(title, description, category, meetingID, questions),
     meeting_id: meetingID || null,
   };
 }
@@ -1671,7 +1740,7 @@ function normalizeVotingCategory(category?: string | null): VotingCategory {
     : DEFAULT_VOTING_CATEGORY;
 }
 
-function getVotingCategoryLabel(category: VotingCategory) {
+function getVotingCategoryLabel(category?: string | null) {
   return (
     VOTING_CATEGORY_OPTIONS.find((option) => option.value === category)?.label ??
     VOTING_CATEGORY_OPTIONS[0].label
@@ -1810,12 +1879,10 @@ function isPublicationSchedulingExpired(voting: Voting) {
 
 function getVotingStopState(voting: Voting) {
   const status = voting.status;
-  const startAt = parseServerDateTime(voting.publication_start_at);
-  const deadlineAt = parseServerDateTime(voting.publication_end_at);
+  const startAt = parseServerDateTime(voting.published_at ?? voting.publication_start_at);
   const minStopAt =
-    parseServerDateTime(voting.min_stop_at) ??
+    parseServerDateTime(voting.stop_available_at) ??
     (startAt ? addAstanaDays(startAt, MIN_VOTING_DAYS) : null);
-  const now = new Date();
 
   if (status === "stopped") {
     return { showButton: true, canStop: false, minStopAt, message: "" };
@@ -1825,39 +1892,23 @@ function getVotingStopState(voting: Voting) {
     return { showButton: false, canStop: false, minStopAt, message: "" };
   }
 
-  if (!minStopAt || !deadlineAt) {
+  if (!minStopAt) {
     return {
       showButton: true,
       canStop: false,
       minStopAt,
-      message: "Для остановки голосования не хватает сроков публикации.",
+      message: voting.stop_block_reason || "Для остановки голосования не хватает даты публикации.",
     };
   }
 
-  if (now > deadlineAt) {
-    return { showButton: false, canStop: false, minStopAt, message: "" };
-  }
-
-  if (now < minStopAt) {
-    return {
-      showButton: true,
-      canStop: false,
-      minStopAt,
-      message: "Остановить можно после минимального срока голосования — 7 дней.",
-    };
-  }
-
-  const totalOwners = voting.total_owners_count ?? 0;
-  const votedOwners = voting.voted_owners_count ?? 0;
-  const hasEnoughVotes = totalOwners > 0 && votedOwners > totalOwners / 2;
-
-  if (!hasEnoughVotes) {
+  if (!voting.can_stop) {
     return {
       showButton: true,
       canStop: false,
       minStopAt,
       message:
-        "Недостаточно голосов для досрочного завершения. Голосование можно завершить автоматически по истечении максимального срока.",
+        voting.stop_block_reason ||
+        "Остановить можно после минимального срока голосования — 7 дней.",
     };
   }
 
@@ -1881,9 +1932,20 @@ function getVotingStatusLabel(status: string) {
     active: "Идет голосование",
     stopped: "Остановлено",
     completed: "Завершено",
-    expired: "Срок истек",
+    expired: "Завершено",
   };
   return labels[status] || status;
+}
+
+function getVotingCompletionReason(voting: Voting) {
+  if (voting.completion_reason) return voting.completion_reason;
+  if (voting.completion_type === "deadline_expired" || voting.status === "completed" || voting.status === "expired") {
+    return "Истёк установленный законодательством срок для сбора голосов.";
+  }
+  if (voting.completion_type === "manual_stop" || voting.status === "stopped") {
+    return "Остановлено председателем";
+  }
+  return "";
 }
 
 function parseDateTimeLocal(value: string) {

@@ -12,6 +12,10 @@ const (
 	StatusCompleted        = "completed"
 	StatusExpired          = "expired"
 
+	CompletionTypeManualStop      = "manual_stop"
+	CompletionTypeDeadlineExpired = "deadline_expired"
+	DeadlineExpiredReason         = "Истёк установленный законодательством срок для сбора голосов."
+
 	CategoryGeneral                 = "general"
 	CategoryApartmentsAndCommercial = "apartments_and_commercial"
 	CategoryParkingAndStorerooms    = "parking_and_storerooms"
@@ -54,9 +58,14 @@ type Voting struct {
 	PublicationStatus            string     `json:"publication_status,omitempty"`
 	PublishedAt                  *time.Time `json:"published_at,omitempty"`
 	MinStopAt                    *time.Time `json:"min_stop_at,omitempty"`
+	CanStop                      bool       `json:"can_stop"`
+	StopAvailableAt              *time.Time `json:"stop_available_at,omitempty"`
+	StopBlockReason              string     `json:"stop_block_reason,omitempty"`
 	StoppedAt                    *time.Time `json:"stopped_at,omitempty"`
 	CompletedAt                  *time.Time `json:"completed_at,omitempty"`
 	ExpiredAt                    *time.Time `json:"expired_at,omitempty"`
+	CompletionReason             string     `json:"completion_reason,omitempty"`
+	CompletionType               string     `json:"completion_type,omitempty"`
 	TotalOwnersCount             int        `json:"total_owners_count"`
 	VotedOwnersCount             int        `json:"voted_owners_count"`
 	UserHasVoted                 bool       `json:"user_has_voted"`
