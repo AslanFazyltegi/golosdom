@@ -3,6 +3,7 @@ package dto
 type CreateVotingRequest struct {
 	Title       string   `json:"title"`
 	Description string   `json:"description"`
+	Category    string   `json:"category"`
 	Question    string   `json:"question"`
 	Options     []string `json:"options"`
 }
@@ -10,6 +11,7 @@ type CreateVotingRequest struct {
 type SaveDraftRequest struct {
 	Title       string            `json:"title"`
 	Description string            `json:"description"`
+	Category    string            `json:"category"`
 	MeetingID   *string           `json:"meeting_id"`
 	Questions   []QuestionRequest `json:"questions"`
 }

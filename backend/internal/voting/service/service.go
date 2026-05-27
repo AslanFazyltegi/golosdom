@@ -39,10 +39,11 @@ func (s *Service) GetForUser(id, userID string) (model.Voting, error) {
 	return s.repo.GetForUser(context.Background(), id, userID)
 }
 
-func (s *Service) Create(createdBy, title, description, question string, options []string) (model.Voting, error) {
+func (s *Service) Create(createdBy, title, description, category, question string, options []string) (model.Voting, error) {
 	req := dto.SaveDraftRequest{
 		Title:       title,
 		Description: description,
+		Category:    category,
 		Questions: []dto.QuestionRequest{{
 			Text:    question,
 			Options: options,
@@ -521,6 +522,11 @@ func buildVoting(id, createdBy string, req dto.SaveDraftRequest) (model.Voting, 
 		title = "Опросный лист"
 	}
 
+	category, err := normalizeVotingCategory(req.Category)
+	if err != nil {
+		return model.Voting{}, err
+	}
+
 	questions := make([]model.Question, 0, len(req.Questions))
 	for i, item := range req.Questions {
 		text := strings.TrimSpace(item.Text)
@@ -563,6 +569,7 @@ func buildVoting(id, createdBy string, req dto.SaveDraftRequest) (model.Voting, 
 		ID:          id,
 		Title:       title,
 		Description: strings.TrimSpace(req.Description),
+		Category:    category,
 		Status:      model.StatusDraft,
 		CreatedBy:   createdBy,
 		MeetingID:   normalizeID(req.MeetingID),
@@ -660,6 +667,19 @@ func normalizeID(id *string) *string {
 		return nil
 	}
 	return &value
+}
+
+func normalizeVotingCategory(category string) (string, error) {
+	switch strings.TrimSpace(category) {
+	case "", model.CategoryGeneral:
+		return model.CategoryGeneral, nil
+	case model.CategoryApartmentsAndCommercial:
+		return model.CategoryApartmentsAndCommercial, nil
+	case model.CategoryParkingAndStorerooms:
+		return model.CategoryParkingAndStorerooms, nil
+	default:
+		return "", errors.New("invalid voting category")
+	}
 }
 
 func validVotingStatus(status string) bool {

@@ -33,6 +33,7 @@ import type {
   Voting,
   VotingApprovalReview,
   VotingApprovalVote,
+  VotingCategory,
   VotingCouncilSubmitPayload,
   VotingDraftPayload,
   VotingPublicationSchedulePayload,
@@ -41,8 +42,35 @@ import type {
 } from "@/types/voting";
 
 type WizardStep = 1 | 2 | 3;
+type ConstructorStage = "category" | "wizard";
 const DEFAULT_OPTIONS = ["Да", "Нет", "Воздержался"];
+const DEFAULT_VOTING_CATEGORY: VotingCategory = "general";
 const MIN_VOTING_DAYS = 7;
+
+const VOTING_CATEGORY_OPTIONS: Array<{
+  value: VotingCategory;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "general",
+    label: "Общий",
+    description:
+      "Вопросы общего характера касающиеся всех собственников кондоминиума. Данный опросник будет доступен всем собственникам (квартиры, НП, кладовые, паркоместа).",
+  },
+  {
+    value: "apartments_and_commercial",
+    label: "Квартиры и НП",
+    description:
+      "Вопросы на которые должны отвечать только собственники квартир и нежилых помещений. Данный опросник будет доступен только собственникам Квартиры и НП.",
+  },
+  {
+    value: "parking_and_storerooms",
+    label: "Паркоместа и кладовые",
+    description:
+      "Вопросы на которые должны отвечать только собственники парковочных мест и кладовых помещений. Данный опросник будет доступен только собственникам Паркомест и кладовых.",
+  },
+];
 
 const reasonLabels: Record<string, string> = {
   unclear_wording: "Неясная формулировка",
@@ -126,10 +154,16 @@ function VotingWizard({
   initialVoting?: Voting;
   onSaved?: () => void;
 }) {
+  const [constructorStage, setConstructorStage] = useState<ConstructorStage>(
+    initialVoting ? "wizard" : "category",
+  );
   const [step, setStep] = useState<WizardStep>(1);
   const [votingID, setVotingID] = useState(initialVoting?.id || "");
   const [title] = useState(initialVoting?.title || "Опросный лист");
   const [description] = useState(initialVoting?.description || "");
+  const [category, setCategory] = useState<VotingCategory | "">(
+    initialVoting ? normalizeVotingCategory(initialVoting.category) : "",
+  );
   const [questions, setQuestions] = useState<VotingQuestion[]>(
     normalizeVotingQuestions(initialVoting?.questions),
   );
@@ -151,6 +185,7 @@ function VotingWizard({
   const selectedMeeting =
     meetings.find((meeting) => meeting.id === meetingID) ??
     (meetingID && initialVoting?.meeting?.id === meetingID ? initialVoting.meeting : undefined);
+  const votingCategory = category || DEFAULT_VOTING_CATEGORY;
 
   useEffect(() => {
     window.__votingConstructorDirty = dirty && hasQuestions;
@@ -200,6 +235,13 @@ function VotingWizard({
     setMeetingID(value);
   }
 
+  function updateCategory(value: VotingCategory) {
+    if (hasQuestions || constructorStage === "wizard") {
+      setDirty(true);
+    }
+    setCategory(value);
+  }
+
   async function persistVoting(payload: VotingSavePayload) {
     setError("");
     setSaving(true);
@@ -220,12 +262,12 @@ function VotingWizard({
   }
 
   async function saveDraft() {
-    return persistVoting(buildDraftPayload(title, description, questions));
+    return persistVoting(buildDraftPayload(title, description, votingCategory, questions));
   }
 
   async function saveForCouncilSubmit() {
     return persistVoting(
-      buildCouncilSubmitPayload(title, description, meetingID, questions),
+      buildCouncilSubmitPayload(title, description, votingCategory, meetingID, questions),
     );
   }
 
@@ -279,76 +321,95 @@ function VotingWizard({
         <h1 className="text-3xl font-bold">Создать опросник</h1>
       </div>
 
-      <section className="rounded-lg border bg-white p-6 shadow-sm">
-        <div className="mb-8 flex flex-wrap gap-2">
-          {["Вопросы", "Данные собрания", "Предпросмотр"].map((label, index) => (
-            <span
-              key={label}
-              className={`rounded-md border px-3 py-2 text-sm ${
-                step === index + 1
-                  ? "border-violet-500 bg-violet-50 font-semibold text-violet-700"
-                  : "border-slate-200 bg-white text-slate-700"
-              }`}
-            >
-              {index + 1}. {label}
-            </span>
-          ))}
-        </div>
-
-        {error && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-        {warning && (
-          <p className="mb-4 rounded-md bg-amber-50 p-3 text-sm text-amber-700">{warning}</p>
-        )}
-
-        {step === 1 && (
-          <VotingQuestionsStep
-            questions={questions}
-            setQuestions={updateQuestions}
-          />
-        )}
-
-        {step === 2 && (
-          <VotingMeetingStep
-            meetings={meetings}
-            selectedMeeting={selectedMeeting}
-            meetingID={meetingID}
-            loading={loadingMeetings}
-            setMeetingID={updateMeetingID}
-          />
-        )}
-
-        {step === 3 && (
-          <VotingPreviewStep
-            title={title}
-            description={description}
-            questions={filledQuestions}
-            meeting={selectedMeeting}
-          />
-        )}
-
-        <div className="mt-6 flex flex-wrap gap-3">
-          {step > 1 && <Button onClick={() => setStep((step - 1) as WizardStep)}>Назад</Button>}
-          {step < 3 && (
+      {constructorStage === "category" ? (
+        <section className="rounded-lg border bg-white p-6 shadow-sm">
+          <VotingCategoryStep category={category} setCategory={updateCategory} />
+          <div className="mt-6 flex flex-wrap gap-3">
             <Button
               variant="primary"
-              onClick={() => setStep((step + 1) as WizardStep)}
-              disabled={step === 1 ? !hasQuestions : !meetingID}
+              onClick={() => setConstructorStage("wizard")}
+              disabled={!category}
             >
               Далее
             </Button>
+          </div>
+        </section>
+      ) : (
+        <section className="rounded-lg border bg-white p-6 shadow-sm">
+          <div className="mb-8 flex flex-wrap gap-2">
+            {["Вопросы", "Данные собрания", "Предпросмотр"].map((label, index) => (
+              <span
+                key={label}
+                className={`rounded-md border px-3 py-2 text-sm ${
+                  step === index + 1
+                    ? "border-violet-500 bg-violet-50 font-semibold text-violet-700"
+                    : "border-slate-200 bg-white text-slate-700"
+                }`}
+              >
+                {index + 1}. {label}
+              </span>
+            ))}
+          </div>
+
+          {error && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+          {warning && (
+            <p className="mb-4 rounded-md bg-amber-50 p-3 text-sm text-amber-700">{warning}</p>
           )}
+
+          {step === 1 && (
+            <VotingQuestionsStep
+              questions={questions}
+              setQuestions={updateQuestions}
+            />
+          )}
+
+          {step === 2 && (
+            <VotingMeetingStep
+              meetings={meetings}
+              selectedMeeting={selectedMeeting}
+              meetingID={meetingID}
+              loading={loadingMeetings}
+              setMeetingID={updateMeetingID}
+            />
+          )}
+
           {step === 3 && (
-            <>
-              <Button onClick={saveDraftAndOpenDrafts} disabled={saving}>
-                Сохранить черновик
-              </Button>
-              <Button variant="primary" onClick={submitToCouncil} disabled={saving || !meetingID}>
-                Отправить на утверждение
-              </Button>
-            </>
+            <VotingPreviewStep
+              title={title}
+              description={description}
+              category={votingCategory}
+              questions={filledQuestions}
+              meeting={selectedMeeting}
+            />
           )}
-        </div>
-      </section>
+
+          <div className="mt-6 flex flex-wrap gap-3">
+            {step === 1 && !initialVoting && (
+              <Button onClick={() => setConstructorStage("category")}>Назад</Button>
+            )}
+            {step > 1 && <Button onClick={() => setStep((step - 1) as WizardStep)}>Назад</Button>}
+            {step < 3 && (
+              <Button
+                variant="primary"
+                onClick={() => setStep((step + 1) as WizardStep)}
+                disabled={step === 1 ? !hasQuestions : !meetingID}
+              >
+                Далее
+              </Button>
+            )}
+            {step === 3 && (
+              <>
+                <Button onClick={saveDraftAndOpenDrafts} disabled={saving}>
+                  Сохранить черновик
+                </Button>
+                <Button variant="primary" onClick={submitToCouncil} disabled={saving || !meetingID}>
+                  Отправить на утверждение
+                </Button>
+              </>
+            )}
+          </div>
+        </section>
+      )}
 
       <SaveDraftModal
         open={saveModalOpen}
@@ -357,6 +418,60 @@ function VotingWizard({
         onSave={saveAndLeave}
       />
     </>
+  );
+}
+
+function VotingCategoryStep({
+  category,
+  setCategory,
+}: {
+  category: VotingCategory | "";
+  setCategory: (value: VotingCategory) => void;
+}) {
+  return (
+    <div className="grid gap-5">
+      <div>
+        <h2 className="text-lg font-semibold text-slate-900">
+          Выберите категорию опросника
+        </h2>
+      </div>
+
+      <div className="grid gap-3" role="radiogroup" aria-label="Категория опросника">
+        {VOTING_CATEGORY_OPTIONS.map((option) => {
+          const selected = category === option.value;
+
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => setCategory(option.value)}
+              className={`rounded-lg border p-5 text-left transition ${
+                selected
+                  ? "border-violet-500 bg-violet-50 text-violet-950"
+                  : "border-slate-200 bg-white text-slate-800 hover:border-violet-300"
+              }`}
+            >
+              <span className="flex items-start gap-3">
+                <span
+                  className={`mt-1 h-4 w-4 rounded-full border ${
+                    selected ? "border-violet-600 bg-violet-600" : "border-slate-300"
+                  }`}
+                  aria-hidden="true"
+                />
+                <span className="grid gap-1">
+                  <span className="font-semibold">{option.label}</span>
+                  <span className="text-sm leading-6 text-slate-600">
+                    {option.description}
+                  </span>
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -483,11 +598,13 @@ function VotingMeetingStep({
 function VotingPreviewStep({
   title,
   description,
+  category,
   questions,
   meeting,
 }: {
   title: string;
   description: string;
+  category: VotingCategory;
   questions: VotingQuestion[];
   meeting?: Meeting | NonNullable<Voting["meeting"]> | null;
 }) {
@@ -495,6 +612,9 @@ function VotingPreviewStep({
     <div className="grid gap-5">
       <div>
         <h2 className="text-xl font-semibold">{title}</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Категория опросника: {getVotingCategoryLabel(category)}
+        </p>
         {description && <p className="mt-1 text-slate-600">{description}</p>}
       </div>
       {meeting ? <MeetingInfo meeting={meeting} /> : <p>Собрание не выбрано</p>}
@@ -1488,11 +1608,13 @@ function NoAccess() {
 function buildDraftPayload(
   title: string,
   description: string,
+  category: VotingCategory,
   questions: VotingQuestion[],
 ): VotingDraftPayload {
   return {
     title,
     description,
+    category,
     questions: buildQuestionPayload(questions),
   };
 }
@@ -1500,11 +1622,12 @@ function buildDraftPayload(
 function buildCouncilSubmitPayload(
   title: string,
   description: string,
+  category: VotingCategory,
   meetingID: string,
   questions: VotingQuestion[],
 ): VotingCouncilSubmitPayload {
   return {
-    ...buildDraftPayload(title, description, questions),
+    ...buildDraftPayload(title, description, category, questions),
     meeting_id: meetingID || null,
   };
 }
@@ -1540,6 +1663,19 @@ function normalizeVotingQuestions(questions?: VotingQuestion[] | null) {
 function getQuestionOptions(question?: VotingQuestion | null) {
   const options = Array.isArray(question?.options) ? question.options : [];
   return options.length ? options : DEFAULT_OPTIONS;
+}
+
+function normalizeVotingCategory(category?: string | null): VotingCategory {
+  return VOTING_CATEGORY_OPTIONS.some((option) => option.value === category)
+    ? (category as VotingCategory)
+    : DEFAULT_VOTING_CATEGORY;
+}
+
+function getVotingCategoryLabel(category: VotingCategory) {
+  return (
+    VOTING_CATEGORY_OPTIONS.find((option) => option.value === category)?.label ??
+    VOTING_CATEGORY_OPTIONS[0].label
+  );
 }
 
 function findRevisionVoteWithComment(votes: VotingApprovalVote[]) {

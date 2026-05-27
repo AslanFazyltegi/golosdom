@@ -12,6 +12,10 @@ const (
 	StatusCompleted        = "completed"
 	StatusExpired          = "expired"
 
+	CategoryGeneral                 = "general"
+	CategoryApartmentsAndCommercial = "apartments_and_commercial"
+	CategoryParkingAndStorerooms    = "parking_and_storerooms"
+
 	PublicationNotScheduled = "not_scheduled"
 	PublicationScheduled    = "scheduled"
 	PublicationPublished    = "published"
@@ -37,6 +41,7 @@ type Voting struct {
 	ID                           string     `json:"id"`
 	Title                        string     `json:"title"`
 	Description                  string     `json:"description"`
+	Category                     string     `json:"category"`
 	Status                       string     `json:"status"`
 	CreatedBy                    string     `json:"created_by"`
 	MeetingID                    *string    `json:"meeting_id,omitempty"`

@@ -4,6 +4,11 @@ export type VotingQuestion = {
   options?: string[] | null;
 };
 
+export type VotingCategory =
+  | "general"
+  | "apartments_and_commercial"
+  | "parking_and_storerooms";
+
 export type VotingAnswerValue = "for" | "against" | "abstain";
 
 export type VotingSignatureMock = "MOCK_MGOV" | "MOCK_ECP";
@@ -21,6 +26,7 @@ export type Voting = {
   id: string;
   title: string;
   description: string;
+  category?: VotingCategory | null;
   status: string;
   created_by: string;
   meeting_id?: string | null;
@@ -76,6 +82,7 @@ export type VotingApprovalReview = {
 export type VotingDraftPayload = {
   title: string;
   description: string;
+  category: VotingCategory;
   questions: Array<{
     id: string;
     text: string;

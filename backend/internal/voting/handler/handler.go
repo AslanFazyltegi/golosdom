@@ -59,7 +59,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	voting, err := h.service.Create(userID, req.Title, req.Description, req.Question, req.Options)
+	voting, err := h.service.Create(userID, req.Title, req.Description, req.Category, req.Question, req.Options)
 	if err != nil {
 		response.Error(w, http.StatusBadRequest, err.Error())
 		return

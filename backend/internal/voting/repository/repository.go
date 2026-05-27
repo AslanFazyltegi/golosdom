@@ -32,6 +32,7 @@ func (r *Repository) List(ctx context.Context, status, userID string) ([]model.V
 
 	rows, err := r.db.Query(ctx, `
 		SELECT v.id, v.title, v.description, v.status, v.created_by,
+		       COALESCE(NULLIF(v.category, ''), 'general'),
 		       v.meeting_id::text, COALESCE(v.version, 1), v.review_deadline,
 		       v.publication_start_at, v.publication_end_at,
 		       COALESCE(v.publication_send_notifications, false),
@@ -106,6 +107,7 @@ func (r *Repository) GetForUser(ctx context.Context, id, userID string) (model.V
 
 	row := r.db.QueryRow(ctx, `
 		SELECT v.id, v.title, v.description, v.status, v.created_by,
+		       COALESCE(NULLIF(v.category, ''), 'general'),
 		       v.meeting_id::text, COALESCE(v.version, 1), v.review_deadline,
 		       v.publication_start_at, v.publication_end_at,
 		       COALESCE(v.publication_send_notifications, false),
@@ -894,18 +896,24 @@ func (r *Repository) saveVoting(ctx context.Context, voting model.Voting, status
 	}
 	defer tx.Rollback(ctx)
 
+	category := voting.Category
+	if category == "" {
+		category = model.CategoryGeneral
+	}
+
 	_, err = tx.Exec(ctx, `
-		INSERT INTO votings (id, title, description, status, created_by, meeting_id, version, review_deadline, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6::uuid, $7, $8, now())
+		INSERT INTO votings (id, title, description, category, status, created_by, meeting_id, version, review_deadline, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7::uuid, $8, $9, now())
 		ON CONFLICT (id) DO UPDATE
 		SET title = EXCLUDED.title,
 		    description = EXCLUDED.description,
+		    category = EXCLUDED.category,
 		    status = EXCLUDED.status,
 		    meeting_id = EXCLUDED.meeting_id,
 		    version = EXCLUDED.version,
 		    review_deadline = EXCLUDED.review_deadline,
 		    updated_at = now()
-	`, voting.ID, voting.Title, voting.Description, status, voting.CreatedBy, voting.MeetingID, voting.Version, voting.ReviewDeadline)
+	`, voting.ID, voting.Title, voting.Description, category, status, voting.CreatedBy, voting.MeetingID, voting.Version, voting.ReviewDeadline)
 	if err != nil {
 		return err
 	}
@@ -1120,6 +1128,7 @@ func scanVoting(row rowScanner) (model.Voting, error) {
 		&voting.Description,
 		&voting.Status,
 		&voting.CreatedBy,
+		&voting.Category,
 		&meetingID,
 		&voting.Version,
 		&reviewDeadline,
