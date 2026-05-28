@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
 import {
   downloadVotingBlank,
@@ -16,9 +16,11 @@ import type {
   OwnerVotingAnswer,
   Voting,
   VotingAnswerValue,
+  VotingCategory,
   VotingResult,
   VotingSignatureMock,
 } from "@/types/voting";
+import type { PropertyObject } from "@/types/objects";
 
 type VotingMode = "active" | "completed";
 type WizardStep = "answers" | "signature";
@@ -34,6 +36,27 @@ const signatureMethodLabels: Record<string, string> = {
   MOCK_ECP: "ЭЦП",
 };
 
+const APARTMENT_AND_COMMERCIAL_TYPES = new Set(["apartment", "commercial_room"]);
+const PARKING_AND_STOREROOM_TYPES = new Set(["parking", "storage"]);
+
+const VOTING_SECTIONS: Array<{
+  category: VotingCategory;
+  title: string;
+}> = [
+  {
+    category: "general",
+    title: "Общие голосования",
+  },
+  {
+    category: "apartments_and_commercial",
+    title: "Голосования по квартирам и нежилым помещениям",
+  },
+  {
+    category: "parking_and_storerooms",
+    title: "Голосования по кладовым и паркоместам",
+  },
+];
+
 export function VotingsPage(props: CabinetModuleProps) {
   if (props.activeRole !== "OWNER") {
     return <OwnerOnly title="Активные голосования" />;
@@ -44,6 +67,7 @@ export function VotingsPage(props: CabinetModuleProps) {
       title="Активные голосования"
       mode="active"
       emptyText="Нет активных голосований."
+      objects={props.objects}
       onReloadLayout={props.loadVotings}
     />
   );
@@ -59,6 +83,7 @@ export function PastVotingsPage(props: CabinetModuleProps) {
       title="Прошедшие голосования"
       mode="completed"
       emptyText="Прошедших голосований пока нет."
+      objects={props.objects}
       onReloadLayout={props.loadVotings}
     />
   );
@@ -79,11 +104,13 @@ function OwnerVotingsList({
   title,
   mode,
   emptyText,
+  objects,
   onReloadLayout,
 }: {
   title: string;
   mode: VotingMode;
   emptyText: string;
+  objects: unknown;
   onReloadLayout: () => void;
 }) {
   const [votings, setVotings] = useState<Voting[]>([]);
@@ -121,6 +148,11 @@ function OwnerVotingsList({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [load]);
+
+  const votingSections = useMemo(
+    () => buildOwnerVotingSections(votings, objects),
+    [objects, votings],
+  );
 
   async function startOnlineVoting(voting: Voting) {
     try {
@@ -167,21 +199,28 @@ function OwnerVotingsList({
 
       {loading ? (
         <p className="text-slate-500">Загрузка...</p>
-      ) : votings.length === 0 ? (
+      ) : votingSections.length === 0 ? (
         <div className="rounded-lg border bg-white p-5 text-slate-500 shadow-sm">{emptyText}</div>
       ) : (
-        <div className="grid gap-4">
-          {votings.map((voting) => (
-            <OwnerVotingCard
-              key={voting.id}
-              voting={voting}
-              mode={mode}
-              refreshToken={refreshToken}
-              opening={openingVotingId === voting.id}
-              onStartVoting={() => startOnlineVoting(voting)}
-              onViewAnswers={() => setAnswersVoting(voting)}
-              onError={setError}
-            />
+        <div className="grid gap-8">
+          {votingSections.map((section) => (
+            <section key={section.category}>
+              <h2 className="mb-4 text-xl font-semibold text-slate-900">{section.title}</h2>
+              <div className="grid gap-4">
+                {section.votings.map((voting) => (
+                  <OwnerVotingCard
+                    key={voting.id}
+                    voting={voting}
+                    mode={mode}
+                    refreshToken={refreshToken}
+                    opening={openingVotingId === voting.id}
+                    onStartVoting={() => startOnlineVoting(voting)}
+                    onViewAnswers={() => setAnswersVoting(voting)}
+                    onError={setError}
+                  />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}
@@ -201,6 +240,51 @@ function OwnerVotingsList({
         />
       )}
     </>
+  );
+}
+
+function buildOwnerVotingSections(votings: Voting[], objects: unknown) {
+  return VOTING_SECTIONS.map((section) => {
+    const seenVotingIDs = new Set<string>();
+    const sectionVotings = votings.filter((voting) => {
+      if (getVotingCategory(voting) !== section.category) return false;
+      if (!isVotingCategoryAvailableForOwner(section.category, objects)) return false;
+      if (seenVotingIDs.has(voting.id)) return false;
+
+      seenVotingIDs.add(voting.id);
+      return true;
+    });
+
+    return {
+      ...section,
+      votings: sectionVotings,
+    };
+  }).filter((section) => section.votings.length > 0);
+}
+
+function getVotingCategory(voting: Voting): VotingCategory {
+  return VOTING_SECTIONS.some((section) => section.category === voting.category)
+    ? (voting.category as VotingCategory)
+    : "general";
+}
+
+function isVotingCategoryAvailableForOwner(category: VotingCategory, objects: unknown) {
+  if (category === "general") return true;
+  if (category === "apartments_and_commercial") {
+    return hasAnyOwnerPropertyType(objects, APARTMENT_AND_COMMERCIAL_TYPES);
+  }
+  if (category === "parking_and_storerooms") {
+    return hasAnyOwnerPropertyType(objects, PARKING_AND_STOREROOM_TYPES);
+  }
+
+  return false;
+}
+
+function hasAnyOwnerPropertyType(objects: unknown, allowedTypes: Set<string>) {
+  if (!Array.isArray(objects)) return false;
+
+  return (objects as PropertyObject[]).some((item) =>
+    allowedTypes.has(String(item.property_type || "").trim().toLowerCase()),
   );
 }
 
