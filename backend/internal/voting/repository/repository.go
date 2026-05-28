@@ -704,6 +704,34 @@ func (r *Repository) OwnerAlreadyVoted(ctx context.Context, votingID, userID str
 	return exists, err
 }
 
+func (r *Repository) OwnerCanVoteCategory(ctx context.Context, userID, category string) (bool, error) {
+	switch category {
+	case model.CategoryGeneral, "":
+		return true, nil
+	case model.CategoryApartmentsAndCommercial:
+		return r.ownerHasPropertyTypes(ctx, userID, []string{"apartment", "commercial_room"})
+	case model.CategoryParkingAndStorerooms:
+		return r.ownerHasPropertyTypes(ctx, userID, []string{"parking", "storage"})
+	default:
+		return false, nil
+	}
+}
+
+func (r *Repository) ownerHasPropertyTypes(ctx context.Context, userID string, propertyTypes []string) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM property_owners po
+			JOIN property p ON p.id = po.property_id
+			WHERE po.user_id = $1
+			  AND po.status = 'active'
+			  AND p.type = ANY($2)
+		)
+	`, userID, propertyTypes).Scan(&exists)
+	return exists, err
+}
+
 func (r *Repository) SubmitOwnerVote(ctx context.Context, votingID, userID, signatureMethod string, signedAt time.Time, answers []model.OwnerVotingAnswer) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -780,6 +808,89 @@ func (r *Repository) SubmitOwnerVote(ctx context.Context, votingID, userID, sign
 			return ErrOwnerAlreadyVoted
 		}
 		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (r *Repository) SubmitOwnerVoteBatch(ctx context.Context, userID, signatureMethod string, signedAt time.Time, answersByVotingID map[string][]model.OwnerVotingAnswer) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	propertyID, votingGroupID, err := r.ownerVotingSubject(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+
+	for votingID, answers := range answersByVotingID {
+		var hasAnswers bool
+		if err := tx.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM voting_answers
+				WHERE voting_id = $1
+				  AND voted_by_user_id = $2
+			)
+		`, votingID, userID).Scan(&hasAnswers); err != nil {
+			return err
+		}
+		if hasAnswers {
+			return ErrOwnerAlreadyVoted
+		}
+
+		submissionID := fmt.Sprintf("%s-submission-%s-%d", votingID, userID, time.Now().UnixNano())
+		_, err = tx.Exec(ctx, `
+			INSERT INTO voting_submissions (
+				id,
+				voting_id,
+				user_id,
+				signature_method,
+				signature_status,
+				signed_at
+			)
+			VALUES ($1, $2, $3, $4, $5, $6)
+		`, submissionID, votingID, userID, signatureMethod, model.SignatureSigned, signedAt)
+		if err != nil {
+			if isUniqueViolation(err) {
+				return ErrOwnerAlreadyVoted
+			}
+			return err
+		}
+
+		payload := ownerAnswerPayload{Answers: make([]ownerAnswerPayloadItem, 0, len(answers))}
+		for _, answer := range answers {
+			payload.Answers = append(payload.Answers, ownerAnswerPayloadItem{
+				QuestionID: answer.QuestionID,
+				Answer:     answer.Answer,
+			})
+		}
+		payloadJSON, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+
+		answerID := fmt.Sprintf("%s-answer-%s-%d", votingID, userID, time.Now().UnixNano())
+		_, err = tx.Exec(ctx, `
+			INSERT INTO voting_answers (
+				id,
+				voting_id,
+				property_id,
+				voting_group_id,
+				voted_by_user_id,
+				answer,
+				signed_at
+			)
+			VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+		`, answerID, votingID, propertyID, votingGroupID, userID, string(payloadJSON), signedAt)
+		if err != nil {
+			if isUniqueViolation(err) {
+				return ErrOwnerAlreadyVoted
+			}
+			return err
+		}
 	}
 
 	return tx.Commit(ctx)

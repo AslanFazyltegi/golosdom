@@ -46,3 +46,15 @@ type OwnerVoteRequest struct {
 	Answers         []OwnerVoteAnswerRequest `json:"answers"`
 	SignatureMethod string                   `json:"signature_method"`
 }
+
+type OwnerBatchVoteItemRequest struct {
+	VotingID string                   `json:"voting_id"`
+	Answers  []OwnerVoteAnswerRequest `json:"answers"`
+}
+
+type OwnerBatchVoteRequest struct {
+	MeetingID       string                      `json:"meeting_id"`
+	VotingIDs       []string                    `json:"voting_ids"`
+	Answers         []OwnerBatchVoteItemRequest `json:"answers"`
+	SignatureMethod string                      `json:"signature_method"`
+}

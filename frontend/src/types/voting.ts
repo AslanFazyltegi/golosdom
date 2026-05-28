@@ -140,6 +140,19 @@ export type OwnerVotingSubmission = {
   signature_method: VotingSignatureMock;
 };
 
+export type OwnerBatchVotingSubmission = {
+  meeting_id: string;
+  voting_ids: string[];
+  answers: Array<{
+    voting_id: string;
+    answers: Array<{
+      question_id: string;
+      answer: VotingAnswerValue;
+    }>;
+  }>;
+  signature_method: VotingSignatureMock;
+};
+
 export type VotingStatus =
   | "draft"
   | "council_review"

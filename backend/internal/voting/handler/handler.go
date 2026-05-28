@@ -110,6 +110,11 @@ func (h *Handler) VotingByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if id == "batch-vote" && action == "" && r.Method == http.MethodPost {
+		h.ownerBatchVote(w, r)
+		return
+	}
+
 	if action == "" && r.Method == http.MethodGet && (id == "active" || id == "completed") {
 		if !requireOwner(w, r) {
 			return
@@ -301,6 +306,28 @@ func (h *Handler) ownerVote(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	response.JSON(w, http.StatusOK, map[string]any{
 		"message": "Ваш голос успешно принят и подписан.",
+		"answers": answers,
+	})
+}
+
+func (h *Handler) ownerBatchVote(w http.ResponseWriter, r *http.Request) {
+	if !requireOwner(w, r) {
+		return
+	}
+
+	var req dto.OwnerBatchVoteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	answers, err := h.service.SubmitOwnerVoteBatch(r.Header.Get("X-User-ID"), req)
+	if err != nil {
+		response.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.JSON(w, http.StatusOK, map[string]any{
+		"message": "Ваши голоса успешно приняты и подписаны.",
 		"answers": answers,
 	})
 }

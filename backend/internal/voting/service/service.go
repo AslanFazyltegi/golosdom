@@ -238,6 +238,14 @@ func (s *Service) SubmitOwnerVote(votingID, userID string, req dto.OwnerVoteRequ
 		return nil, err
 	}
 
+	canVoteCategory, err := s.repo.OwnerCanVoteCategory(context.Background(), userID, voting.Category)
+	if err != nil {
+		return nil, err
+	}
+	if !canVoteCategory {
+		return nil, errors.New("У пользователя нет права голосовать по данному опроснику.")
+	}
+
 	alreadyVoted, err := s.repo.OwnerAlreadyVoted(context.Background(), votingID, userID)
 	if err != nil {
 		return nil, err
@@ -264,6 +272,112 @@ func (s *Service) SubmitOwnerVote(votingID, userID string, req dto.OwnerVoteRequ
 	}
 
 	return s.repo.OwnerAnswers(context.Background(), votingID, userID)
+}
+
+func (s *Service) SubmitOwnerVoteBatch(userID string, req dto.OwnerBatchVoteRequest) ([]model.OwnerVotingAnswer, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, errors.New("missing user")
+	}
+
+	meetingID := strings.TrimSpace(req.MeetingID)
+	if meetingID == "" {
+		return nil, errors.New("meeting_id is required")
+	}
+
+	signatureMethod := strings.TrimSpace(req.SignatureMethod)
+	if signatureMethod == "" {
+		signatureMethod = model.SignatureMockMGov
+	}
+	if signatureMethod != model.SignatureMockMGov && signatureMethod != model.SignatureMockECP {
+		return nil, errors.New("invalid signature method")
+	}
+
+	if len(req.VotingIDs) == 0 {
+		return nil, errors.New("Выберите хотя бы один опросник.")
+	}
+
+	requestAnswers := make(map[string][]dto.OwnerVoteAnswerRequest, len(req.Answers))
+	for _, item := range req.Answers {
+		votingID := strings.TrimSpace(item.VotingID)
+		if votingID == "" {
+			return nil, errors.New("voting_id is required")
+		}
+		requestAnswers[votingID] = item.Answers
+	}
+
+	seenVotingIDs := make(map[string]bool, len(req.VotingIDs))
+	answersByVotingID := make(map[string][]model.OwnerVotingAnswer, len(req.VotingIDs))
+	now := datetime.Now()
+	for _, rawVotingID := range req.VotingIDs {
+		votingID := strings.TrimSpace(rawVotingID)
+		if votingID == "" {
+			return nil, errors.New("voting_id is required")
+		}
+		if seenVotingIDs[votingID] {
+			return nil, errors.New("Опросники в пакете не должны повторяться.")
+		}
+		seenVotingIDs[votingID] = true
+
+		voting, err := s.repo.GetForUser(context.Background(), votingID, userID)
+		if err != nil {
+			return nil, err
+		}
+		if voting.MeetingID == nil || strings.TrimSpace(*voting.MeetingID) != meetingID {
+			return nil, errors.New("Все опросники пакета должны относиться к одному собранию.")
+		}
+
+		canVoteCategory, err := s.repo.OwnerCanVoteCategory(context.Background(), userID, voting.Category)
+		if err != nil {
+			return nil, err
+		}
+		if !canVoteCategory {
+			return nil, errors.New("У пользователя нет права голосовать по одному из выбранных опросников.")
+		}
+
+		alreadyVoted, err := s.repo.OwnerAlreadyVoted(context.Background(), votingID, userID)
+		if err != nil {
+			return nil, err
+		}
+		if alreadyVoted {
+			return nil, errors.New("Вы уже проголосовали по одному из выбранных опросников.")
+		}
+
+		if err := validateOwnerVotingIsActive(voting, now); err != nil {
+			return nil, err
+		}
+
+		answers, ok := requestAnswers[votingID]
+		if !ok {
+			return nil, errors.New("Для каждого выбранного опросника нужны ответы.")
+		}
+		validatedAnswers, err := validateOwnerVoteAnswers(voting, answers)
+		if err != nil {
+			return nil, err
+		}
+		answersByVotingID[votingID] = validatedAnswers
+	}
+
+	if len(answersByVotingID) != len(req.VotingIDs) {
+		return nil, errors.New("Для каждого выбранного опросника нужны ответы.")
+	}
+
+	signedAt := datetime.Now()
+	if err := s.repo.SubmitOwnerVoteBatch(context.Background(), userID, signatureMethod, signedAt, answersByVotingID); err != nil {
+		if errors.Is(err, repository.ErrOwnerAlreadyVoted) {
+			return nil, errors.New("Вы уже проголосовали по одному из выбранных опросников.")
+		}
+		return nil, err
+	}
+
+	result := make([]model.OwnerVotingAnswer, 0)
+	for _, votingID := range req.VotingIDs {
+		answers, err := s.repo.OwnerAnswers(context.Background(), strings.TrimSpace(votingID), userID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, answers...)
+	}
+	return result, nil
 }
 
 func (s *Service) OwnerAnswers(votingID, userID string) ([]model.OwnerVotingAnswer, error) {

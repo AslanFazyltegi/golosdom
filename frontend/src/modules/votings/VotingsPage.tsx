@@ -9,6 +9,7 @@ import {
   fetchMyVotingAnswers,
   fetchVotingDetails,
   fetchVotingResults,
+  submitOwnerVoteBatch,
   submitOwnerVote,
 } from "@/lib/votings";
 import { formatAstanaDate, formatAstanaDateTime } from "@/shared/lib/dateTime";
@@ -23,7 +24,13 @@ import type {
 import type { PropertyObject } from "@/types/objects";
 
 type VotingMode = "active" | "completed";
-type WizardStep = "answers" | "signature";
+type WizardStep = "answers" | "review";
+
+type VotingSelectionState = {
+  current: Voting;
+  available: Voting[];
+  completed: Voting[];
+};
 
 const answerLabels: Record<VotingAnswerValue, string> = {
   for: "За",
@@ -118,7 +125,8 @@ function OwnerVotingsList({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [refreshToken, setRefreshToken] = useState(0);
-  const [wizardVoting, setWizardVoting] = useState<Voting | null>(null);
+  const [wizardVotings, setWizardVotings] = useState<Voting[]>([]);
+  const [selectionState, setSelectionState] = useState<VotingSelectionState | null>(null);
   const [answersVoting, setAnswersVoting] = useState<Voting | null>(null);
   const [openingVotingId, setOpeningVotingId] = useState("");
   const reloadLayoutRef = useRef(onReloadLayout);
@@ -165,7 +173,38 @@ function OwnerVotingsList({
         await load();
         return;
       }
-      setWizardVoting(details);
+      if (!isVotingCurrentlyActive(details)) {
+        setError("Опросник уже недоступен. Список активных голосований обновлен.");
+        await load();
+        return;
+      }
+
+      const meetingID = details.meeting_id || details.meeting?.id || "";
+      if (!meetingID) {
+        setWizardVotings([details]);
+        return;
+      }
+
+      const sameMeeting = votings.filter((item) => (item.meeting_id || item.meeting?.id) === meetingID);
+      const available = sortVotingsForWizard(
+        sameMeeting
+          .filter((item) => !item.user_has_voted)
+          .filter((item) => isVotingCurrentlyActive(item))
+          .filter((item) => isVotingCategoryAvailableForOwner(getVotingCategory(item), objects))
+          .map((item) => (item.id === details.id ? details : item)),
+      );
+      const completed = sortVotingsForWizard(sameMeeting.filter((item) => item.user_has_voted));
+
+      if (available.length <= 1) {
+        setWizardVotings([details]);
+        return;
+      }
+
+      setSelectionState({
+        current: details,
+        available,
+        completed,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось открыть голосование");
     } finally {
@@ -174,9 +213,43 @@ function OwnerVotingsList({
   }
 
   async function handleVoteSuccess() {
-    setWizardVoting(null);
+    setWizardVotings([]);
     setSuccess("Ваш голос успешно принят и подписан.");
     await load();
+  }
+
+  async function openSelectedVotings(votingIDs: string[]) {
+    try {
+      setError("");
+      setSuccess("");
+      const details = await Promise.all(votingIDs.map((id) => fetchVotingDetails(id)));
+      const unavailable = details.filter((item) => item.user_has_voted || !isVotingCurrentlyActive(item));
+      if (unavailable.length > 0) {
+        setSelectionState(null);
+        setError("Часть опросников уже недоступна. Список активных голосований обновлен.");
+        await load();
+        return;
+      }
+      setSelectionState(null);
+      setWizardVotings(sortVotingsForWizard(details));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось открыть выбранные опросники");
+    }
+  }
+
+  async function openCurrentVotingOnly(voting: Voting) {
+    const hasOtherAvailable = Boolean(
+      selectionState?.available.some((item) => item.id !== voting.id),
+    );
+    if (
+      hasOtherAvailable &&
+      !window.confirm(
+        "Вы выбрали прохождение только одного опросного листа. По этому же собранию у вас есть ещё доступные опросники. Их можно будет пройти отдельно позже.",
+      )
+    ) {
+      return;
+    }
+    await openSelectedVotings([voting.id]);
   }
 
   return (
@@ -225,10 +298,20 @@ function OwnerVotingsList({
         </div>
       )}
 
-      {wizardVoting && (
+      {selectionState && (
+        <VotingSelectionModal
+          state={selectionState}
+          objects={objects}
+          onClose={() => setSelectionState(null)}
+          onStartSelected={openSelectedVotings}
+          onStartCurrentOnly={openCurrentVotingOnly}
+        />
+      )}
+
+      {wizardVotings.length > 0 && (
         <VotingWizard
-          voting={wizardVoting}
-          onClose={() => setWizardVoting(null)}
+          votings={wizardVotings}
+          onClose={() => setWizardVotings([])}
           onSuccess={handleVoteSuccess}
         />
       )}
@@ -268,6 +351,45 @@ function getVotingCategory(voting: Voting): VotingCategory {
     : "general";
 }
 
+function getVotingCategoryLabel(category: VotingCategory) {
+  const labels: Record<VotingCategory, string> = {
+    general: "Общий опросный лист",
+    apartments_and_commercial: "Опросный лист для квартир и нежилых помещений",
+    parking_and_storerooms: "Опросный лист для кладовых и паркомест",
+  };
+  return labels[category] || "Опросный лист";
+}
+
+function isVotingCurrentlyActive(voting: Voting) {
+  const now = Date.now();
+  const startsAt = voting.publication_start_at ? Date.parse(voting.publication_start_at) : Number.NaN;
+  const endsAt = voting.publication_end_at ? Date.parse(voting.publication_end_at) : Number.NaN;
+
+  return (
+    voting.status === "published" &&
+    voting.publication_status === "published" &&
+    Number.isFinite(startsAt) &&
+    Number.isFinite(endsAt) &&
+    startsAt <= now &&
+    endsAt >= now &&
+    !voting.stopped_at
+  );
+}
+
+function sortVotingsForWizard(items: Voting[]) {
+  const categoryOrder: Record<VotingCategory, number> = {
+    general: 0,
+    apartments_and_commercial: 1,
+    parking_and_storerooms: 2,
+  };
+  return [...items].sort((left, right) => {
+    const categoryDiff =
+      (categoryOrder[getVotingCategory(left)] ?? 99) - (categoryOrder[getVotingCategory(right)] ?? 99);
+    if (categoryDiff !== 0) return categoryDiff;
+    return String(left.created_at || left.id).localeCompare(String(right.created_at || right.id));
+  });
+}
+
 function isVotingCategoryAvailableForOwner(category: VotingCategory, objects: unknown) {
   if (category === "general") return true;
   if (category === "apartments_and_commercial") {
@@ -278,6 +400,25 @@ function isVotingCategoryAvailableForOwner(category: VotingCategory, objects: un
   }
 
   return false;
+}
+
+function buildOwnerPropertyLabels(objects: unknown) {
+  if (!Array.isArray(objects)) return [];
+
+  return (objects as PropertyObject[])
+    .filter((item) => item.status === "active")
+    .map((item) => `${propertyTypeLabel(item.property_type)} №${item.number}`)
+    .filter(Boolean);
+}
+
+function propertyTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    apartment: "Квартира",
+    commercial_room: "Нежилое помещение",
+    parking: "Паркоместо",
+    storage: "Кладовая",
+  };
+  return labels[String(type || "").trim().toLowerCase()] || "Имущество";
 }
 
 function hasAnyOwnerPropertyType(objects: unknown, allowedTypes: Set<string>) {
@@ -432,27 +573,138 @@ function VotingResultsBlock({ results, error }: { results: VotingResult[]; error
   );
 }
 
+function VotingSelectionModal({
+  state,
+  objects,
+  onClose,
+  onStartSelected,
+  onStartCurrentOnly,
+}: {
+  state: VotingSelectionState;
+  objects: unknown;
+  onClose: () => void;
+  onStartSelected: (votingIDs: string[]) => Promise<void>;
+  onStartCurrentOnly: (voting: Voting) => Promise<void>;
+}) {
+  const [selectedIDs, setSelectedIDs] = useState(() => new Set(state.available.map((item) => item.id)));
+  const [opening, setOpening] = useState(false);
+  const propertyLabels = buildOwnerPropertyLabels(objects);
+
+  function toggleVoting(voting: Voting) {
+    if (voting.id === state.current.id) return;
+    setSelectedIDs((current) => {
+      const next = new Set(current);
+      if (next.has(voting.id)) {
+        next.delete(voting.id);
+      } else {
+        next.add(voting.id);
+      }
+      next.add(state.current.id);
+      return next;
+    });
+  }
+
+  async function startSelected() {
+    setOpening(true);
+    await onStartSelected(state.available.filter((item) => selectedIDs.has(item.id)).map((item) => item.id));
+    setOpening(false);
+  }
+
+  async function startCurrentOnly() {
+    setOpening(true);
+    await onStartCurrentOnly(state.current);
+    setOpening(false);
+  }
+
+  return (
+    <ModalFrame title="По этому собранию доступны несколько опросных листов" onClose={onClose}>
+      <div className="mb-5 grid gap-3 text-sm text-slate-700">
+        {propertyLabels.length > 0 && (
+          <div>
+            <p className="font-medium text-slate-900">Вы владеете следующим имуществом:</p>
+            <p>{propertyLabels.join(", ")}</p>
+          </div>
+        )}
+        <p>
+          К этому же собранию доступны несколько опросных листов. Вы можете пройти их разом
+          и подписать в конце одной операцией.
+        </p>
+      </div>
+
+      <div className="grid gap-2">
+        {state.available.map((voting) => {
+          const isCurrent = voting.id === state.current.id;
+          return (
+            <label
+              key={voting.id}
+              className="flex cursor-pointer items-start gap-3 rounded-md border bg-white p-3 text-sm"
+            >
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={selectedIDs.has(voting.id)}
+                disabled={isCurrent || opening}
+                onChange={() => toggleVoting(voting)}
+              />
+              <span>
+                <span className="block font-medium text-slate-900">
+                  {getVotingCategoryLabel(getVotingCategory(voting))}
+                  {isCurrent ? " (текущий)" : ""}
+                </span>
+                <span className="block text-slate-500">{voting.title || "Опросный лист"}</span>
+              </span>
+            </label>
+          );
+        })}
+        {state.completed.map((voting) => (
+          <div key={voting.id} className="rounded-md border bg-slate-50 p-3 text-sm text-slate-500">
+            <span className="font-medium text-slate-700">
+              {getVotingCategoryLabel(getVotingCategory(voting))}
+            </span>{" "}
+            — уже пройден
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 flex flex-wrap justify-end gap-3">
+        <Button onClick={onClose} disabled={opening}>Отмена</Button>
+        <Button onClick={startCurrentOnly} disabled={opening}>
+          Пройти только текущий опросник
+        </Button>
+        <Button variant="primary" onClick={startSelected} disabled={opening}>
+          {opening ? "Открываем..." : "Пройти выбранные разом"}
+        </Button>
+      </div>
+    </ModalFrame>
+  );
+}
+
 function VotingWizard({
-  voting,
+  votings,
   onClose,
   onSuccess,
 }: {
-  voting: Voting;
+  votings: Voting[];
   onClose: () => void;
   onSuccess: () => Promise<void>;
 }) {
+  const activeVoting = votings[0];
+  const [votingIndex, setVotingIndex] = useState(0);
+  const voting = votings[votingIndex] || activeVoting;
   const questions = voting.questions ?? [];
   const [step, setStep] = useState<WizardStep>("answers");
-  const [answers, setAnswers] = useState<Record<string, VotingAnswerValue>>({});
+  const [answers, setAnswers] = useState<Record<string, Record<string, VotingAnswerValue>>>({});
   const [signatureMethod, setSignatureMethod] = useState<VotingSignatureMock>("MOCK_MGOV");
   const [error, setError] = useState("");
   const [missingQuestionID, setMissingQuestionID] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  function validateAnswers() {
-    const missingIndex = questions.findIndex((question) => !answers[question.id]);
+  function validateAnswers(targetVoting = voting) {
+    const targetQuestions = targetVoting.questions ?? [];
+    const votingAnswers = answers[targetVoting.id] || {};
+    const missingIndex = targetQuestions.findIndex((question) => !votingAnswers[question.id]);
     if (missingIndex >= 0) {
-      setMissingQuestionID(questions[missingIndex].id);
+      setMissingQuestionID(targetQuestions[missingIndex].id);
       setError(`Ответьте на вопрос №${missingIndex + 1}`);
       return false;
     }
@@ -461,13 +713,32 @@ function VotingWizard({
     return true;
   }
 
-  function goToSignature() {
+  function goNext() {
     if (!validateAnswers()) return;
-    setStep("signature");
+    if (votingIndex < votings.length - 1) {
+      setVotingIndex((current) => current + 1);
+      return;
+    }
+    setStep("review");
+  }
+
+  function goBack() {
+    setError("");
+    setMissingQuestionID("");
+    if (step === "review") {
+      setStep("answers");
+      setVotingIndex(votings.length - 1);
+      return;
+    }
+    if (votingIndex > 0) {
+      setVotingIndex((current) => current - 1);
+    }
   }
 
   async function signAndSubmit() {
-    if (!validateAnswers()) {
+    const invalidIndex = votings.findIndex((item) => !validateAnswers(item));
+    if (invalidIndex >= 0) {
+      setVotingIndex(invalidIndex);
       setStep("answers");
       return;
     }
@@ -475,13 +746,29 @@ function VotingWizard({
     try {
       setSubmitting(true);
       setError("");
-      await submitOwnerVote(voting.id, {
-        signature_method: signatureMethod,
-        answers: questions.map((question) => ({
-          question_id: question.id,
-          answer: answers[question.id],
-        })),
-      });
+      if (votings.length === 1) {
+        await submitOwnerVote(voting.id, {
+          signature_method: signatureMethod,
+          answers: questions.map((question) => ({
+            question_id: question.id,
+            answer: answers[voting.id]?.[question.id] as VotingAnswerValue,
+          })),
+        });
+      } else {
+        const meetingID = voting.meeting_id || voting.meeting?.id || "";
+        await submitOwnerVoteBatch({
+          meeting_id: meetingID,
+          voting_ids: votings.map((item) => item.id),
+          signature_method: signatureMethod,
+          answers: votings.map((item) => ({
+            voting_id: item.id,
+            answers: (item.questions ?? []).map((question) => ({
+              question_id: question.id,
+              answer: answers[item.id]?.[question.id] as VotingAnswerValue,
+            })),
+          })),
+        });
+      }
       await onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось отправить голос");
@@ -493,7 +780,13 @@ function VotingWizard({
   return (
     <ModalFrame title="Пройти голосование онлайн" onClose={onClose}>
       <div className="mb-5 rounded-md bg-slate-50 p-4 text-sm text-slate-700">
+        <p className="mb-2 font-medium text-blue-700">
+          {step === "review"
+            ? "Проверка ответов"
+            : `Опросник ${votingIndex + 1} из ${votings.length}`}
+        </p>
         <h3 className="text-lg font-semibold text-slate-900">{voting.title || "Опросный лист"}</h3>
+        <p>Категория: {getVotingCategoryLabel(getVotingCategory(voting))}</p>
         <p>Дата собрания: {voting.meeting ? formatAstanaDateTime(voting.meeting.scheduled_at) : "Не указана"}</p>
         <p>Крайний срок голосования: {voting.publication_end_at ? formatAstanaDateTime(voting.publication_end_at) : "Не указан"}</p>
       </div>
@@ -523,9 +816,15 @@ function VotingWizard({
                         type="radio"
                         name={`question-${question.id}`}
                         value={answerValue}
-                        checked={answers[question.id] === answerValue}
+                        checked={answers[voting.id]?.[question.id] === answerValue}
                         onChange={() =>
-                          setAnswers((current) => ({ ...current, [question.id]: answerValue }))
+                          setAnswers((current) => ({
+                            ...current,
+                            [voting.id]: {
+                              ...(current[voting.id] || {}),
+                              [question.id]: answerValue,
+                            },
+                          }))
                         }
                       />
                       <span>{answerLabels[answerValue]}</span>
@@ -539,20 +838,36 @@ function VotingWizard({
             ))}
           </div>
 
-          <div className="mt-6 flex justify-end gap-3">
+          <div className="mt-6 flex flex-wrap justify-end gap-3">
             <Button onClick={onClose}>Отмена</Button>
-            <Button variant="primary" onClick={goToSignature}>
-              Голосовать
+            {votingIndex > 0 && <Button onClick={goBack}>Назад</Button>}
+            <Button variant="primary" onClick={goNext}>
+              {votingIndex < votings.length - 1 ? "Далее" : "Перейти к проверке"}
             </Button>
           </div>
         </>
       ) : (
         <>
-          <div className="grid gap-3 rounded-md border p-4 text-sm text-slate-700">
-            <p>1. Проверка данных</p>
-            <p>2. Запрос на подписание через mGov/ЭЦП</p>
-            <div>
-              <p className="mb-2">Способ подписания</p>
+          <div className="grid gap-4">
+            {votings.map((item) => (
+              <div key={item.id} className="rounded-md border p-4 text-sm text-slate-700">
+                <h4 className="font-semibold text-slate-900">{item.title || "Опросный лист"}</h4>
+                <p className="mb-3 text-slate-500">{getVotingCategoryLabel(getVotingCategory(item))}</p>
+                <div className="grid gap-2">
+                  {(item.questions ?? []).map((question, index) => (
+                    <p key={question.id}>
+                      {index + 1}. {question.text} —{" "}
+                      <span className="font-medium">
+                        {answerLabels[answers[item.id]?.[question.id] as VotingAnswerValue] || "Не выбран"}
+                      </span>
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <div className="rounded-md border p-4 text-sm text-slate-700">
+              <p className="mb-2 font-medium text-slate-900">Способ подписания</p>
               <div className="flex flex-wrap gap-2">
                 {(["MOCK_MGOV", "MOCK_ECP"] as VotingSignatureMock[]).map((method) => (
                   <label
@@ -570,15 +885,14 @@ function VotingWizard({
                 ))}
               </div>
             </div>
-            <p>3. Подтвердите имитацию успешного подписания.</p>
           </div>
 
           <div className="mt-6 flex flex-wrap justify-end gap-3">
-            <Button onClick={() => setStep("answers")} disabled={submitting}>
+            <Button onClick={goBack} disabled={submitting}>
               Назад
             </Button>
             <Button variant="primary" onClick={signAndSubmit} disabled={submitting}>
-              {submitting ? "Сохраняем..." : "Имитировать успешное подписание"}
+              {submitting ? "Сохраняем..." : "Подписать и завершить голосование"}
             </Button>
           </div>
         </>

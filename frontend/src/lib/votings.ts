@@ -2,6 +2,7 @@ import { apiFetch } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import type {
   OwnerVotingAnswer,
+  OwnerBatchVotingSubmission,
   OwnerVotingSubmission,
   Voting,
   VotingApprovalReview,
@@ -39,6 +40,15 @@ export function submitOwnerVote(
   payload: OwnerVotingSubmission,
 ): Promise<{ message: string; answers: OwnerVotingAnswer[] }> {
   return apiFetch(`/api/v1/votings/${votingId}/vote`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }) as Promise<{ message: string; answers: OwnerVotingAnswer[] }>;
+}
+
+export function submitOwnerVoteBatch(
+  payload: OwnerBatchVotingSubmission,
+): Promise<{ message: string; answers: OwnerVotingAnswer[] }> {
+  return apiFetch("/api/v1/votings/batch-vote", {
     method: "POST",
     body: JSON.stringify(payload),
   }) as Promise<{ message: string; answers: OwnerVotingAnswer[] }>;
