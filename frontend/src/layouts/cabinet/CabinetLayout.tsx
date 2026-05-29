@@ -8,10 +8,12 @@ import { createMeeting, fetchMeetings } from "@/lib/meetings";
 import { fetchNavigation } from "@/lib/navigation";
 import { fetchObjects } from "@/lib/objects";
 import { fetchOwners, type MeetingOwner } from "@/lib/owners";
+import { fetchProfile, updateProfile as saveProfile } from "@/lib/profile";
 import { fetchVotings } from "@/lib/votings";
 import { addAstanaDays, formatAstanaDateKey } from "@/shared/lib/dateTime";
 import type { Meeting } from "@/types/meeting";
 import type { NavigationItem } from "@/types/navigation";
+import type { UpdateProfilePayload, UserProfile } from "@/types/profile";
 import type { User } from "@/types/user";
 import type { Voting } from "@/types/voting";
 import { CabinetHeader } from "./CabinetHeader";
@@ -31,11 +33,11 @@ export function CabinetLayout() {
   const [votings, setVotings] = useState<Voting[]>([]);
   const [menu, setMenu] = useState<NavigationItem[]>([]);
   const [objects, setObjects] = useState<unknown>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [roleOpen, setRoleOpen] = useState(false);
   const [expandedMenuCodes, setExpandedMenuCodes] = useState<string[]>([]);
 
   const [activeRole, setActiveRole] = useState("OWNER");
@@ -48,6 +50,7 @@ export function CabinetLayout() {
   const [question, setQuestion] = useState("");
   const [optionsText, setOptionsText] = useState("Да\nНет\nВоздержался");
   const [createError, setCreateError] = useState("");
+  const [profileError, setProfileError] = useState("");
   const [creating, setCreating] = useState(false);
 
   const [meetingError, setMeetingError] = useState("");
@@ -121,6 +124,8 @@ export function CabinetLayout() {
         setObjects(objectsData);
         setMeetingLocationAddress(buildMeetingAddress(objectsData));
 
+        await loadProfile(role);
+
         try {
           const ownersData = await fetchOwners();
           setOwners(ownersData);
@@ -180,6 +185,27 @@ export function CabinetLayout() {
     setVotings(data);
   }
 
+  async function loadProfile(role: string) {
+    try {
+      setProfileError("");
+      const data = await fetchProfile(role);
+      setProfile(data);
+      setUser((current) => syncUserFromProfile(current, data));
+    } catch (err) {
+      setProfile(null);
+      setProfileError(
+        err instanceof Error ? err.message : "Не удалось загрузить профиль",
+      );
+    }
+  }
+
+  async function updateCurrentProfile(payload: UpdateProfilePayload) {
+    setProfileError("");
+    const data = await saveProfile(activeRole, payload);
+    setProfile(data);
+    setUser((current) => syncUserFromProfile(current, data));
+  }
+
   async function createVoting(e: FormEvent) {
     e.preventDefault();
     setCreateError("");
@@ -211,6 +237,7 @@ export function CabinetLayout() {
   }
 
   async function switchRole(role: string) {
+    const currentComponent = activeComponent;
     setActiveRole(role);
 
     const menuData = await fetchNavigation(role);
@@ -219,18 +246,23 @@ export function CabinetLayout() {
     const defaultItem = menuData.find((item) => item.is_default) || menuData[0];
     const defaultComponent = getModuleCode(defaultItem);
     setVotingConstructorInitial(null);
-    setActiveComponent(defaultComponent);
+    const nextComponent = getComponentAfterRoleSwitch(
+      currentComponent,
+      menuData,
+      defaultComponent,
+    );
+    setActiveComponent(nextComponent);
 
     const objectsData = await fetchObjects(role);
     setObjects(objectsData);
     setMeetingLocationAddress(buildMeetingAddress(objectsData));
+    await loadProfile(role);
 
     setExpandedMenuCodes([]);
-    setRoleOpen(false);
     setAccountOpen(false);
 
-    if (defaultComponent.startsWith("meetings")) {
-      await loadMeetingsByComponent(defaultComponent);
+    if (nextComponent.startsWith("meetings")) {
+      await loadMeetingsByComponent(nextComponent);
     }
   }
 
@@ -371,9 +403,7 @@ export function CabinetLayout() {
         user={user}
         activeRole={activeRole}
         accountOpen={accountOpen}
-        roleOpen={roleOpen}
         setAccountOpen={setAccountOpen}
-        setRoleOpen={setRoleOpen}
         onOpenModule={openAccountModule}
         switchRole={switchRole}
         logout={logout}
@@ -391,8 +421,14 @@ export function CabinetLayout() {
           user={user}
           objects={objects}
           owners={owners}
+          profile={profile}
+          profileError={profileError}
+          menu={menu}
           activeRole={activeRole}
           activeComponent={activeComponent}
+          openModule={openAccountModule}
+          switchRole={switchRole}
+          updateProfile={updateCurrentProfile}
           votingConstructorInitial={votingConstructorInitial}
           votings={votings}
           loadVotings={loadVotings}
@@ -432,6 +468,46 @@ export function CabinetLayout() {
 
 function getModuleCode(item?: NavigationItem) {
   return item?.component || item?.code || "dashboard";
+}
+
+function getComponentAfterRoleSwitch(
+  currentComponent: string,
+  menu: NavigationItem[],
+  defaultComponent: string,
+) {
+  if (isAccountComponent(currentComponent)) return currentComponent;
+  if (isComponentAvailable(currentComponent, menu)) return currentComponent;
+
+  return defaultComponent;
+}
+
+function isAccountComponent(component: string) {
+  return component === "profile" || component === "system_settings";
+}
+
+function isComponentAvailable(component: string, menu: NavigationItem[]) {
+  return flattenMenu(menu).some((item) => getModuleCode(item) === component);
+}
+
+function flattenMenu(menu: NavigationItem[]): NavigationItem[] {
+  return menu.flatMap((item) => [
+    item,
+    ...(item.children ? flattenMenu(item.children) : []),
+  ]);
+}
+
+function syncUserFromProfile(current: User | null, profile: UserProfile) {
+  if (!current) return current;
+
+  return {
+    ...current,
+    full_name: profile.user.full_name,
+    email: profile.user.email,
+    phone: profile.user.phone,
+    erc_account: profile.user.erc_account,
+    photo: profile.user.photo,
+    roles: profile.roles,
+  };
 }
 
 function getMinMeetingDateValue() {

@@ -1,4 +1,5 @@
 import type { User } from "@/types/user";
+import { roleLabel } from "@/shared/lib/cabinetLabels";
 import { AccountDropdown } from "./AccountDropdown";
 
 export function UserAccountArea({
@@ -6,9 +7,7 @@ export function UserAccountArea({
   activeRole,
   logout,
   onOpenModule,
-  roleOpen,
   setAccountOpen,
-  setRoleOpen,
   switchRole,
   user,
 }: {
@@ -16,13 +15,12 @@ export function UserAccountArea({
   activeRole: string;
   logout: () => void;
   onOpenModule: (code: string) => void;
-  roleOpen: boolean;
   setAccountOpen: (value: boolean) => void;
-  setRoleOpen: (value: boolean) => void;
   switchRole: (role: string) => void;
   user: User;
 }) {
-  const phone = user.phone || user.phone_number || "Телефон не указан";
+  const name = user.full_name?.trim() || user.email || "Пользователь";
+  const initials = getInitials(name);
 
   return (
     <div className="relative">
@@ -30,13 +28,22 @@ export function UserAccountArea({
         onClick={() => setAccountOpen(!accountOpen)}
         className="flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-slate-50"
       >
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-xl">
-          👤
-        </div>
+        {user.photo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={user.photo}
+            alt=""
+            className="h-12 w-12 rounded-full object-cover"
+          />
+        ) : (
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">
+            {initials}
+          </div>
+        )}
 
         <div className="min-w-40 text-right">
-          <p className="text-sm font-medium">{phone}</p>
-          <p className="text-xs text-slate-500">{activeRole}</p>
+          <p className="max-w-56 truncate text-sm font-medium">{name}</p>
+          <p className="text-xs text-slate-500">{roleLabel(activeRole)}</p>
         </div>
 
         <span className="text-slate-500">⌄</span>
@@ -45,8 +52,6 @@ export function UserAccountArea({
       {accountOpen && (
         <AccountDropdown
           activeRole={activeRole}
-          roleOpen={roleOpen}
-          setRoleOpen={setRoleOpen}
           onOpenModule={onOpenModule}
           switchRole={switchRole}
           logout={logout}
@@ -55,4 +60,14 @@ export function UserAccountArea({
       )}
     </div>
   );
+}
+
+function getInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const initials = parts
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("");
+
+  return initials || "👤";
 }

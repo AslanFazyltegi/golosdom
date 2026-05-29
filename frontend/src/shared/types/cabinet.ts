@@ -1,6 +1,9 @@
 import type { FormEvent, ReactNode } from "react";
 import type { MeetingOwner } from "@/lib/owners";
 import type { Meeting } from "@/types/meeting";
+import type { NavigationItem } from "@/types/navigation";
+import type { UserProfile } from "@/types/profile";
+import type { UpdateProfilePayload } from "@/types/profile";
 import type { User } from "@/types/user";
 import type { Voting } from "@/types/voting";
 
@@ -8,8 +11,14 @@ export type CabinetModuleProps = {
   user: User;
   objects: unknown;
   owners: MeetingOwner[];
+  profile: UserProfile | null;
+  profileError: string;
+  menu: NavigationItem[];
   activeRole: string;
   activeComponent: string;
+  openModule: (code: string) => void;
+  switchRole: (role: string) => void;
+  updateProfile: (payload: UpdateProfilePayload) => Promise<void>;
   votingConstructorInitial: Voting | null;
   votings: Voting[];
   loadVotings: () => void;

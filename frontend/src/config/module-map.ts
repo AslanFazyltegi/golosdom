@@ -11,7 +11,6 @@ import {
 import { MyBuildingPage } from "@/modules/my-building";
 import { NotificationsPage } from "@/modules/notifications";
 import { ProfilePage } from "@/modules/profile";
-import { RoleSwitcherPage } from "@/modules/role-switcher";
 import { SystemSettingsPage } from "@/modules/system-settings";
 import { VotingConstructorPage } from "@/modules/voting-constructor";
 import { PastVotingsPage, VotingsPage } from "@/modules/votings";
@@ -47,6 +46,6 @@ export const moduleMap: Record<string, CabinetModuleComponent> = {
   notifications: NotificationsPage,
 
   profile: ProfilePage,
-  role_switcher: RoleSwitcherPage,
+  role_switcher: ProfilePage,
   system_settings: SystemSettingsPage,
 };

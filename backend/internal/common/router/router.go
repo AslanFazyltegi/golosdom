@@ -25,6 +25,10 @@ import (
 	ownersRepo "golosdom-backend/internal/owners/repository"
 	ownersService "golosdom-backend/internal/owners/service"
 
+	profileHandler "golosdom-backend/internal/profile/handler"
+	profileRepo "golosdom-backend/internal/profile/repository"
+	profileService "golosdom-backend/internal/profile/service"
+
 	votingHandler "golosdom-backend/internal/voting/handler"
 	votingRepo "golosdom-backend/internal/voting/repository"
 	votingService "golosdom-backend/internal/voting/service"
@@ -61,6 +65,10 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 	meetingsSvc := meetingsService.New(meetingsRepo)
 	meetingsH := meetingsHandler.New(meetingsSvc)
 
+	profileRepo := profileRepo.New(dbPool)
+	profileSvc := profileService.New(profileRepo)
+	profileH := profileHandler.New(profileSvc)
+
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -95,12 +103,26 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 	mux.HandleFunc("/api/v1/auth/me", authH.Me)
 
 	mux.HandleFunc(
+		"/api/v1/profile",
+		authMiddleware(
+			authSvc,
+			profileH.Get,
+		),
+	)
+
+	mux.HandleFunc(
 		"/api/v1/objects",
 		authMiddleware(
 			authSvc,
 			objectsH.Get,
 		),
 	)
+	mux.HandleFunc("/api/v1/objects/dashboard", authMiddleware(authSvc, objectsH.Dashboard))
+	mux.HandleFunc("/api/v1/objects/properties", authMiddleware(authSvc, objectsH.Properties))
+	mux.HandleFunc("/api/v1/objects/properties/", authMiddleware(authSvc, objectsH.PropertyByID))
+	mux.HandleFunc("/api/v1/objects/owners", authMiddleware(authSvc, objectsH.Owners))
+	mux.HandleFunc("/api/v1/objects/users", authMiddleware(authSvc, objectsH.Users))
+	mux.HandleFunc("/api/v1/objects/building", authMiddleware(authSvc, objectsH.Building))
 
 	mux.HandleFunc(
 		"/api/v1/owners",

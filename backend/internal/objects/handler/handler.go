@@ -1,9 +1,13 @@
 package handler
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 
 	"golosdom-backend/internal/common/response"
+	"golosdom-backend/internal/objects/dto"
 	"golosdom-backend/internal/objects/service"
 )
 
@@ -54,4 +58,149 @@ func (h *Handler) Get(
 		http.StatusOK,
 		data,
 	)
+}
+
+func (h *Handler) Dashboard(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodGet {
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	data, err := h.service.GetDashboard()
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, data)
+}
+
+func (h *Handler) Properties(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodGet {
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	data, err := h.service.GetProperties()
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, data)
+}
+
+func (h *Handler) Owners(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodGet {
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	data, err := h.service.GetOwners()
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, data)
+}
+
+func (h *Handler) Users(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodGet {
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	data, err := h.service.GetUsers()
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, data)
+}
+
+func (h *Handler) Building(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodPatch {
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req dto.UpdateBuildingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	data, err := h.service.UpdateBuilding(
+		req,
+		r.Header.Get("X-User-ID"),
+		r.Header.Get("X-User-Roles"),
+	)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, data)
+}
+
+func (h *Handler) PropertyByID(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodPatch {
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	propertyID := strings.TrimPrefix(r.URL.Path, "/api/v1/objects/properties/")
+	propertyID = strings.Trim(propertyID, "/")
+	if propertyID == "" {
+		response.Error(w, http.StatusBadRequest, "property id is required")
+		return
+	}
+
+	var req dto.UpdatePropertyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	err := h.service.UpdateProperty(
+		propertyID,
+		req,
+		r.Header.Get("X-User-ID"),
+		r.Header.Get("X-User-Roles"),
+	)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func writeServiceError(w http.ResponseWriter, err error) {
+	if errors.Is(err, service.ErrForbidden) || err.Error() == "forbidden" {
+		response.Error(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	response.Error(w, http.StatusInternalServerError, err.Error())
 }

@@ -7,9 +7,7 @@ export function CabinetHeader({
   activeRole,
   logout,
   onOpenModule,
-  roleOpen,
   setAccountOpen,
-  setRoleOpen,
   switchRole,
   user,
 }: {
@@ -17,9 +15,7 @@ export function CabinetHeader({
   activeRole: string;
   logout: () => void;
   onOpenModule: (code: string) => void;
-  roleOpen: boolean;
   setAccountOpen: (value: boolean) => void;
-  setRoleOpen: (value: boolean) => void;
   switchRole: (role: string) => void;
   user: User;
 }) {
@@ -31,9 +27,7 @@ export function CabinetHeader({
         activeRole={activeRole}
         logout={logout}
         onOpenModule={onOpenModule}
-        roleOpen={roleOpen}
         setAccountOpen={setAccountOpen}
-        setRoleOpen={setRoleOpen}
         switchRole={switchRole}
         user={user}
       />
