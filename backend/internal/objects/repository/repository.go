@@ -603,6 +603,37 @@ type PropertyData struct {
 	Status string
 }
 
+type MyPropertyData struct {
+	ID             string
+	Type           string
+	Number         string
+	Area           sql.NullFloat64
+	Status         string
+	ErcAccount     sql.NullString
+	ImageURL       sql.NullString
+	Floor          sql.NullInt64
+	Entrance       sql.NullInt64
+	Share          sql.NullFloat64
+	PayerStatus    string
+	PayerUpdatedAt sql.NullTime
+	BuildingID     string
+	BuildingName   sql.NullString
+	City           string
+	District       sql.NullString
+	Street         string
+	HouseNumber    string
+	HouseFraction  sql.NullString
+	PayerName      sql.NullString
+}
+
+type CreatePropertyUpdateRequestData struct {
+	PropertyID  string
+	UserID      string
+	RequestType string
+	NewValue    *string
+	Comment     *string
+}
+
 func (r *Repository) GetUserProperties(
 	ctx context.Context,
 	userID string,
@@ -655,4 +686,159 @@ func (r *Repository) GetUserProperties(
 	}
 
 	return result, rows.Err()
+}
+
+func (r *Repository) GetMyProperties(ctx context.Context, userID string) ([]MyPropertyData, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT
+			p.id,
+			p.type,
+			p.number,
+			p.area,
+			p.status,
+			p.erc_account,
+			p.image_url,
+			p.floor,
+			p.entrance,
+			po.ownership_share,
+			COALESCE(NULLIF(po.payer_status, ''), 'confirmed'),
+			po.payer_updated_at,
+			b.id,
+			b.building_name,
+			b.city,
+			b.district,
+			b.street,
+			b.house_number,
+			b.house_fraction,
+			u.full_name
+		FROM property_owners po
+		JOIN property p
+			ON p.id = po.property_id
+		JOIN building b
+			ON b.id = p.building_id
+		JOIN users u
+			ON u.id = po.user_id
+		WHERE po.user_id = $1
+			AND po.status = 'active'
+		ORDER BY p.type, length(p.number), p.number
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := []MyPropertyData{}
+	for rows.Next() {
+		var item MyPropertyData
+		if err := rows.Scan(
+			&item.ID,
+			&item.Type,
+			&item.Number,
+			&item.Area,
+			&item.Status,
+			&item.ErcAccount,
+			&item.ImageURL,
+			&item.Floor,
+			&item.Entrance,
+			&item.Share,
+			&item.PayerStatus,
+			&item.PayerUpdatedAt,
+			&item.BuildingID,
+			&item.BuildingName,
+			&item.City,
+			&item.District,
+			&item.Street,
+			&item.HouseNumber,
+			&item.HouseFraction,
+			&item.PayerName,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+
+	return result, rows.Err()
+}
+
+func (r *Repository) CountActiveVotingsForOwner(ctx context.Context, userID string) (int, error) {
+	var count int
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM votings v
+		WHERE v.status = 'published'
+			AND COALESCE(v.publication_status, 'not_scheduled') = 'published'
+			AND v.publication_start_at IS NOT NULL
+			AND v.publication_end_at IS NOT NULL
+			AND v.publication_start_at <= now()
+			AND v.publication_end_at >= now()
+			AND (
+				COALESCE(NULLIF(v.category, ''), 'general') = 'general'
+				OR (
+					v.category = 'apartments_and_commercial'
+					AND EXISTS (
+						SELECT 1
+						FROM property_owners po
+						JOIN property p ON p.id = po.property_id
+						WHERE po.user_id = $1
+							AND po.status = 'active'
+							AND p.type IN ('apartment', 'commercial', 'commercial_room', 'commercial_unit')
+					)
+				)
+				OR (
+					v.category = 'parking_and_storerooms'
+					AND EXISTS (
+						SELECT 1
+						FROM property_owners po
+						JOIN property p ON p.id = po.property_id
+						WHERE po.user_id = $1
+							AND po.status = 'active'
+							AND p.type IN ('parking', 'parking_space', 'storeroom', 'storage')
+					)
+				)
+			)
+	`, userID).Scan(&count)
+	return count, err
+}
+
+func (r *Repository) CreatePropertyUpdateRequest(ctx context.Context, data CreatePropertyUpdateRequestData) (string, time.Time, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	var exists bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM property_owners
+			WHERE property_id = $1
+				AND user_id = $2
+				AND status = 'active'
+		)
+	`, data.PropertyID, data.UserID).Scan(&exists); err != nil {
+		return "", time.Time{}, err
+	}
+	if !exists {
+		return "", time.Time{}, sql.ErrNoRows
+	}
+
+	id := fmt.Sprintf("property-request-%s-%d", data.PropertyID, time.Now().UnixNano())
+	var createdAt time.Time
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO property_update_requests (
+			id,
+			property_id,
+			user_id,
+			request_type,
+			new_value,
+			comment,
+			status
+		) VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+		RETURNING created_at
+	`, id, data.PropertyID, data.UserID, data.RequestType, data.NewValue, data.Comment).Scan(&createdAt); err != nil {
+		return "", time.Time{}, err
+	}
+
+	return id, createdAt, tx.Commit(ctx)
 }

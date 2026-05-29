@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -58,6 +59,64 @@ func (h *Handler) Get(
 		http.StatusOK,
 		data,
 	)
+}
+
+func (h *Handler) MyProperties(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodGet {
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	data, err := h.service.GetMyProperties(r.Header.Get("X-User-ID"))
+	if err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, data)
+}
+
+func (h *Handler) MyPropertyUpdateRequest(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodPost {
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/my-properties/")
+	path = strings.Trim(path, "/")
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] != "update-requests" {
+		response.Error(w, http.StatusNotFound, "not found")
+		return
+	}
+
+	var req dto.CreatePropertyUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		response.Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	data, err := h.service.CreatePropertyUpdateRequest(
+		parts[0],
+		r.Header.Get("X-User-ID"),
+		req,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			response.Error(w, http.StatusNotFound, "property not found")
+			return
+		}
+		response.Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusCreated, data)
 }
 
 func (h *Handler) Dashboard(

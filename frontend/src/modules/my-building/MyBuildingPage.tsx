@@ -2,8 +2,13 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiFetch } from "@/lib/api";
+import {
+  createPropertyUpdateRequest,
+  fetchMyProperties,
+} from "@/lib/objects";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
 import { Placeholder } from "@/shared/ui/Placeholder";
+import type { MyPropertiesResponse, MyProperty } from "@/types/objects";
 
 type Building = {
   id: string;
@@ -84,13 +89,6 @@ type UserOption = {
   erc_account: string | null;
 };
 
-type OwnerObject = {
-  property_type: string;
-  number: string;
-  area: string | number | null;
-  status: string;
-};
-
 type Dashboard = {
   building: Building;
   statistics: Statistics;
@@ -117,7 +115,7 @@ const emptyStats: Statistics = {
   uniqueOwners: 0,
 };
 
-export function MyBuildingPage({ activeRole, objects }: CabinetModuleProps) {
+export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModuleProps) {
   const [activeTab, setActiveTab] = useState<Tab>("properties");
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [properties, setProperties] = useState<PropertyItem[]>([]);
@@ -300,7 +298,7 @@ export function MyBuildingPage({ activeRole, objects }: CabinetModuleProps) {
   }
 
   if (isOwnerRole) {
-    return <OwnerObjectsView activeRole={activeRole} objects={objects} />;
+    return <OwnerObjectsView openModule={openModule} />;
   }
 
   if (!objects && loading) {
@@ -597,50 +595,417 @@ export function MyBuildingPage({ activeRole, objects }: CabinetModuleProps) {
 }
 
 function OwnerObjectsView({
-  activeRole,
-  objects,
+  openModule,
 }: {
-  activeRole: string;
-  objects: unknown;
+  openModule: (code: string) => void;
 }) {
-  if (!objects) {
-    return <Placeholder title="Мои объекты" text="Загрузка данных..." />;
+  const [data, setData] = useState<MyPropertiesResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [detailsProperty, setDetailsProperty] = useState<MyProperty | null>(null);
+  const [requestProperty, setRequestProperty] = useState<MyProperty | null>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [requestType, setRequestType] = useState("payer_data");
+  const [newValue, setNewValue] = useState("");
+  const [comment, setComment] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchMyProperties()
+      .then((nextData) => {
+        if (!cancelled) setData(nextData);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Не удалось загрузить объекты");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function openRequest(property: MyProperty) {
+    setRequestProperty(property);
+    setRequestType("payer_data");
+    setNewValue("");
+    setComment("");
   }
 
-  const ownerObjects = Array.isArray(objects) ? (objects as OwnerObject[]) : [];
+  async function submitRequest() {
+    if (!requestProperty) return;
+    setSaving(true);
+    try {
+      await createPropertyUpdateRequest(requestProperty.id, {
+        requestType,
+        newValue,
+        comment,
+      });
+      setToast("Заявка отправлена");
+      setRequestProperty(null);
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "Не удалось отправить заявку");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return <Placeholder title="Мои объекты" text="Загрузка объектов..." />;
+  }
+
+  if (error || !data) {
+    return (
+      <section className="rounded-3xl border border-red-100 bg-white p-8 text-slate-700 shadow-sm">
+        <h1 className="text-3xl font-bold text-slate-900">Мои объекты</h1>
+        <p className="mt-4 text-red-600">Не удалось загрузить объекты. Попробуйте обновить страницу.</p>
+      </section>
+    );
+  }
+
+  const ownerObjects = data.properties;
 
   return (
-    <>
-      <h1 className="mb-8 text-3xl font-bold">Мои объекты</h1>
+    <div className="space-y-7 bg-slate-50 pb-8 text-slate-900">
+      <div>
+        <h1 className="text-3xl font-bold">Мои объекты</h1>
+        <p className="mt-2 max-w-3xl text-sm text-slate-500">
+          Здесь отображаются все объекты недвижимости, которыми вы владеете в данном ЖК.
+        </p>
+      </div>
 
-      {ownerObjects.length === 0 && (
-        <section className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="mb-3 text-xl font-semibold">Объекты не найдены</h2>
-          <p className="text-slate-600">
-            Для роли <b>{activeRole}</b> объекты имущества пока не назначены.
-          </p>
-        </section>
+      {toast && (
+        <div className="rounded-2xl border border-sky-100 bg-sky-50 px-5 py-3 text-sm font-semibold text-sky-800">
+          {toast}
+        </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-        {ownerObjects.map((item) => (
-          <section
-            key={`${item.property_type}-${item.number}`}
-            className="rounded-2xl border bg-white p-6 shadow-sm"
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <OwnerSummaryCard label="Всего объектов" value={data.summary.totalObjects} />
+        <OwnerSummaryCard label="Активных объектов" value={data.summary.activeObjects} />
+        <OwnerSummaryCard label="Лицевых счетов" value={data.summary.ercAccounts} />
+        <OwnerSummaryCard label="Активных голосований" value={data.summary.activeVotings} />
+      </div>
+
+      {ownerObjects.length === 0 ? (
+        <section className="rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
+          <h2 className="text-xl font-bold">У вас пока нет привязанных объектов недвижимости.</h2>
+          <p className="mt-3 text-slate-500">
+            Если вы считаете, что это ошибка, обратитесь к председателю ОСИ.
+          </p>
+        </section>
+      ) : (
+        <div className="space-y-5">
+          {ownerObjects.map((item) => (
+            <OwnerPropertyCard
+              key={item.id}
+              property={item}
+              onDetails={() => setDetailsProperty(item)}
+              onRequest={() => openRequest(item)}
+              onVotings={() => openModule("votings_active")}
+            />
+          ))}
+        </div>
+      )}
+
+      <section className="flex flex-col gap-4 rounded-3xl border border-sky-100 bg-white p-6 shadow-sm md:flex-row md:items-center md:justify-between">
+        <div className="flex max-w-4xl gap-4 text-sm leading-6 text-slate-600">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-lg font-bold text-sky-700">
+            i
+          </div>
+          <div>
+            <p>Лицевой счёт ЕРЦ привязан к объекту недвижимости и не меняется при смене собственника.</p>
+            <p>Если данные плательщика устарели, отправьте заявку на переоформление.</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setInfoOpen(true)}
+          className="w-full rounded-2xl border border-sky-200 px-5 py-3 text-sm font-bold text-sky-700 hover:bg-sky-50 md:w-auto"
+        >
+          Как это работает?
+        </button>
+      </section>
+
+      {detailsProperty && (
+        <OwnerModal title={detailsProperty.title} onClose={() => setDetailsProperty(null)}>
+          <InfoGrid
+            items={[
+              ["Полный адрес", detailsProperty.building.fullAddress],
+              ["Тип объекта", detailsProperty.typeLabel],
+              ["Номер", detailsProperty.number],
+              ["ЖК", detailsProperty.building.name],
+              ["Площадь", detailsProperty.area === null ? null : `${formatArea(detailsProperty.area)} м²`],
+              ["Этаж", detailsProperty.floor],
+              ["Подъезд", detailsProperty.entrance],
+              ["Доля владения", formatShare(detailsProperty.share)],
+              ["Лицевой счёт ЕРЦ", detailsProperty.ercAccount || "Не указан"],
+              ["Плательщик", detailsProperty.payerName],
+              ["Статус плательщика", detailsProperty.payerStatusLabel],
+              ["Последнее обновление", formatDateOnly(detailsProperty.payerUpdatedAt)],
+            ]}
+          />
+          <VotingParticipation property={detailsProperty} expanded />
+        </OwnerModal>
+      )}
+
+      {requestProperty && (
+        <OwnerModal title="Запросить изменение" onClose={() => setRequestProperty(null)}>
+          <div className="space-y-4">
+            <label className="block">
+              <span className="text-sm font-semibold text-slate-700">Что хотите изменить?</span>
+              <select
+                value={requestType}
+                onChange={(event) => setRequestType(event.target.value)}
+                className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-sky-400"
+              >
+                <option value="payer_data">Данные плательщика</option>
+                <option value="contact_phone">Телефон для связи</option>
+                <option value="erc_account_wrong">Лицевой счёт указан неверно</option>
+                <option value="other">Другое</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-slate-700">Новое значение</span>
+              <input
+                value={newValue}
+                onChange={(event) => setNewValue(event.target.value)}
+                className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-sky-400"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-slate-700">Комментарий</span>
+              <textarea
+                value={comment}
+                onChange={(event) => setComment(event.target.value)}
+                rows={4}
+                className="mt-2 w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-sky-400"
+              />
+            </label>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setRequestProperty(null)}
+                className="rounded-2xl border border-slate-200 px-5 py-3 text-sm font-bold text-slate-600"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={submitRequest}
+                disabled={saving}
+                className="rounded-2xl bg-sky-600 px-5 py-3 text-sm font-bold text-white disabled:opacity-60"
+              >
+                {saving ? "Отправка..." : "Отправить заявку"}
+              </button>
+            </div>
+          </div>
+        </OwnerModal>
+      )}
+
+      {infoOpen && (
+        <OwnerModal title="Как это работает?" onClose={() => setInfoOpen(false)}>
+          <div className="space-y-3 text-sm leading-6 text-slate-600">
+            <p>Лицевой счёт относится к конкретному объекту недвижимости: квартире, кладовой, паркоместу или нежилому помещению.</p>
+            <p>При смене собственника лицевой счёт объекта сохраняется.</p>
+            <p>Новый владелец должен переоформить данные плательщика, чтобы квитанции и уведомления приходили на его имя.</p>
+          </div>
+        </OwnerModal>
+      )}
+    </div>
+  );
+}
+
+function OwnerSummaryCard({ label, value }: { label: string; value: number }) {
+  return (
+    <section className="flex min-h-32 flex-col justify-between rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
+      <p className="text-sm font-semibold text-slate-500">{label}</p>
+      <p className="mt-3 text-4xl font-bold text-slate-900">{value}</p>
+    </section>
+  );
+}
+
+function OwnerPropertyCard({
+  property,
+  onDetails,
+  onRequest,
+  onVotings,
+}: {
+  property: MyProperty;
+  onDetails: () => void;
+  onRequest: () => void;
+  onVotings: () => void;
+}) {
+  return (
+    <section className="grid items-stretch gap-5 overflow-hidden rounded-3xl border border-slate-100 bg-white p-4 shadow-sm md:grid-cols-[180px_minmax(0,1fr)] xl:grid-cols-[180px_minmax(360px,1fr)_280px_180px]">
+      <PropertyPreview property={property} />
+
+      <div className="flex min-w-0 flex-col p-1">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="min-w-0 text-2xl font-bold text-slate-900">{property.title}</h2>
+          <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${propertyBadgeClass(property.status)}`}>
+            {property.statusLabel}
+          </span>
+        </div>
+        <p className="mt-2 max-w-4xl text-sm font-semibold leading-6 text-slate-600">
+          {property.building.fullAddress}
+        </p>
+
+        <div className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
+          <InfoPill label="Площадь" value={property.area === null ? "-" : `${formatArea(property.area)} м²`} />
+          <InfoPill label="Этаж" value={formatValue(property.floor)} />
+          <InfoPill label="Подъезд" value={formatValue(property.entrance)} />
+          <InfoPill label="Доля" value={formatShare(property.share)} />
+        </div>
+
+        <VotingParticipation property={property} />
+      </div>
+
+      <aside className="min-w-0 rounded-3xl border border-slate-100 bg-slate-50 p-5 md:col-span-2 xl:col-span-1">
+        <p className="text-xs font-bold uppercase text-slate-400">Лицевой счёт ЕРЦ</p>
+        <p className="mt-2 break-words text-xl font-bold text-slate-900">{property.ercAccount || "Не указан"}</p>
+
+        <dl className="mt-5 space-y-4 text-sm">
+          <div>
+            <dt className="font-semibold text-slate-400">Плательщик</dt>
+            <dd className="mt-1 font-bold text-slate-800">{formatValue(property.payerName)}</dd>
+          </div>
+          <div>
+            <dt className="font-semibold text-slate-400">Статус плательщика</dt>
+            <dd className="mt-1">
+              <span className={`rounded-full px-3 py-1 text-xs font-bold ${payerBadgeClass(property.payerStatus)}`}>
+                {property.payerStatusLabel}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt className="font-semibold text-slate-400">Последнее обновление</dt>
+            <dd className="mt-1 font-bold text-slate-800">{formatDateOnly(property.payerUpdatedAt)}</dd>
+          </div>
+        </dl>
+      </aside>
+
+      <div className="flex min-w-0 flex-col gap-3 md:col-span-2 xl:col-span-1 xl:justify-center">
+        <button
+          type="button"
+          onClick={onDetails}
+          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-center text-sm font-bold text-slate-700 hover:bg-slate-50"
+        >
+          Подробнее
+        </button>
+        <button
+          type="button"
+          onClick={onRequest}
+          className="w-full rounded-2xl border border-sky-200 px-4 py-3 text-center text-sm font-bold text-sky-700 hover:bg-sky-50"
+        >
+          Запросить изменение
+        </button>
+        <button
+          type="button"
+          onClick={onVotings}
+          className="w-full rounded-2xl bg-sky-600 px-4 py-3 text-center text-sm font-bold text-white hover:bg-sky-700"
+        >
+          Активные голосования
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function PropertyPreview({ property }: { property: MyProperty }) {
+  if (property.imageUrl) {
+    return (
+      <div
+        className="min-h-44 rounded-3xl bg-cover bg-center md:h-full md:min-h-56"
+        style={{ backgroundImage: `url(${property.imageUrl})` }}
+        aria-label={property.title}
+      />
+    );
+  }
+
+  return (
+    <div className="flex min-h-44 flex-col items-center justify-center rounded-3xl bg-gradient-to-br from-sky-50 to-slate-100 text-sky-700 md:h-full md:min-h-56">
+      <span className="text-5xl" aria-hidden="true">{propertyIcon(property.type)}</span>
+      <span className="mt-3 text-sm font-bold">{property.typeLabel}</span>
+    </div>
+  );
+}
+
+function InfoPill({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-slate-50 px-4 py-3">
+      <p className="text-xs font-bold uppercase text-slate-400">{label}</p>
+      <p className="mt-1 font-bold text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function VotingParticipation({
+  property,
+  expanded = false,
+}: {
+  property: MyProperty;
+  expanded?: boolean;
+}) {
+  const items = [
+    ["Общие голосования", property.votingParticipation.general],
+    ["Квартиры и НП", property.votingParticipation.apartmentCommercial],
+    ["Кладовые и паркоместа", property.votingParticipation.storageParking],
+  ] as const;
+
+  return (
+    <div className={expanded ? "mt-6" : "mt-5"}>
+      <h3 className="text-sm font-bold text-slate-900">Участие в голосованиях</h3>
+      <div className="mt-3 grid gap-2 md:grid-cols-3">
+        {items.map(([label, active]) => (
+          <div
+            key={label}
+            className="flex min-h-16 flex-col justify-between gap-2 rounded-2xl border border-slate-100 px-4 py-3 text-sm lg:flex-row lg:items-center"
           >
-            <h2 className="text-xl font-semibold">
-              {propertyTypeLabel(item.property_type)} №{item.number}
-            </h2>
-            <p className="mt-3 text-slate-600">
-              Площадь: {formatValue(item.area)} м²
-            </p>
-            <p className="mt-1 text-slate-500">
-              Статус: {formatValue(item.status)}
-            </p>
-          </section>
+            <span className="font-semibold text-slate-600">{label}</span>
+            <span className={`whitespace-nowrap font-bold ${active ? "text-emerald-600" : "text-slate-400"}`}>
+              {active ? "✓ Участвует" : "○ Не участвует"}
+            </span>
+          </div>
         ))}
       </div>
-    </>
+    </div>
+  );
+}
+
+function OwnerModal({
+  title,
+  children,
+  onClose,
+}: {
+  title: string;
+  children: ReactNode;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4">
+      <section className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <h2 className="text-2xl font-bold text-slate-900">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Закрыть"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-xl text-slate-500 hover:bg-slate-50"
+          >
+            ×
+          </button>
+        </div>
+        {children}
+      </section>
+    </div>
   );
 }
 
@@ -1200,4 +1565,63 @@ function formatDate(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatDateOnly(value: string | null) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function formatShare(value: number | null) {
+  if (value === null || value === undefined) return "-";
+  return `${Number(value).toLocaleString("ru-RU", { maximumFractionDigits: 2 })}%`;
+}
+
+function propertyIcon(type: string) {
+  switch (type) {
+    case "parking":
+    case "parking_space":
+      return "P";
+    case "storeroom":
+    case "storage":
+      return "□";
+    case "commercial":
+    case "commercial_room":
+    case "commercial_unit":
+      return "▣";
+    default:
+      return "⌂";
+  }
+}
+
+function propertyBadgeClass(status: string) {
+  switch (status) {
+    case "active":
+      return "bg-emerald-50 text-emerald-700";
+    case "inactive":
+      return "bg-slate-100 text-slate-600";
+    case "disputed":
+      return "bg-amber-50 text-amber-700";
+    default:
+      return "bg-slate-100 text-slate-600";
+  }
+}
+
+function payerBadgeClass(status: string) {
+  switch (status) {
+    case "confirmed":
+      return "bg-emerald-50 text-emerald-700";
+    case "pending":
+      return "bg-amber-50 text-amber-700";
+    case "not_confirmed":
+      return "bg-slate-100 text-slate-600";
+    case "rejected":
+      return "bg-red-50 text-red-700";
+    default:
+      return "bg-slate-100 text-slate-600";
+  }
 }

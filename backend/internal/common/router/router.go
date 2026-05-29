@@ -117,6 +117,8 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 			objectsH.Get,
 		),
 	)
+	mux.HandleFunc("/api/v1/my-properties", authMiddleware(authSvc, objectsH.MyProperties))
+	mux.HandleFunc("/api/v1/my-properties/", authMiddleware(authSvc, objectsH.MyPropertyUpdateRequest))
 	mux.HandleFunc("/api/v1/objects/dashboard", authMiddleware(authSvc, objectsH.Dashboard))
 	mux.HandleFunc("/api/v1/objects/properties", authMiddleware(authSvc, objectsH.Properties))
 	mux.HandleFunc("/api/v1/objects/properties/", authMiddleware(authSvc, objectsH.PropertyByID))

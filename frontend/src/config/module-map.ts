@@ -22,6 +22,7 @@ export const moduleMap: Record<string, CabinetModuleComponent> = {
 
   objects: MyBuildingPage,
   my_building: MyBuildingPage,
+  my_properties: MyBuildingPage,
 
   meetings: MeetingsPage,
   meetings_create: CreateMeetingPage,

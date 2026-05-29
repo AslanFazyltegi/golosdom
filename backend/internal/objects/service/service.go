@@ -94,6 +94,103 @@ func (s *Service) GetObjects(
 	return result, nil
 }
 
+func (s *Service) GetMyProperties(userID string) (dto.MyPropertiesResponse, error) {
+	properties, err := s.repo.GetMyProperties(context.Background(), userID)
+	if err != nil {
+		return dto.MyPropertiesResponse{}, err
+	}
+
+	activeVotings, err := s.repo.CountActiveVotingsForOwner(context.Background(), userID)
+	if err != nil {
+		activeVotings = 0
+	}
+
+	result := dto.MyPropertiesResponse{
+		Summary: dto.MyPropertiesSummary{
+			TotalObjects:  len(properties),
+			ActiveVotings: activeVotings,
+		},
+		Properties: []dto.MyProperty{},
+	}
+
+	ercAccounts := map[string]bool{}
+	for _, item := range properties {
+		if item.Status == "active" {
+			result.Summary.ActiveObjects++
+		}
+		if item.ErcAccount.Valid && strings.TrimSpace(item.ErcAccount.String) != "" {
+			ercAccounts[strings.TrimSpace(item.ErcAccount.String)] = true
+		}
+
+		typeLabel := propertyTypeLabel(item.Type)
+		payerUpdatedAt := timePtrRFC3339(item.PayerUpdatedAt)
+		buildingName := valueOr(item.BuildingName, "ЖК")
+		building := dto.MyPropertyBuilding{
+			ID:            item.BuildingID,
+			Name:          buildingName,
+			City:          item.City,
+			District:      stringPtr(item.District),
+			Street:        item.Street,
+			HouseNumber:   item.HouseNumber,
+			HouseFraction: stringPtr(item.HouseFraction),
+			FullAddress:   fullAddress(item),
+		}
+
+		result.Properties = append(result.Properties, dto.MyProperty{
+			ID:               item.ID,
+			Type:             item.Type,
+			TypeLabel:        typeLabel,
+			Number:           item.Number,
+			Title:            typeLabel + " №" + item.Number,
+			Status:           item.Status,
+			StatusLabel:      propertyStatusLabel(item.Status),
+			Area:             floatPtr(item.Area),
+			Floor:            intPtr(item.Floor),
+			Entrance:         intPtr(item.Entrance),
+			Share:            floatPtr(item.Share),
+			ErcAccount:       stringPtr(item.ErcAccount),
+			PayerName:        stringPtr(item.PayerName),
+			PayerStatus:      item.PayerStatus,
+			PayerStatusLabel: payerStatusLabel(item.PayerStatus),
+			PayerUpdatedAt:   payerUpdatedAt,
+			ImageURL:         stringPtr(item.ImageURL),
+			Building:         building,
+			VotingParticipation: dto.MyPropertyVotingCategories{
+				General:             true,
+				ApartmentCommercial: participatesInApartmentCommercial(item.Type),
+				StorageParking:      participatesInStorageParking(item.Type),
+			},
+		})
+	}
+	result.Summary.ErcAccounts = len(ercAccounts)
+
+	return result, nil
+}
+
+func (s *Service) CreatePropertyUpdateRequest(propertyID string, userID string, req dto.CreatePropertyUpdateRequest) (dto.PropertyUpdateRequestResponse, error) {
+	requestType := strings.TrimSpace(req.RequestType)
+	if requestType == "" {
+		return dto.PropertyUpdateRequestResponse{}, errors.New("request type is required")
+	}
+
+	id, createdAt, err := s.repo.CreatePropertyUpdateRequest(context.Background(), repository.CreatePropertyUpdateRequestData{
+		PropertyID:  propertyID,
+		UserID:      userID,
+		RequestType: requestType,
+		NewValue:    trimStringPtr(req.NewValue),
+		Comment:     trimStringPtr(req.Comment),
+	})
+	if err != nil {
+		return dto.PropertyUpdateRequestResponse{}, err
+	}
+
+	return dto.PropertyUpdateRequestResponse{
+		ID:        id,
+		Status:    "pending",
+		CreatedAt: createdAt.Format(time.RFC3339),
+	}, nil
+}
+
 func (s *Service) GetDashboard() (dto.DashboardResponse, error) {
 	building, stats, distribution, actions, err := s.repo.GetDashboard(context.Background())
 	if err != nil {
@@ -408,4 +505,120 @@ func intOr(incoming *int, current *int) *int {
 	}
 
 	return current
+}
+
+func propertyTypeLabel(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "apartment":
+		return "Квартира"
+	case "commercial", "commercial_room", "commercial_unit":
+		return "Нежилое помещение"
+	case "parking", "parking_space":
+		return "Паркоместо"
+	case "storeroom", "storage":
+		return "Кладовая"
+	default:
+		return value
+	}
+}
+
+func propertyStatusLabel(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "active":
+		return "Активный"
+	case "inactive":
+		return "Неактивный"
+	case "disputed":
+		return "Спорный"
+	default:
+		return value
+	}
+}
+
+func payerStatusLabel(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "confirmed":
+		return "Подтверждён"
+	case "pending":
+		return "На переоформлении"
+	case "not_confirmed":
+		return "Не подтверждён"
+	case "rejected":
+		return "Отклонён"
+	default:
+		return value
+	}
+}
+
+func participatesInApartmentCommercial(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "apartment", "commercial", "commercial_room", "commercial_unit":
+		return true
+	default:
+		return false
+	}
+}
+
+func participatesInStorageParking(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "parking", "parking_space", "storeroom", "storage":
+		return true
+	default:
+		return false
+	}
+}
+
+func fullAddress(item repository.MyPropertyData) string {
+	parts := []string{}
+	if strings.TrimSpace(item.City) != "" {
+		parts = append(parts, item.City)
+	}
+	if item.District.Valid && strings.TrimSpace(item.District.String) != "" {
+		parts = append(parts, item.District.String)
+	}
+	if item.BuildingName.Valid && strings.TrimSpace(item.BuildingName.String) != "" {
+		parts = append(parts, item.BuildingName.String)
+	}
+	if strings.TrimSpace(item.Street) != "" {
+		parts = append(parts, item.Street)
+	}
+	house := item.HouseNumber
+	if item.HouseFraction.Valid && strings.TrimSpace(item.HouseFraction.String) != "" {
+		house += "/" + item.HouseFraction.String
+	}
+	if strings.TrimSpace(house) != "" {
+		parts = append(parts, house)
+	}
+
+	return strings.Join(parts, ", ")
+}
+
+func valueOr(value sql.NullString, fallback string) string {
+	if value.Valid && strings.TrimSpace(value.String) != "" {
+		return value.String
+	}
+
+	return fallback
+}
+
+func timePtrRFC3339(value sql.NullTime) *string {
+	if !value.Valid {
+		return nil
+	}
+
+	result := value.Time.Format(time.RFC3339)
+	return &result
+}
+
+func trimStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+
+	result := strings.TrimSpace(*value)
+	if result == "" {
+		return nil
+	}
+
+	return &result
 }
