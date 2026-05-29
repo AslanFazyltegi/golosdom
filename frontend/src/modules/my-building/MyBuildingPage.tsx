@@ -5,10 +5,16 @@ import { apiFetch } from "@/lib/api";
 import {
   createPropertyUpdateRequest,
   fetchMyProperties,
+  fetchPropertyCorrectionRequests,
+  markPropertyCorrectionRequestsRead,
 } from "@/lib/objects";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
 import { Placeholder } from "@/shared/ui/Placeholder";
-import type { MyPropertiesResponse, MyProperty } from "@/types/objects";
+import type {
+  MyPropertiesResponse,
+  MyProperty,
+  PropertyCorrectionRequest,
+} from "@/types/objects";
 
 type Building = {
   id: string;
@@ -57,7 +63,6 @@ type OwnerInfo = {
   name: string;
   email: string;
   phone: string | null;
-  erc_account: string | null;
 };
 
 type PropertyItem = {
@@ -68,6 +73,7 @@ type PropertyItem = {
   floor: number | null;
   area: number | null;
   status: string;
+  erc_account: string | null;
   owner: OwnerInfo | null;
 };
 
@@ -76,7 +82,6 @@ type OwnerItem = {
   name: string;
   email: string;
   phone: string | null;
-  erc_account: string | null;
   properties_count: number;
   properties: Array<{ id: string; type: string; number: string }>;
 };
@@ -86,7 +91,6 @@ type UserOption = {
   name: string;
   email: string;
   phone: string | null;
-  erc_account: string | null;
 };
 
 type Dashboard = {
@@ -125,6 +129,11 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
+  const [correctionRequestsOpen, setCorrectionRequestsOpen] = useState(false);
+  const [correctionRequests, setCorrectionRequests] = useState<PropertyCorrectionRequest[]>([]);
+  const [correctionRequestsLoading, setCorrectionRequestsLoading] = useState(false);
+  const [correctionRequestsError, setCorrectionRequestsError] = useState("");
+  const [correctionRequestsUnreadCount, setCorrectionRequestsUnreadCount] = useState(0);
 
   const [propertyQuery, setPropertyQuery] = useState("");
   const [ownerQuery, setOwnerQuery] = useState("");
@@ -142,6 +151,7 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
 
   const normalizedRole = activeRole.trim().toUpperCase();
   const isOwnerRole = normalizedRole === "OWNER";
+  const isChairmanRole = normalizedRole === "CHAIRMAN";
   const canEdit = EDIT_ROLES.has(normalizedRole);
 
   useEffect(() => {
@@ -150,7 +160,7 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
     }
 
     void loadAll();
-  }, [isOwnerRole]);
+  }, [isOwnerRole, isChairmanRole]);
 
   const filteredProperties = useMemo(() => {
     const query = propertyQuery.trim().toLowerCase();
@@ -165,7 +175,7 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
         owner?.name,
         owner?.email,
         owner?.phone,
-        owner?.erc_account,
+        item.erc_account,
       ]
         .map((value) => formatValue(value).toLowerCase())
         .join(" ");
@@ -197,7 +207,6 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
         owner.name,
         owner.email,
         owner.phone,
-        owner.erc_account,
         owner.properties.map((item) => `${propertyTypeLabel(item.type)} ${item.number}`).join(" "),
       ]
         .map((value) => formatValue(value).toLowerCase())
@@ -231,11 +240,43 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
       setOwners(ownerData);
       setUsers(userData);
       setBuildingForm(dashboardData.building);
+      if (isChairmanRole) {
+        void loadCorrectionRequests(false);
+      } else {
+        setCorrectionRequestsUnreadCount(0);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка загрузки данных");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadCorrectionRequests(markRead: boolean) {
+    setCorrectionRequestsLoading(true);
+    setCorrectionRequestsError("");
+
+    try {
+      const data = await fetchPropertyCorrectionRequests();
+      setCorrectionRequests(data.requests);
+      setCorrectionRequestsUnreadCount(data.unreadCount);
+
+      if (markRead && data.unreadCount > 0) {
+        await markPropertyCorrectionRequestsRead();
+        setCorrectionRequestsUnreadCount(0);
+      }
+    } catch (err) {
+      setCorrectionRequestsError(
+        err instanceof Error ? err.message : "Не удалось загрузить запросы",
+      );
+    } finally {
+      setCorrectionRequestsLoading(false);
+    }
+  }
+
+  function openCorrectionRequests() {
+    setCorrectionRequestsOpen(true);
+    void loadCorrectionRequests(true);
   }
 
   async function refreshData(message?: string) {
@@ -314,14 +355,31 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
             Информация по дому, имуществу и собственникам
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => refreshData("Данные обновлены")}
-          className="inline-flex items-center justify-center rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-60"
-          disabled={loading}
-        >
-          {loading ? "Загрузка..." : "Обновить данные"}
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          {isChairmanRole && (
+            <button
+              type="button"
+              onClick={openCorrectionRequests}
+              className="relative inline-flex items-center justify-center rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-60"
+              disabled={correctionRequestsLoading}
+            >
+              Запросы на корректировку
+              {correctionRequestsUnreadCount > 0 && (
+                <span className="absolute -right-2 -top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-rose-500 px-1.5 text-xs font-bold text-white shadow">
+                  {correctionRequestsUnreadCount}
+                </span>
+              )}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => refreshData("Данные обновлены")}
+            className="inline-flex items-center justify-center rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-60"
+            disabled={loading}
+          >
+            {loading ? "Загрузка..." : "Обновить данные"}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -503,7 +561,7 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
                       <td className="border-b border-slate-100 px-4 py-3">{formatArea(item.area)}</td>
                       <td className="border-b border-slate-100 px-4 py-3">{item.owner?.name || "-"}</td>
                       <td className="border-b border-slate-100 px-4 py-3">{formatValue(item.owner?.phone)}</td>
-                      <td className="border-b border-slate-100 px-4 py-3">{formatValue(item.owner?.erc_account)}</td>
+                      <td className="border-b border-slate-100 px-4 py-3">{formatValue(item.erc_account)}</td>
                       <td className="border-b border-slate-100 px-4 py-3">
                         <OwnerStatusBadge assigned={Boolean(item.owner)} />
                       </td>
@@ -588,6 +646,15 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
           setProperty={setPropertyForm}
           onClose={() => setEditingProperty(null)}
           onSave={saveProperty}
+        />
+      )}
+
+      {correctionRequestsOpen && (
+        <CorrectionRequestsModal
+          requests={correctionRequests}
+          loading={correctionRequestsLoading}
+          error={correctionRequestsError}
+          onClose={() => setCorrectionRequestsOpen(false)}
         />
       )}
     </div>
@@ -1193,7 +1260,7 @@ function OwnersTab({
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Поиск по ФИО, email, телефону, лицевому счету, номеру имущества..."
+          placeholder="Поиск по ФИО, email, телефону, номеру имущества..."
           className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-sky-300 focus:bg-white focus:ring-4 focus:ring-sky-100"
         />
       </div>
@@ -1201,7 +1268,7 @@ function OwnersTab({
         <table className="min-w-[900px] w-full border-collapse text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
-              {["№", "Собственник", "Email", "Телефон", "Лицевой счет ЕРЦ", "Количество объектов", "Список имущества"].map((heading) => (
+              {["№", "Собственник", "Email", "Телефон", "Количество объектов", "Список имущества"].map((heading) => (
                 <th key={heading} className="border-b border-slate-200 px-4 py-3 font-semibold">
                   {heading}
                 </th>
@@ -1215,7 +1282,6 @@ function OwnersTab({
                 <td className="border-b border-slate-100 px-4 py-3 font-semibold">{owner.name}</td>
                 <td className="border-b border-slate-100 px-4 py-3">{owner.email}</td>
                 <td className="border-b border-slate-100 px-4 py-3">{formatValue(owner.phone)}</td>
-                <td className="border-b border-slate-100 px-4 py-3">{formatValue(owner.erc_account)}</td>
                 <td className="border-b border-slate-100 px-4 py-3">{owner.properties_count}</td>
                 <td className="border-b border-slate-100 px-4 py-3">
                   {owner.properties.map((item) => `${propertyTypeLabel(item.type)} ${item.number}`).join(", ")}
@@ -1227,6 +1293,109 @@ function OwnersTab({
       </div>
       {owners.length === 0 && <div className="p-6 text-center text-sm text-slate-500">Нет данных</div>}
     </section>
+  );
+}
+
+function CorrectionRequestsModal({
+  requests,
+  loading,
+  error,
+  onClose,
+}: {
+  requests: PropertyCorrectionRequest[];
+  loading: boolean;
+  error: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4">
+      <section className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Запросы на корректировку</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Заявки пользователей на изменение данных об имуществе
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Закрыть"
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-xl text-slate-500 hover:bg-slate-50"
+          >
+            ×
+          </button>
+        </div>
+
+        {loading && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
+            Загрузка...
+          </div>
+        )}
+
+        {!loading && error && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-700">
+            {error}
+          </div>
+        )}
+
+        {!loading && !error && requests.length === 0 && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
+            Нет запросов на корректировку
+          </div>
+        )}
+
+        {!loading && !error && requests.length > 0 && (
+          <div className="space-y-3">
+            {requests.map((request) => {
+              const isNew = !request.readAt;
+
+              return (
+                <article
+                  key={request.id}
+                  className={`rounded-2xl border p-4 ${
+                    isNew ? "border-sky-200 bg-sky-50/70" : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="font-bold text-slate-900">
+                          {propertyTypeLabel(request.propertyType)} №{request.propertyNumber}
+                        </h3>
+                        {isNew && (
+                          <span className="rounded-full bg-sky-600 px-2.5 py-1 text-xs font-bold text-white">
+                            Новая
+                          </span>
+                        )}
+                        {request.status && (
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                            {requestStatusLabel(request.status)}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-2 text-sm text-slate-600">
+                        {request.userName}
+                        {request.userPhone ? `, ${request.userPhone}` : ""}
+                      </p>
+                    </div>
+                    <p className="text-sm font-medium text-slate-500">
+                      {formatDate(request.createdAt)}
+                    </p>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+                    <InfoPill label="Что изменить" value={requestTypeLabel(request.requestType)} />
+                    <InfoPill label="Новое значение" value={formatValue(request.newValue)} />
+                    <InfoPill label="Комментарий" value={formatValue(request.comment)} />
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </div>
   );
 }
 
@@ -1462,6 +1631,27 @@ function propertyTypeLabel(type: string) {
     parking: "Паркоместо",
   };
   return labels[type] || type || "-";
+}
+
+function requestTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    payer_data: "Данные плательщика",
+    contact_phone: "Телефон для связи",
+    erc_account_wrong: "Лицевой счёт указан неверно",
+    other: "Другое",
+  };
+
+  return labels[type] || type || "-";
+}
+
+function requestStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    pending: "В ожидании",
+    approved: "Одобрено",
+    rejected: "Отклонено",
+  };
+
+  return labels[status] || status;
 }
 
 function compareProperties(a: PropertyItem, b: PropertyItem, sortBy: string) {

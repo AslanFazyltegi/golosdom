@@ -74,3 +74,23 @@ export type PropertyUpdateRequestPayload = {
   newValue: string;
   comment: string;
 };
+
+export type PropertyCorrectionRequest = {
+  id: string;
+  propertyId: string;
+  propertyType: string;
+  propertyNumber: string;
+  userName: string;
+  userPhone: string | null;
+  requestType: string;
+  newValue: string | null;
+  comment: string | null;
+  status: string;
+  readAt: string | null;
+  createdAt: string;
+};
+
+export type PropertyCorrectionRequestsResponse = {
+  unreadCount: number;
+  requests: PropertyCorrectionRequest[];
+};

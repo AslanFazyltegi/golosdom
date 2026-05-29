@@ -191,6 +191,31 @@ func (h *Handler) Users(
 	response.JSON(w, http.StatusOK, data)
 }
 
+func (h *Handler) PropertyUpdateRequests(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	switch r.Method {
+	case http.MethodGet:
+		data, err := h.service.GetPropertyUpdateRequests(r.Header.Get("X-User-Roles"))
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, data)
+	case http.MethodPatch:
+		if err := h.service.MarkPropertyUpdateRequestsRead(r.Header.Get("X-User-Roles")); err != nil {
+			writeServiceError(w, err)
+			return
+		}
+
+		response.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	default:
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
 func (h *Handler) Building(
 	w http.ResponseWriter,
 	r *http.Request,

@@ -147,22 +147,22 @@ type ActivityLog struct {
 }
 
 type OwnerInfo struct {
-	ID         string  `json:"id"`
-	Name       string  `json:"name"`
-	Email      string  `json:"email"`
-	Phone      *string `json:"phone"`
-	ErcAccount *string `json:"erc_account"`
+	ID    string  `json:"id"`
+	Name  string  `json:"name"`
+	Email string  `json:"email"`
+	Phone *string `json:"phone"`
 }
 
 type PropertyDashboardItem struct {
-	ID       string     `json:"id"`
-	Type     string     `json:"type"`
-	Number   string     `json:"number"`
-	Entrance *int       `json:"entrance"`
-	Floor    *int       `json:"floor"`
-	Area     *float64   `json:"area"`
-	Status   string     `json:"status"`
-	Owner    *OwnerInfo `json:"owner"`
+	ID         string     `json:"id"`
+	Type       string     `json:"type"`
+	Number     string     `json:"number"`
+	Entrance   *int       `json:"entrance"`
+	Floor      *int       `json:"floor"`
+	Area       *float64   `json:"area"`
+	Status     string     `json:"status"`
+	ErcAccount *string    `json:"erc_account"`
+	Owner      *OwnerInfo `json:"owner"`
 }
 
 type OwnerDashboardItem struct {
@@ -170,7 +170,6 @@ type OwnerDashboardItem struct {
 	Name            string                   `json:"name"`
 	Email           string                   `json:"email"`
 	Phone           *string                  `json:"phone"`
-	ErcAccount      *string                  `json:"erc_account"`
 	PropertiesCount int                      `json:"properties_count"`
 	Properties      []OwnerPropertyDashboard `json:"properties"`
 }
@@ -182,11 +181,30 @@ type OwnerPropertyDashboard struct {
 }
 
 type UserOption struct {
-	ID         string  `json:"id"`
-	Name       string  `json:"name"`
-	Email      string  `json:"email"`
-	Phone      *string `json:"phone"`
-	ErcAccount *string `json:"erc_account"`
+	ID    string  `json:"id"`
+	Name  string  `json:"name"`
+	Email string  `json:"email"`
+	Phone *string `json:"phone"`
+}
+
+type PropertyUpdateRequestsResponse struct {
+	UnreadCount int                     `json:"unreadCount"`
+	Requests    []PropertyUpdateRequest `json:"requests"`
+}
+
+type PropertyUpdateRequest struct {
+	ID             string  `json:"id"`
+	PropertyID     string  `json:"propertyId"`
+	PropertyType   string  `json:"propertyType"`
+	PropertyNumber string  `json:"propertyNumber"`
+	UserName       string  `json:"userName"`
+	UserPhone      *string `json:"userPhone"`
+	RequestType    string  `json:"requestType"`
+	NewValue       *string `json:"newValue"`
+	Comment        *string `json:"comment"`
+	Status         string  `json:"status"`
+	ReadAt         *string `json:"readAt"`
+	CreatedAt      string  `json:"createdAt"`
 }
 
 type UpdateBuildingRequest struct {

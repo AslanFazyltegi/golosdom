@@ -1,19 +1,17 @@
 package dto
 
 type UserResponse struct {
-	ID         string  `json:"id"`
-	FullName   string  `json:"full_name"`
-	Email      string  `json:"email"`
-	Phone      *string `json:"phone"`
-	ErcAccount *string `json:"erc_account"`
-	Photo      *string `json:"photo"`
+	ID       string  `json:"id"`
+	FullName string  `json:"full_name"`
+	Email    string  `json:"email"`
+	Phone    *string `json:"phone"`
+	Photo    *string `json:"photo"`
 }
 
 type UpdateProfileRequest struct {
-	FullName   *string `json:"full_name"`
-	Phone      *string `json:"phone"`
-	ErcAccount *string `json:"erc_account"`
-	Photo      *string `json:"photo"`
+	FullName *string `json:"full_name"`
+	Phone    *string `json:"phone"`
+	Photo    *string `json:"photo"`
 }
 
 type ChairmanResponse struct {

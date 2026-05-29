@@ -21,11 +21,10 @@ export function ProfilePage({
   const email = profileUser?.email?.trim() || user.email || "Email не указан";
   const phone =
     profileUser?.phone || user.phone || user.phone_number || "Телефон не указан";
-  const ercAccount = profileUser?.erc_account || "Не указан";
   const photo = profileUser?.photo || user.photo || "";
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<FormState>(() =>
-    buildFormState(fullName, profileUser?.phone, profileUser?.erc_account, photo),
+    buildFormState(fullName, profileUser?.phone, photo),
   );
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -88,7 +87,6 @@ export function ProfilePage({
                   buildFormState(
                     profileUser?.full_name || user.full_name || "",
                     profileUser?.phone || user.phone || user.phone_number || "",
-                    profileUser?.erc_account || user.erc_account || "",
                     profileUser?.photo || user.photo || "",
                   ),
                 );
@@ -111,7 +109,6 @@ export function ProfilePage({
             </div>
             <InfoLine label="Email" value={email} />
             <InfoLine label="Телефон" value={phone} />
-            <InfoLine label="Лицевой счет ЕРЦ" value={ercAccount} />
             <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
               <p className="text-sm text-blue-700">Активная роль</p>
               <p className="mt-1 font-semibold text-blue-900">
@@ -275,13 +272,6 @@ export function ProfilePage({
                 onChange={(value) => setForm((current) => ({ ...current, phone: value }))}
               />
               <TextInput
-                label="Лицевой счет ЕРЦ"
-                value={form.erc_account}
-                onChange={(value) =>
-                  setForm((current) => ({ ...current, erc_account: value }))
-                }
-              />
-              <TextInput
                 label="Фото"
                 value={form.photo}
                 placeholder="URL или путь к фото"
@@ -407,13 +397,11 @@ function getInitials(name: string) {
 function buildFormState(
   fullName: string,
   phone?: string | null,
-  ercAccount?: string | null,
   photo?: string | null,
 ): FormState {
   return {
     full_name: fullName === "ФИО не указано" ? "" : fullName,
     phone: phone || "",
-    erc_account: ercAccount || "",
     photo: photo || "",
   };
 }

@@ -504,7 +504,6 @@ function syncUserFromProfile(current: User | null, profile: UserProfile) {
     full_name: profile.user.full_name,
     email: profile.user.email,
     phone: profile.user.phone,
-    erc_account: profile.user.erc_account,
     photo: profile.user.photo,
     roles: profile.roles,
   };

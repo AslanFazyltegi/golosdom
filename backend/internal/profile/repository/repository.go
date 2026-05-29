@@ -16,12 +16,11 @@ func New(db *pgxpool.Pool) *Repository {
 }
 
 type UserData struct {
-	ID         string
-	FullName   string
-	Email      string
-	Phone      *string
-	ErcAccount *string
-	Photo      *string
+	ID       string
+	FullName string
+	Email    string
+	Phone    *string
+	Photo    *string
 }
 
 type OsiRow struct {
@@ -44,17 +43,15 @@ type OsiRow struct {
 func (r *Repository) GetUser(ctx context.Context, userID string) (UserData, error) {
 	var user UserData
 	var phone sql.NullString
-	var ercAccount sql.NullString
 	var photo sql.NullString
 
 	err := r.db.QueryRow(
 		ctx,
-		`SELECT id, full_name, email, phone, erc_account, photo FROM users WHERE id = $1`,
+		`SELECT id, full_name, email, phone, photo FROM users WHERE id = $1`,
 		userID,
-	).Scan(&user.ID, &user.FullName, &user.Email, &phone, &ercAccount, &photo)
+	).Scan(&user.ID, &user.FullName, &user.Email, &phone, &photo)
 
 	user.Phone = stringPtr(phone)
-	user.ErcAccount = stringPtr(ercAccount)
 	user.Photo = stringPtr(photo)
 
 	return user, err
@@ -65,7 +62,6 @@ func (r *Repository) UpdateUser(
 	userID string,
 	fullName string,
 	phone *string,
-	ercAccount *string,
 	photo *string,
 ) error {
 	_, err := r.db.Exec(
@@ -75,14 +71,12 @@ func (r *Repository) UpdateUser(
 		SET
 			full_name = $2,
 			phone = $3,
-			erc_account = $4,
-			photo = $5
+			photo = $4
 		WHERE id = $1
 		`,
 		userID,
 		fullName,
 		phone,
-		ercAccount,
 		photo,
 	)
 

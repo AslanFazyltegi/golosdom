@@ -277,18 +277,18 @@ func (r *Repository) LogAction(ctx context.Context, buildingID, entityType, enti
 type PropertyDashboardData struct {
 	ID string
 
-	Type     string
-	Number   string
-	Entrance sql.NullInt64
-	Floor    sql.NullInt64
-	Area     sql.NullFloat64
-	Status   string
+	Type       string
+	Number     string
+	Entrance   sql.NullInt64
+	Floor      sql.NullInt64
+	Area       sql.NullFloat64
+	Status     string
+	ErcAccount sql.NullString
 
-	OwnerID         sql.NullString
-	OwnerName       sql.NullString
-	OwnerEmail      sql.NullString
-	OwnerPhone      sql.NullString
-	OwnerErcAccount sql.NullString
+	OwnerID    sql.NullString
+	OwnerName  sql.NullString
+	OwnerEmail sql.NullString
+	OwnerPhone sql.NullString
 }
 
 func (r *Repository) GetBuildingProperties(ctx context.Context, buildingID string) ([]PropertyDashboardData, error) {
@@ -301,11 +301,11 @@ func (r *Repository) GetBuildingProperties(ctx context.Context, buildingID strin
 			p.floor,
 			p.area,
 			p.status,
+			p.erc_account,
 			u.id,
 			u.full_name,
 			u.email,
-			u.phone,
-			u.erc_account
+			u.phone
 		FROM property p
 		LEFT JOIN property_owners po
 			ON po.property_id = p.id
@@ -332,11 +332,11 @@ func (r *Repository) GetBuildingProperties(ctx context.Context, buildingID strin
 			&item.Floor,
 			&item.Area,
 			&item.Status,
+			&item.ErcAccount,
 			&item.OwnerID,
 			&item.OwnerName,
 			&item.OwnerEmail,
 			&item.OwnerPhone,
-			&item.OwnerErcAccount,
 		); err != nil {
 			return nil, err
 		}
@@ -351,7 +351,6 @@ type OwnerDashboardData struct {
 	Name            string
 	Email           string
 	Phone           sql.NullString
-	ErcAccount      sql.NullString
 	PropertiesCount int
 	Properties      []OwnerPropertyData
 }
@@ -369,7 +368,6 @@ func (r *Repository) GetBuildingOwners(ctx context.Context, buildingID string) (
 			COALESCE(NULLIF(u.full_name, ''), u.email) AS owner_name,
 			u.email,
 			u.phone,
-			u.erc_account,
 			p.id,
 			p.type,
 			p.number
@@ -393,9 +391,9 @@ func (r *Repository) GetBuildingOwners(ctx context.Context, buildingID string) (
 
 	for rows.Next() {
 		var ownerID, name, email string
-		var phone, erc sql.NullString
+		var phone sql.NullString
 		var property OwnerPropertyData
-		if err := rows.Scan(&ownerID, &name, &email, &phone, &erc, &property.ID, &property.Type, &property.Number); err != nil {
+		if err := rows.Scan(&ownerID, &name, &email, &phone, &property.ID, &property.Type, &property.Number); err != nil {
 			return nil, err
 		}
 
@@ -406,7 +404,6 @@ func (r *Repository) GetBuildingOwners(ctx context.Context, buildingID string) (
 				Name:       name,
 				Email:      email,
 				Phone:      phone,
-				ErcAccount: erc,
 				Properties: []OwnerPropertyData{},
 			}
 			byID[ownerID] = owner
@@ -430,11 +427,10 @@ func (r *Repository) GetBuildingOwners(ctx context.Context, buildingID string) (
 }
 
 type UserOptionData struct {
-	ID         string
-	Name       string
-	Email      string
-	Phone      sql.NullString
-	ErcAccount sql.NullString
+	ID    string
+	Name  string
+	Email string
+	Phone sql.NullString
 }
 
 func (r *Repository) GetUsers(ctx context.Context) ([]UserOptionData, error) {
@@ -443,8 +439,7 @@ func (r *Repository) GetUsers(ctx context.Context) ([]UserOptionData, error) {
 			id,
 			COALESCE(NULLIF(full_name, ''), email) AS name,
 			email,
-			phone,
-			erc_account
+			phone
 		FROM users
 		ORDER BY name, email
 	`)
@@ -456,7 +451,7 @@ func (r *Repository) GetUsers(ctx context.Context) ([]UserOptionData, error) {
 	result := []UserOptionData{}
 	for rows.Next() {
 		var item UserOptionData
-		if err := rows.Scan(&item.ID, &item.Name, &item.Email, &item.Phone, &item.ErcAccount); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.Email, &item.Phone); err != nil {
 			return nil, err
 		}
 		result = append(result, item)
@@ -632,6 +627,21 @@ type CreatePropertyUpdateRequestData struct {
 	RequestType string
 	NewValue    *string
 	Comment     *string
+}
+
+type PropertyUpdateRequestData struct {
+	ID             string
+	PropertyID     string
+	PropertyType   string
+	PropertyNumber string
+	UserName       string
+	UserPhone      sql.NullString
+	RequestType    string
+	NewValue       sql.NullString
+	Comment        sql.NullString
+	Status         string
+	ReadAt         sql.NullTime
+	CreatedAt      time.Time
 }
 
 func (r *Repository) GetUserProperties(
@@ -841,4 +851,84 @@ func (r *Repository) CreatePropertyUpdateRequest(ctx context.Context, data Creat
 	}
 
 	return id, createdAt, tx.Commit(ctx)
+}
+
+func (r *Repository) GetPropertyUpdateRequests(ctx context.Context, buildingID string) ([]PropertyUpdateRequestData, int, error) {
+	var unreadCount int
+	if err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM property_update_requests pur
+		JOIN property p
+			ON p.id = pur.property_id
+		WHERE p.building_id = $1
+			AND pur.read_at IS NULL
+	`, buildingID).Scan(&unreadCount); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := r.db.Query(ctx, `
+		SELECT
+			pur.id,
+			p.id,
+			p.type,
+			p.number,
+			COALESCE(NULLIF(u.full_name, ''), u.email) AS user_name,
+			u.phone,
+			pur.request_type,
+			pur.new_value,
+			pur.comment,
+			pur.status,
+			pur.read_at,
+			pur.created_at
+		FROM property_update_requests pur
+		JOIN property p
+			ON p.id = pur.property_id
+		JOIN users u
+			ON u.id = pur.user_id
+		WHERE p.building_id = $1
+		ORDER BY pur.created_at DESC
+	`, buildingID)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	result := []PropertyUpdateRequestData{}
+	for rows.Next() {
+		var item PropertyUpdateRequestData
+		if err := rows.Scan(
+			&item.ID,
+			&item.PropertyID,
+			&item.PropertyType,
+			&item.PropertyNumber,
+			&item.UserName,
+			&item.UserPhone,
+			&item.RequestType,
+			&item.NewValue,
+			&item.Comment,
+			&item.Status,
+			&item.ReadAt,
+			&item.CreatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		result = append(result, item)
+	}
+
+	return result, unreadCount, rows.Err()
+}
+
+func (r *Repository) MarkPropertyUpdateRequestsRead(ctx context.Context, buildingID string) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE property_update_requests pur
+		SET
+			read_at = now(),
+			updated_at = now()
+		FROM property p
+		WHERE p.id = pur.property_id
+			AND p.building_id = $1
+			AND pur.read_at IS NULL
+	`, buildingID)
+
+	return err
 }

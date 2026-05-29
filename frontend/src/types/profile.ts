@@ -3,7 +3,6 @@ export type ProfileUser = {
   full_name: string;
   email: string;
   phone: string | null;
-  erc_account: string | null;
   photo: string | null;
 };
 
@@ -42,6 +41,5 @@ export type UserProfile = {
 export type UpdateProfilePayload = {
   full_name: string;
   phone: string;
-  erc_account: string;
   photo: string;
 };

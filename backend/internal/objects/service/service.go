@@ -221,23 +221,23 @@ func (s *Service) GetProperties() ([]dto.PropertyDashboardItem, error) {
 		var owner *dto.OwnerInfo
 		if item.OwnerID.Valid {
 			owner = &dto.OwnerInfo{
-				ID:         item.OwnerID.String,
-				Name:       displayName(item.OwnerName, item.OwnerEmail),
-				Email:      item.OwnerEmail.String,
-				Phone:      stringPtr(item.OwnerPhone),
-				ErcAccount: stringPtr(item.OwnerErcAccount),
+				ID:    item.OwnerID.String,
+				Name:  displayName(item.OwnerName, item.OwnerEmail),
+				Email: item.OwnerEmail.String,
+				Phone: stringPtr(item.OwnerPhone),
 			}
 		}
 
 		result = append(result, dto.PropertyDashboardItem{
-			ID:       item.ID,
-			Type:     item.Type,
-			Number:   item.Number,
-			Entrance: intPtr(item.Entrance),
-			Floor:    intPtr(item.Floor),
-			Area:     floatPtr(item.Area),
-			Status:   item.Status,
-			Owner:    owner,
+			ID:         item.ID,
+			Type:       item.Type,
+			Number:     item.Number,
+			Entrance:   intPtr(item.Entrance),
+			Floor:      intPtr(item.Floor),
+			Area:       floatPtr(item.Area),
+			Status:     item.Status,
+			ErcAccount: stringPtr(item.ErcAccount),
+			Owner:      owner,
 		})
 	}
 
@@ -271,7 +271,6 @@ func (s *Service) GetOwners() ([]dto.OwnerDashboardItem, error) {
 			Name:            owner.Name,
 			Email:           owner.Email,
 			Phone:           stringPtr(owner.Phone),
-			ErcAccount:      stringPtr(owner.ErcAccount),
 			PropertiesCount: owner.PropertiesCount,
 			Properties:      properties,
 		})
@@ -289,15 +288,66 @@ func (s *Service) GetUsers() ([]dto.UserOption, error) {
 	result := []dto.UserOption{}
 	for _, user := range users {
 		result = append(result, dto.UserOption{
-			ID:         user.ID,
-			Name:       user.Name,
-			Email:      user.Email,
-			Phone:      stringPtr(user.Phone),
-			ErcAccount: stringPtr(user.ErcAccount),
+			ID:    user.ID,
+			Name:  user.Name,
+			Email: user.Email,
+			Phone: stringPtr(user.Phone),
 		})
 	}
 
 	return result, nil
+}
+
+func (s *Service) GetPropertyUpdateRequests(roles string) (dto.PropertyUpdateRequestsResponse, error) {
+	if !isChairman(roles) {
+		return dto.PropertyUpdateRequestsResponse{}, ErrForbidden
+	}
+
+	building, err := s.repo.GetBuilding(context.Background())
+	if err != nil {
+		return dto.PropertyUpdateRequestsResponse{}, err
+	}
+
+	rows, unreadCount, err := s.repo.GetPropertyUpdateRequests(context.Background(), building.ID)
+	if err != nil {
+		return dto.PropertyUpdateRequestsResponse{}, err
+	}
+
+	result := dto.PropertyUpdateRequestsResponse{
+		UnreadCount: unreadCount,
+		Requests:    []dto.PropertyUpdateRequest{},
+	}
+	for _, row := range rows {
+		result.Requests = append(result.Requests, dto.PropertyUpdateRequest{
+			ID:             row.ID,
+			PropertyID:     row.PropertyID,
+			PropertyType:   row.PropertyType,
+			PropertyNumber: row.PropertyNumber,
+			UserName:       row.UserName,
+			UserPhone:      stringPtr(row.UserPhone),
+			RequestType:    row.RequestType,
+			NewValue:       stringPtr(row.NewValue),
+			Comment:        stringPtr(row.Comment),
+			Status:         row.Status,
+			ReadAt:         timePtrRFC3339(row.ReadAt),
+			CreatedAt:      row.CreatedAt.Format(time.RFC3339),
+		})
+	}
+
+	return result, nil
+}
+
+func (s *Service) MarkPropertyUpdateRequestsRead(roles string) error {
+	if !isChairman(roles) {
+		return ErrForbidden
+	}
+
+	building, err := s.repo.GetBuilding(context.Background())
+	if err != nil {
+		return err
+	}
+
+	return s.repo.MarkPropertyUpdateRequestsRead(context.Background(), building.ID)
 }
 
 func (s *Service) UpdateBuilding(req dto.UpdateBuildingRequest, userID string, roles string) (dto.Building, error) {
@@ -380,6 +430,16 @@ func canEdit(roles string) bool {
 	for _, role := range strings.Split(roles, ",") {
 		switch strings.ToUpper(strings.TrimSpace(role)) {
 		case "CHAIRMAN", "ADMIN":
+			return true
+		}
+	}
+
+	return false
+}
+
+func isChairman(roles string) bool {
+	for _, role := range strings.Split(roles, ",") {
+		if strings.ToUpper(strings.TrimSpace(role)) == "CHAIRMAN" {
 			return true
 		}
 	}

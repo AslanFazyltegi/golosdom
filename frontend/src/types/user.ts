@@ -5,6 +5,5 @@ export type User = {
   roles: string[];
   phone?: string | null;
   phone_number?: string | null;
-  erc_account?: string | null;
   photo?: string | null;
-};  
+};

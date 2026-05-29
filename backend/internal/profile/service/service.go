@@ -39,12 +39,11 @@ func (s *Service) GetProfile(
 
 	return dto.ProfileResponse{
 		User: dto.UserResponse{
-			ID:         user.ID,
-			FullName:   user.FullName,
-			Email:      user.Email,
-			Phone:      user.Phone,
-			ErcAccount: user.ErcAccount,
-			Photo:      user.Photo,
+			ID:       user.ID,
+			FullName: user.FullName,
+			Email:    user.Email,
+			Phone:    user.Phone,
+			Photo:    user.Photo,
 		},
 		ActiveRole: activeRole,
 		Roles:      roles,
@@ -79,14 +78,6 @@ func (s *Service) UpdateProfile(
 		phone = user.Phone
 	}
 
-	ercAccount, err := normalizeOptional(req.ErcAccount, 64, "Лицевой счет ЕРЦ")
-	if err != nil {
-		return dto.ProfileResponse{}, err
-	}
-	if req.ErcAccount == nil {
-		ercAccount = user.ErcAccount
-	}
-
 	photo, err := normalizeOptional(req.Photo, 2048, "Фото")
 	if err != nil {
 		return dto.ProfileResponse{}, err
@@ -95,7 +86,7 @@ func (s *Service) UpdateProfile(
 		photo = user.Photo
 	}
 
-	if err := s.repo.UpdateUser(ctx, userID, fullName, phone, ercAccount, photo); err != nil {
+	if err := s.repo.UpdateUser(ctx, userID, fullName, phone, photo); err != nil {
 		return dto.ProfileResponse{}, err
 	}
 

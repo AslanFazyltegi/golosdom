@@ -1,6 +1,7 @@
 import { apiFetch } from "@/lib/api";
 import type {
   MyPropertiesResponse,
+  PropertyCorrectionRequestsResponse,
   PropertyUpdateRequestPayload,
 } from "@/types/objects";
 
@@ -19,5 +20,17 @@ export async function createPropertyUpdateRequest(
   return apiFetch(`/api/v1/my-properties/${propertyId}/update-requests`, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchPropertyCorrectionRequests() {
+  return apiFetch(
+    "/api/v1/objects/update-requests",
+  ) as Promise<PropertyCorrectionRequestsResponse>;
+}
+
+export async function markPropertyCorrectionRequestsRead() {
+  return apiFetch("/api/v1/objects/update-requests", {
+    method: "PATCH",
   });
 }

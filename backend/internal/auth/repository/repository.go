@@ -32,9 +32,9 @@ func (r *Repository) GetByEmail(ctx context.Context, email string) (model.User, 
 	var user model.User
 
 	err := r.db.QueryRow(ctx,
-		`SELECT id, email, password, full_name, phone, erc_account, photo FROM users WHERE email = $1`,
+		`SELECT id, email, password, full_name, phone, photo FROM users WHERE email = $1`,
 		email,
-	).Scan(&user.ID, &user.Email, &user.Password, &user.FullName, &user.Phone, &user.ErcAccount, &user.Photo)
+	).Scan(&user.ID, &user.Email, &user.Password, &user.FullName, &user.Phone, &user.Photo)
 
 	return user, err
 }
@@ -43,9 +43,9 @@ func (r *Repository) GetByID(ctx context.Context, id string) (model.User, error)
 	var user model.User
 
 	err := r.db.QueryRow(ctx,
-		`SELECT id, email, password, full_name, phone, erc_account, photo FROM users WHERE id = $1`,
+		`SELECT id, email, password, full_name, phone, photo FROM users WHERE id = $1`,
 		id,
-	).Scan(&user.ID, &user.Email, &user.Password, &user.FullName, &user.Phone, &user.ErcAccount, &user.Photo)
+	).Scan(&user.ID, &user.Email, &user.Password, &user.FullName, &user.Phone, &user.Photo)
 
 	return user, err
 }
