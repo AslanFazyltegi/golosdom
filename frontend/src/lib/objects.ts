@@ -29,8 +29,8 @@ export async function fetchPropertyCorrectionRequests() {
   ) as Promise<PropertyCorrectionRequestsResponse>;
 }
 
-export async function markPropertyCorrectionRequestsRead() {
-  return apiFetch("/api/v1/objects/update-requests", {
+export async function processPropertyCorrectionRequest(requestId: string) {
+  return apiFetch(`/api/v1/objects/update-requests/${requestId}/process`, {
     method: "PATCH",
   });
 }

@@ -87,10 +87,12 @@ export type PropertyCorrectionRequest = {
   comment: string | null;
   status: string;
   readAt: string | null;
+  processedAt: string | null;
+  processedBy: string | null;
   createdAt: string;
 };
 
 export type PropertyCorrectionRequestsResponse = {
-  unreadCount: number;
+  pendingCount: number;
   requests: PropertyCorrectionRequest[];
 };

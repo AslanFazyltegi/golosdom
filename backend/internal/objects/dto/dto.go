@@ -188,8 +188,8 @@ type UserOption struct {
 }
 
 type PropertyUpdateRequestsResponse struct {
-	UnreadCount int                     `json:"unreadCount"`
-	Requests    []PropertyUpdateRequest `json:"requests"`
+	PendingCount int                     `json:"pendingCount"`
+	Requests     []PropertyUpdateRequest `json:"requests"`
 }
 
 type PropertyUpdateRequest struct {
@@ -204,6 +204,8 @@ type PropertyUpdateRequest struct {
 	Comment        *string `json:"comment"`
 	Status         string  `json:"status"`
 	ReadAt         *string `json:"readAt"`
+	ProcessedAt    *string `json:"processedAt"`
+	ProcessedBy    *string `json:"processedBy"`
 	CreatedAt      string  `json:"createdAt"`
 }
 

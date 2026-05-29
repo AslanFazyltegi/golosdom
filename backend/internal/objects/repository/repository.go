@@ -641,6 +641,8 @@ type PropertyUpdateRequestData struct {
 	Comment        sql.NullString
 	Status         string
 	ReadAt         sql.NullTime
+	ProcessedAt    sql.NullTime
+	ProcessedBy    sql.NullString
 	CreatedAt      time.Time
 }
 
@@ -854,15 +856,15 @@ func (r *Repository) CreatePropertyUpdateRequest(ctx context.Context, data Creat
 }
 
 func (r *Repository) GetPropertyUpdateRequests(ctx context.Context, buildingID string) ([]PropertyUpdateRequestData, int, error) {
-	var unreadCount int
+	var pendingCount int
 	if err := r.db.QueryRow(ctx, `
 		SELECT COUNT(*)
 		FROM property_update_requests pur
 		JOIN property p
 			ON p.id = pur.property_id
 		WHERE p.building_id = $1
-			AND pur.read_at IS NULL
-	`, buildingID).Scan(&unreadCount); err != nil {
+			AND pur.status = 'pending'
+	`, buildingID).Scan(&pendingCount); err != nil {
 		return nil, 0, err
 	}
 
@@ -879,14 +881,20 @@ func (r *Repository) GetPropertyUpdateRequests(ctx context.Context, buildingID s
 			pur.comment,
 			pur.status,
 			pur.read_at,
+			pur.processed_at,
+			processed_user.full_name,
 			pur.created_at
 		FROM property_update_requests pur
 		JOIN property p
 			ON p.id = pur.property_id
 		JOIN users u
 			ON u.id = pur.user_id
+		LEFT JOIN users processed_user
+			ON processed_user.id = pur.processed_by
 		WHERE p.building_id = $1
-		ORDER BY pur.created_at DESC
+		ORDER BY
+			CASE WHEN pur.status = 'pending' THEN 0 ELSE 1 END,
+			pur.created_at DESC
 	`, buildingID)
 	if err != nil {
 		return nil, 0, err
@@ -908,6 +916,8 @@ func (r *Repository) GetPropertyUpdateRequests(ctx context.Context, buildingID s
 			&item.Comment,
 			&item.Status,
 			&item.ReadAt,
+			&item.ProcessedAt,
+			&item.ProcessedBy,
 			&item.CreatedAt,
 		); err != nil {
 			return nil, 0, err
@@ -915,20 +925,29 @@ func (r *Repository) GetPropertyUpdateRequests(ctx context.Context, buildingID s
 		result = append(result, item)
 	}
 
-	return result, unreadCount, rows.Err()
+	return result, pendingCount, rows.Err()
 }
 
-func (r *Repository) MarkPropertyUpdateRequestsRead(ctx context.Context, buildingID string) error {
-	_, err := r.db.Exec(ctx, `
+func (r *Repository) ProcessPropertyUpdateRequest(ctx context.Context, buildingID, requestID, userID string) error {
+	tag, err := r.db.Exec(ctx, `
 		UPDATE property_update_requests pur
 		SET
-			read_at = now(),
+			status = 'processed',
+			processed_at = now(),
+			processed_by = $3,
 			updated_at = now()
 		FROM property p
 		WHERE p.id = pur.property_id
 			AND p.building_id = $1
-			AND pur.read_at IS NULL
-	`, buildingID)
+			AND pur.id = $2
+			AND pur.status = 'pending'
+	`, buildingID, requestID, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return sql.ErrNoRows
+	}
 
-	return err
+	return nil
 }

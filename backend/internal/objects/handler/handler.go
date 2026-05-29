@@ -195,6 +195,14 @@ func (h *Handler) PropertyUpdateRequests(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/objects/update-requests")
+	path = strings.Trim(path, "/")
+
+	if path != "" {
+		h.PropertyUpdateRequestAction(w, r, path)
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		data, err := h.service.GetPropertyUpdateRequests(r.Header.Get("X-User-Roles"))
@@ -204,16 +212,41 @@ func (h *Handler) PropertyUpdateRequests(
 		}
 
 		response.JSON(w, http.StatusOK, data)
-	case http.MethodPatch:
-		if err := h.service.MarkPropertyUpdateRequestsRead(r.Header.Get("X-User-Roles")); err != nil {
-			writeServiceError(w, err)
-			return
-		}
-
-		response.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	default:
 		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (h *Handler) PropertyUpdateRequestAction(
+	w http.ResponseWriter,
+	r *http.Request,
+	path string,
+) {
+	if r.Method != http.MethodPatch {
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] != "process" {
+		response.Error(w, http.StatusNotFound, "not found")
+		return
+	}
+
+	if err := h.service.ProcessPropertyUpdateRequest(
+		parts[0],
+		r.Header.Get("X-User-ID"),
+		r.Header.Get("X-User-Roles"),
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			response.Error(w, http.StatusNotFound, "request not found")
+			return
+		}
+		writeServiceError(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) Building(

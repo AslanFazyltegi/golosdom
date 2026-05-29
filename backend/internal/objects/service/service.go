@@ -308,14 +308,14 @@ func (s *Service) GetPropertyUpdateRequests(roles string) (dto.PropertyUpdateReq
 		return dto.PropertyUpdateRequestsResponse{}, err
 	}
 
-	rows, unreadCount, err := s.repo.GetPropertyUpdateRequests(context.Background(), building.ID)
+	rows, pendingCount, err := s.repo.GetPropertyUpdateRequests(context.Background(), building.ID)
 	if err != nil {
 		return dto.PropertyUpdateRequestsResponse{}, err
 	}
 
 	result := dto.PropertyUpdateRequestsResponse{
-		UnreadCount: unreadCount,
-		Requests:    []dto.PropertyUpdateRequest{},
+		PendingCount: pendingCount,
+		Requests:     []dto.PropertyUpdateRequest{},
 	}
 	for _, row := range rows {
 		result.Requests = append(result.Requests, dto.PropertyUpdateRequest{
@@ -330,6 +330,8 @@ func (s *Service) GetPropertyUpdateRequests(roles string) (dto.PropertyUpdateReq
 			Comment:        stringPtr(row.Comment),
 			Status:         row.Status,
 			ReadAt:         timePtrRFC3339(row.ReadAt),
+			ProcessedAt:    timePtrRFC3339(row.ProcessedAt),
+			ProcessedBy:    stringPtr(row.ProcessedBy),
 			CreatedAt:      row.CreatedAt.Format(time.RFC3339),
 		})
 	}
@@ -337,9 +339,13 @@ func (s *Service) GetPropertyUpdateRequests(roles string) (dto.PropertyUpdateReq
 	return result, nil
 }
 
-func (s *Service) MarkPropertyUpdateRequestsRead(roles string) error {
+func (s *Service) ProcessPropertyUpdateRequest(requestID string, userID string, roles string) error {
 	if !isChairman(roles) {
 		return ErrForbidden
+	}
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		return sql.ErrNoRows
 	}
 
 	building, err := s.repo.GetBuilding(context.Background())
@@ -347,7 +353,7 @@ func (s *Service) MarkPropertyUpdateRequestsRead(roles string) error {
 		return err
 	}
 
-	return s.repo.MarkPropertyUpdateRequestsRead(context.Background(), building.ID)
+	return s.repo.ProcessPropertyUpdateRequest(context.Background(), building.ID, requestID, userID)
 }
 
 func (s *Service) UpdateBuilding(req dto.UpdateBuildingRequest, userID string, roles string) (dto.Building, error) {

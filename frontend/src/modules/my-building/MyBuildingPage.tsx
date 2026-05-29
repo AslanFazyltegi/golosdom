@@ -6,7 +6,7 @@ import {
   createPropertyUpdateRequest,
   fetchMyProperties,
   fetchPropertyCorrectionRequests,
-  markPropertyCorrectionRequestsRead,
+  processPropertyCorrectionRequest,
 } from "@/lib/objects";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
 import { Placeholder } from "@/shared/ui/Placeholder";
@@ -101,6 +101,7 @@ type Dashboard = {
 };
 
 type Tab = "overview" | "building" | "properties" | "owners";
+type CorrectionRequestsTab = "pending" | "processed";
 
 const EDIT_ROLES = new Set(["CHAIRMAN", "ADMIN"]);
 const PROPERTY_TYPES = ["apartment", "commercial_room", "storage", "parking"];
@@ -133,7 +134,9 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
   const [correctionRequests, setCorrectionRequests] = useState<PropertyCorrectionRequest[]>([]);
   const [correctionRequestsLoading, setCorrectionRequestsLoading] = useState(false);
   const [correctionRequestsError, setCorrectionRequestsError] = useState("");
-  const [correctionRequestsUnreadCount, setCorrectionRequestsUnreadCount] = useState(0);
+  const [correctionRequestsPendingCount, setCorrectionRequestsPendingCount] = useState(0);
+  const [correctionRequestProcessingID, setCorrectionRequestProcessingID] = useState<string | null>(null);
+  const [correctionRequestProcessError, setCorrectionRequestProcessError] = useState("");
 
   const [propertyQuery, setPropertyQuery] = useState("");
   const [ownerQuery, setOwnerQuery] = useState("");
@@ -241,9 +244,9 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
       setUsers(userData);
       setBuildingForm(dashboardData.building);
       if (isChairmanRole) {
-        void loadCorrectionRequests(false);
+        void loadCorrectionRequests();
       } else {
-        setCorrectionRequestsUnreadCount(0);
+        setCorrectionRequestsPendingCount(0);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Ошибка загрузки данных");
@@ -252,19 +255,14 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
     }
   }
 
-  async function loadCorrectionRequests(markRead: boolean) {
+  async function loadCorrectionRequests() {
     setCorrectionRequestsLoading(true);
     setCorrectionRequestsError("");
 
     try {
       const data = await fetchPropertyCorrectionRequests();
       setCorrectionRequests(data.requests);
-      setCorrectionRequestsUnreadCount(data.unreadCount);
-
-      if (markRead && data.unreadCount > 0) {
-        await markPropertyCorrectionRequestsRead();
-        setCorrectionRequestsUnreadCount(0);
-      }
+      setCorrectionRequestsPendingCount(data.pendingCount);
     } catch (err) {
       setCorrectionRequestsError(
         err instanceof Error ? err.message : "Не удалось загрузить запросы",
@@ -276,7 +274,24 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
 
   function openCorrectionRequests() {
     setCorrectionRequestsOpen(true);
-    void loadCorrectionRequests(true);
+    setCorrectionRequestProcessError("");
+    void loadCorrectionRequests();
+  }
+
+  async function processCorrectionRequest(requestID: string) {
+    setCorrectionRequestProcessingID(requestID);
+    setCorrectionRequestProcessError("");
+
+    try {
+      await processPropertyCorrectionRequest(requestID);
+      await loadCorrectionRequests();
+    } catch (err) {
+      setCorrectionRequestProcessError(
+        err instanceof Error ? err.message : "Не удалось отметить заявку как обработанную",
+      );
+    } finally {
+      setCorrectionRequestProcessingID(null);
+    }
   }
 
   async function refreshData(message?: string) {
@@ -364,9 +379,9 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
               disabled={correctionRequestsLoading}
             >
               Запросы на корректировку
-              {correctionRequestsUnreadCount > 0 && (
+              {correctionRequestsPendingCount > 0 && (
                 <span className="absolute -right-2 -top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-rose-500 px-1.5 text-xs font-bold text-white shadow">
-                  {correctionRequestsUnreadCount}
+                  {correctionRequestsPendingCount}
                 </span>
               )}
             </button>
@@ -654,6 +669,9 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
           requests={correctionRequests}
           loading={correctionRequestsLoading}
           error={correctionRequestsError}
+          processError={correctionRequestProcessError}
+          processingID={correctionRequestProcessingID}
+          onProcess={processCorrectionRequest}
           onClose={() => setCorrectionRequestsOpen(false)}
         />
       )}
@@ -1300,13 +1318,28 @@ function CorrectionRequestsModal({
   requests,
   loading,
   error,
+  processError,
+  processingID,
+  onProcess,
   onClose,
 }: {
   requests: PropertyCorrectionRequest[];
   loading: boolean;
   error: string;
+  processError: string;
+  processingID: string | null;
+  onProcess: (requestID: string) => void;
   onClose: () => void;
 }) {
+  const [activeTab, setActiveTab] = useState<CorrectionRequestsTab>("pending");
+  const pendingRequests = requests.filter((request) => request.status === "pending");
+  const processedRequests = requests.filter((request) => request.status === "processed");
+  const visibleRequests = activeTab === "pending" ? pendingRequests : processedRequests;
+  const emptyText =
+    activeTab === "pending"
+      ? "Нет заявок во вкладке «Ожидают обработки»"
+      : "Нет заявок во вкладке «Обработанные»";
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4">
       <section className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
@@ -1327,6 +1360,28 @@ function CorrectionRequestsModal({
           </button>
         </div>
 
+        <div className="mb-5 border-b border-slate-200">
+          <nav className="flex gap-1 overflow-x-auto">
+            {[
+              ["pending", "Ожидают обработки"],
+              ["processed", "Обработанные"],
+            ].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveTab(key as CorrectionRequestsTab)}
+                className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition ${
+                  activeTab === key
+                    ? "border-sky-500 text-sky-700"
+                    : "border-transparent text-slate-500 hover:text-slate-900"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        </div>
+
         {loading && (
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
             Загрузка...
@@ -1339,22 +1394,29 @@ function CorrectionRequestsModal({
           </div>
         )}
 
-        {!loading && !error && requests.length === 0 && (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
-            Нет запросов на корректировку
+        {!loading && !error && processError && (
+          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-700">
+            {processError}
           </div>
         )}
 
-        {!loading && !error && requests.length > 0 && (
+        {!loading && !error && visibleRequests.length === 0 && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
+            {emptyText}
+          </div>
+        )}
+
+        {!loading && !error && visibleRequests.length > 0 && (
           <div className="space-y-3">
-            {requests.map((request) => {
-              const isNew = !request.readAt;
+            {visibleRequests.map((request) => {
+              const isPending = request.status === "pending";
+              const isProcessed = request.status === "processed";
 
               return (
                 <article
                   key={request.id}
                   className={`rounded-2xl border p-4 ${
-                    isNew ? "border-sky-200 bg-sky-50/70" : "border-slate-200 bg-white"
+                    isPending ? "border-sky-200 bg-sky-50/70" : "border-slate-200 bg-white"
                   }`}
                 >
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1363,14 +1425,14 @@ function CorrectionRequestsModal({
                         <h3 className="font-bold text-slate-900">
                           {propertyTypeLabel(request.propertyType)} №{request.propertyNumber}
                         </h3>
-                        {isNew && (
+                        {isPending && (
                           <span className="rounded-full bg-sky-600 px-2.5 py-1 text-xs font-bold text-white">
-                            Новая
+                            Ожидает обработки
                           </span>
                         )}
-                        {request.status && (
-                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                            {requestStatusLabel(request.status)}
+                        {isProcessed && (
+                          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                            Обработано
                           </span>
                         )}
                       </div>
@@ -1388,6 +1450,24 @@ function CorrectionRequestsModal({
                     <InfoPill label="Что изменить" value={requestTypeLabel(request.requestType)} />
                     <InfoPill label="Новое значение" value={formatValue(request.newValue)} />
                     <InfoPill label="Комментарий" value={formatValue(request.comment)} />
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-slate-500">
+                      {isProcessed && request.processedAt
+                        ? `Дата обработки: ${formatDate(request.processedAt)}`
+                        : `Статус: ${requestStatusLabel(request.status)}`}
+                    </p>
+                    {isPending && (
+                      <button
+                        type="button"
+                        onClick={() => onProcess(request.id)}
+                        disabled={processingID === request.id}
+                        className="inline-flex items-center justify-center rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-60"
+                      >
+                        {processingID === request.id ? "Обработка..." : "Отметить как обработано"}
+                      </button>
+                    )}
                   </div>
                 </article>
               );
