@@ -17,6 +17,10 @@ import (
 	navigationRepo "golosdom-backend/internal/navigation/repository"
 	navigationService "golosdom-backend/internal/navigation/service"
 
+	communicationsHandler "golosdom-backend/internal/communications/handler"
+	communicationsRepo "golosdom-backend/internal/communications/repository"
+	communicationsService "golosdom-backend/internal/communications/service"
+
 	objectsHandler "golosdom-backend/internal/objects/handler"
 	objectsRepo "golosdom-backend/internal/objects/repository"
 	objectsService "golosdom-backend/internal/objects/service"
@@ -52,6 +56,10 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 	navigationRepo := navigationRepo.New(dbPool)
 	navigationSvc := navigationService.New(navigationRepo)
 	navigationH := navigationHandler.New(navigationSvc)
+
+	communicationsRepo := communicationsRepo.New(dbPool)
+	communicationsSvc := communicationsService.New(communicationsRepo)
+	communicationsH := communicationsHandler.New(communicationsSvc)
 
 	objectsRepo := objectsRepo.New(dbPool)
 	objectsSvc := objectsService.New(objectsRepo)
@@ -97,6 +105,12 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 	})
 
 	mux.HandleFunc("/api/v1/navigation/menu", authMiddleware(authSvc, navigationH.GetMenu))
+	mux.HandleFunc("/api/v1/communications/posts", authMiddleware(authSvc, communicationsH.Posts))
+	mux.HandleFunc("/api/v1/communications/posts/", authMiddleware(authSvc, communicationsH.PostByID))
+	mux.HandleFunc("/api/v1/communications/notifications", authMiddleware(authSvc, communicationsH.Notifications))
+	mux.HandleFunc("/api/v1/communications/notifications/", authMiddleware(authSvc, communicationsH.NotificationByID))
+	mux.HandleFunc("/api/v1/communications/deliveries", authMiddleware(authSvc, communicationsH.Deliveries))
+	mux.HandleFunc("/api/v1/communications/unread-counts", authMiddleware(authSvc, communicationsH.UnreadCounts))
 
 	mux.HandleFunc("/api/v1/auth/register", authH.Register)
 	mux.HandleFunc("/api/v1/auth/login", authH.Login)

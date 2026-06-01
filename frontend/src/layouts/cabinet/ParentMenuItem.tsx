@@ -4,6 +4,7 @@ export function ParentMenuItem({
   hasChildren,
   icon,
   onClick,
+  unreadCount,
   text,
 }: {
   active?: boolean;
@@ -11,6 +12,7 @@ export function ParentMenuItem({
   hasChildren?: boolean;
   icon: string;
   onClick: () => void;
+  unreadCount?: number;
   text: string;
 }) {
   return (
@@ -23,6 +25,11 @@ export function ParentMenuItem({
       <span className="flex items-center gap-3">
         <span className="text-xl">{icon}</span>
         <span>{text}</span>
+        {Boolean(unreadCount) && (
+          <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+            {unreadCount}
+          </span>
+        )}
       </span>
 
       {hasChildren && (

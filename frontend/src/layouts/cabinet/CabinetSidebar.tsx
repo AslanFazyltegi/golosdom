@@ -28,6 +28,7 @@ export function CabinetSidebar({
                 active={activeComponent === item.component}
                 hasChildren={hasChildren}
                 expanded={isExpanded}
+                unreadCount={item.unread_count}
                 onClick={() => onOpenItem(item)}
               />
 
@@ -39,6 +40,7 @@ export function CabinetSidebar({
                       icon={child.icon}
                       text={child.title}
                       active={activeComponent === child.component}
+                      unreadCount={child.unread_count}
                       onClick={() => onOpenItem(child)}
                     />
                   ))}

@@ -1,4 +1,5 @@
 import { DashboardSummaryPage } from "@/modules/dashboard-summary";
+import { InfoCenterPage } from "@/modules/info-center";
 import {
   ActiveMeetingsPage,
   ApprovalMeetingsPage,
@@ -45,6 +46,10 @@ export const moduleMap: Record<string, CabinetModuleComponent> = {
   voting_constructor_draft: VotingConstructorPage,
 
   notifications: NotificationsPage,
+  communication_news: InfoCenterPage,
+  communication_announcements: InfoCenterPage,
+  communication_notifications: InfoCenterPage,
+  communication_deliveries: InfoCenterPage,
 
   profile: ProfilePage,
   role_switcher: ProfilePage,

@@ -66,7 +66,8 @@ func buildTree(items []model.NavigationItem) []dto.MenuItemResponse {
 	tree := []dto.MenuItemResponse{}
 
 	for _, id := range order {
-		if parentByID[id] == nil {
+		parentID := parentByID[id]
+		if parentID == nil || byID[*parentID] == nil {
 			tree = append(tree, *byID[id])
 		}
 	}

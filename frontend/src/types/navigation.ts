@@ -14,6 +14,7 @@ export type NavigationItem = {
   is_active?: boolean;
 
   is_default?: boolean;
+  unread_count?: number;
 
   children?: NavigationItem[];
 };

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { getToken, removeToken } from "@/lib/auth";
 import { createMeeting, fetchMeetings } from "@/lib/meetings";
+import { fetchCommunicationUnreadCounts } from "@/lib/communications";
 import { fetchNavigation } from "@/lib/navigation";
 import { fetchObjects } from "@/lib/objects";
 import { fetchOwners, type MeetingOwner } from "@/lib/owners";
@@ -113,7 +114,7 @@ export function CabinetLayout() {
         setActiveRole(role);
 
         const menuData = await fetchNavigation(role);
-        setMenu(menuData);
+        setMenu(role === "OWNER" ? await withCommunicationUnreadCounts(menuData) : menuData);
 
         const defaultItem =
           menuData.find((item) => item.is_default) || menuData[0];
@@ -185,6 +186,16 @@ export function CabinetLayout() {
     setVotings(data);
   }
 
+  async function refreshCommunicationUnreadCounts() {
+    if (activeRole !== "OWNER") return;
+    try {
+      const counts = await fetchCommunicationUnreadCounts();
+      setMenu((current) => applyCommunicationUnreadCounts(current, counts));
+    } catch (err) {
+      console.error("Не удалось загрузить счётчики инфоцентра:", err);
+    }
+  }
+
   async function loadProfile(role: string) {
     try {
       setProfileError("");
@@ -241,7 +252,7 @@ export function CabinetLayout() {
     setActiveRole(role);
 
     const menuData = await fetchNavigation(role);
-    setMenu(menuData);
+    setMenu(role === "OWNER" ? await withCommunicationUnreadCounts(menuData) : menuData);
 
     const defaultItem = menuData.find((item) => item.is_default) || menuData[0];
     const defaultComponent = getModuleCode(defaultItem);
@@ -428,6 +439,7 @@ export function CabinetLayout() {
           activeComponent={activeComponent}
           openModule={openAccountModule}
           switchRole={switchRole}
+          refreshCommunicationUnreadCounts={refreshCommunicationUnreadCounts}
           updateProfile={updateCurrentProfile}
           votingConstructorInitial={votingConstructorInitial}
           votings={votings}
@@ -527,4 +539,31 @@ function buildMeetingAddress(objects: unknown) {
   ]
     .filter(Boolean)
     .join(", ");
+}
+
+async function withCommunicationUnreadCounts(menu: NavigationItem[]) {
+  try {
+    const counts = await fetchCommunicationUnreadCounts();
+    return applyCommunicationUnreadCounts(menu, counts);
+  } catch {
+    return menu;
+  }
+}
+
+function applyCommunicationUnreadCounts(
+  menu: NavigationItem[],
+  counts: { news?: number; announcement?: number; notification?: number },
+): NavigationItem[] {
+  const codeToCount: Record<string, number | undefined> = {
+    communication_news: counts.news,
+    communication_announcements: counts.announcement,
+    communication_notifications: counts.notification,
+  };
+  return menu.map((item) => ({
+    ...item,
+    unread_count: codeToCount[item.code] || 0,
+    children: item.children
+      ? applyCommunicationUnreadCounts(item.children, counts)
+      : item.children,
+  }));
 }

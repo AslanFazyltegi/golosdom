@@ -18,6 +18,7 @@ export type CabinetModuleProps = {
   activeComponent: string;
   openModule: (code: string) => void;
   switchRole: (role: string) => void;
+  refreshCommunicationUnreadCounts?: () => Promise<void>;
   updateProfile: (payload: UpdateProfilePayload) => Promise<void>;
   votingConstructorInitial: Voting | null;
   votings: Voting[];
