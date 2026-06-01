@@ -1,0 +1,1 @@
+export { InfocenterNewsPage } from "./InfocenterNewsPage";
