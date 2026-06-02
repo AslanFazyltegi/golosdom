@@ -45,8 +45,20 @@ type SaveNotificationData struct {
 	AuthorUserID string
 	Title        string
 	Body         string
+	BodyHTML     string
+	Status       string
+	Category     *string
+	ScheduledAt  *time.Time
 	Targets      []model.Target
 	Channels     []model.Channel
+}
+
+type NotificationListFilter struct {
+	Status   string
+	Search   string
+	Category string
+	Audience string
+	Sort     string
 }
 
 func (r *Repository) GetPrimaryBuildingID(ctx context.Context) (string, error) {
@@ -242,11 +254,28 @@ func (r *Repository) MarkPostRead(ctx context.Context, id string, userID string)
 	return r.markRead(ctx, "post", id, userID)
 }
 
-func (r *Repository) ListNotifications(ctx context.Context, userID string, roles []string) ([]model.Notification, error) {
+func (r *Repository) ListNotifications(ctx context.Context, userID string, roles []string, filter NotificationListFilter) ([]model.Notification, error) {
 	args := []any{}
 	where := []string{}
 	if hasRole(roles, "CHAIRMAN") {
-		where = append(where, "n.status <> 'deleted'")
+		if filter.Status == "" || filter.Status == "all" {
+			where = append(where, "n.status <> 'deleted'")
+		} else {
+			args = append(args, filter.Status)
+			where = append(where, fmt.Sprintf("n.status = $%d", len(args)))
+		}
+		if strings.TrimSpace(filter.Search) != "" {
+			args = append(args, "%"+strings.ToLower(strings.TrimSpace(filter.Search))+"%")
+			where = append(where, fmt.Sprintf("(lower(n.title) LIKE $%d OR lower(n.body) LIKE $%d OR lower(n.body_html) LIKE $%d)", len(args), len(args), len(args)))
+		}
+		if strings.TrimSpace(filter.Category) != "" && filter.Category != "all" {
+			args = append(args, filter.Category)
+			where = append(where, fmt.Sprintf("n.category = $%d", len(args)))
+		}
+		if strings.TrimSpace(filter.Audience) != "" && filter.Audience != "all" {
+			args = append(args, filter.Audience)
+			where = append(where, fmt.Sprintf("EXISTS (SELECT 1 FROM communication_notification_targets t WHERE t.notification_id = n.id AND (t.target_type = $%d OR t.target_value = $%d))", len(args), len(args)))
+		}
 	} else {
 		args = append(args, userID)
 		where = append(where, fmt.Sprintf(`n.status = 'sent'
@@ -272,17 +301,43 @@ func (r *Repository) ListNotifications(ctx context.Context, userID string, roles
 					)
 			)`, len(args), len(args), len(args)))
 	}
+	if len(where) == 0 {
+		where = append(where, "true")
+	}
+	orderBy := "COALESCE(n.sent_at, n.scheduled_at, n.created_at) DESC"
+	switch filter.Sort {
+	case "oldest":
+		orderBy = "COALESCE(n.sent_at, n.scheduled_at, n.created_at) ASC"
+	case "title":
+		orderBy = "lower(n.title) ASC"
+	case "delivery":
+		orderBy = "COALESCE(s.delivered_count, 0) DESC, COALESCE(s.recipient_count, 0) DESC"
+	case "read":
+		orderBy = "COALESCE(s.read_count, 0) DESC, COALESCE(s.recipient_count, 0) DESC"
+	}
 
 	rows, err := r.db.Query(ctx, `
-		SELECT n.id, n.building_id, n.author_user_id, n.title, n.body,
-			n.status, n.created_at, n.sent_at, rr.read_at
+		WITH stats AS (
+			SELECT
+				entity_id,
+				COUNT(DISTINCT user_id)::int AS recipient_count,
+				COUNT(DISTINCT user_id) FILTER (WHERE status IN ('delivered', 'read'))::int AS delivered_count,
+				COUNT(DISTINCT user_id) FILTER (WHERE status = 'read')::int AS read_count
+			FROM communication_deliveries
+			WHERE entity_type = 'notification'
+			GROUP BY entity_id
+		)
+		SELECT n.id, n.building_id, n.author_user_id, n.title, n.body, n.body_html,
+			n.status, n.category, n.audience_summary, n.created_at, n.updated_at,
+			n.scheduled_at, n.sent_at, n.deleted_at, n.hidden_at, rr.read_at
 		FROM communication_notifications n
+		LEFT JOIN stats s ON s.entity_id = n.id
 		LEFT JOIN communication_read_receipts rr
 			ON rr.entity_type = 'notification'
 			AND rr.entity_id = n.id
 			AND rr.user_id = $`+fmt.Sprint(len(args)+1)+`
 		WHERE `+strings.Join(where, " AND ")+`
-		ORDER BY COALESCE(n.sent_at, n.created_at) DESC
+		ORDER BY `+orderBy+`
 	`, append(args, userID)...)
 	if err != nil {
 		return nil, err
@@ -300,49 +355,159 @@ func (r *Repository) ListNotifications(ctx context.Context, userID string, roles
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return r.attachNotificationRelations(ctx, items)
+	items, err = r.attachNotificationRelations(ctx, items)
+	if err != nil {
+		return nil, err
+	}
+	return r.attachNotificationDeliveries(ctx, items)
 }
 
 func (r *Repository) SaveNotification(ctx context.Context, data SaveNotificationData) (model.Notification, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return model.Notification{}, err
+		return model.Notification{}, fmt.Errorf("upsert notification: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
 	var item model.Notification
-	var sentAt, readAt sql.NullTime
+	status := normalizeNotificationStatus(data.Status, data.ScheduledAt)
+	var sentAt *time.Time
+	if status == "sent" || status == "sending" {
+		now := time.Now()
+		sentAt = &now
+	}
+	var sentAtScan, scheduledAt, deletedAt, hiddenAt, readAt sql.NullTime
+	var category, audienceSummary sql.NullString
 	err = tx.QueryRow(ctx, `
 		INSERT INTO communication_notifications (
-			id, building_id, author_user_id, title, body, status, sent_at
-		) VALUES ($1, $2, $3, $4, $5, 'sent', now())
-		RETURNING id, building_id, author_user_id, title, body, status, created_at, sent_at
-	`, data.ID, data.BuildingID, data.AuthorUserID, data.Title, data.Body).Scan(
-		&item.ID, &item.BuildingID, &item.AuthorUserID, &item.Title, &item.Body,
-		&item.Status, &item.CreatedAt, &sentAt,
+			id, building_id, author_user_id, title, body, body_html, status, category,
+			audience_summary, scheduled_at, sent_at
+		) VALUES ($1::text, $2::text, $3::text, $4::text, $5::text, $6::text, $7::text, $8::text, $9::text, $10::timestamp, $11::timestamp)
+		ON CONFLICT (id) DO UPDATE SET
+			title = EXCLUDED.title,
+			body = EXCLUDED.body,
+			body_html = EXCLUDED.body_html,
+			status = EXCLUDED.status,
+			category = EXCLUDED.category,
+			audience_summary = EXCLUDED.audience_summary,
+			scheduled_at = EXCLUDED.scheduled_at,
+			sent_at = CASE WHEN EXCLUDED.status IN ('sent', 'sending') THEN COALESCE(communication_notifications.sent_at, now()) ELSE communication_notifications.sent_at END,
+			deleted_at = CASE WHEN EXCLUDED.status = 'deleted' THEN COALESCE(communication_notifications.deleted_at, now()) ELSE NULL END,
+			hidden_at = CASE WHEN EXCLUDED.status = 'hidden' THEN COALESCE(communication_notifications.hidden_at, now()) ELSE NULL END,
+			updated_at = now()
+		RETURNING id, building_id, author_user_id, title, body, body_html, status,
+			category, audience_summary, created_at, updated_at, scheduled_at, sent_at, deleted_at, hidden_at
+	`, data.ID, data.BuildingID, data.AuthorUserID, data.Title, data.Body, data.BodyHTML, status, data.Category,
+		audienceSummaryFor(normalizeTargets(data.Targets)), data.ScheduledAt, sentAt).Scan(
+		&item.ID, &item.BuildingID, &item.AuthorUserID, &item.Title, &item.Body, &item.BodyHTML,
+		&item.Status, &category, &audienceSummary, &item.CreatedAt, &item.UpdatedAt, &scheduledAt, &sentAtScan, &deletedAt, &hiddenAt,
 	)
 	if err != nil {
 		return model.Notification{}, err
 	}
-	item.SentAt = nullTimePtr(sentAt)
+	item.Category = nullStringPtr(category)
+	item.AudienceSummary = nullStringPtr(audienceSummary)
+	item.ScheduledAt = nullTimePtr(scheduledAt)
+	item.SentAt = nullTimePtr(sentAtScan)
+	item.DeletedAt = nullTimePtr(deletedAt)
+	item.HiddenAt = nullTimePtr(hiddenAt)
 	item.ReadAt = nullTimePtr(readAt)
 	targets := normalizeTargets(data.Targets)
 	channels := normalizeNotificationChannels(data.Channels)
 	if err := replaceNotificationTargets(ctx, tx, item.ID, targets); err != nil {
-		return model.Notification{}, err
+		return model.Notification{}, fmt.Errorf("replace notification targets: %w", err)
 	}
 	if err := replaceNotificationChannels(ctx, tx, item.ID, channels); err != nil {
-		return model.Notification{}, err
+		return model.Notification{}, fmt.Errorf("replace notification channels: %w", err)
 	}
-	if err := createNotificationDeliveries(ctx, tx, item.ID, data.BuildingID, targets, channels); err != nil {
-		return model.Notification{}, err
+	if status == "sent" || status == "sending" {
+		if err := createNotificationDeliveries(ctx, tx, item.ID, data.BuildingID, targets, channels); err != nil {
+			return model.Notification{}, fmt.Errorf("create notification deliveries: %w", err)
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return model.Notification{}, err
+		return model.Notification{}, fmt.Errorf("commit notification: %w", err)
 	}
 	item.Targets = targets
 	item.Channels = channels
+	item.Deliveries, err = r.ListDeliveriesForNotification(ctx, item.ID)
+	if err != nil {
+		return model.Notification{}, fmt.Errorf("load notification deliveries: %w", err)
+	}
 	return item, nil
+}
+
+func (r *Repository) GetNotification(ctx context.Context, id string, userID string) (model.Notification, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT n.id, n.building_id, n.author_user_id, n.title, n.body, n.body_html,
+			n.status, n.category, n.audience_summary, n.created_at, n.updated_at,
+			n.scheduled_at, n.sent_at, n.deleted_at, n.hidden_at, rr.read_at
+		FROM communication_notifications n
+		LEFT JOIN communication_read_receipts rr
+			ON rr.entity_type = 'notification'
+			AND rr.entity_id = n.id
+			AND rr.user_id = $2
+		WHERE n.id = $1
+	`, id, userID)
+	if err != nil {
+		return model.Notification{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return model.Notification{}, sql.ErrNoRows
+	}
+	item, err := scanNotification(rows)
+	if err != nil {
+		return model.Notification{}, err
+	}
+	items, err := r.attachNotificationRelations(ctx, []model.Notification{item})
+	if err != nil {
+		return model.Notification{}, err
+	}
+	items, err = r.attachNotificationDeliveries(ctx, items)
+	if err != nil {
+		return model.Notification{}, err
+	}
+	return items[0], nil
+}
+
+func (r *Repository) SetNotificationStatus(ctx context.Context, id string, status string, scheduledAt *time.Time) (model.Notification, error) {
+	var sentExpr string
+	if status == "sent" || status == "sending" {
+		sentExpr = ", sent_at = COALESCE(sent_at, now())"
+	}
+	_, err := r.db.Exec(ctx, `
+		UPDATE communication_notifications
+		SET status = $2,
+			scheduled_at = $3,
+			deleted_at = CASE WHEN $2 = 'deleted' THEN COALESCE(deleted_at, now()) ELSE NULL END,
+			hidden_at = CASE WHEN $2 = 'hidden' THEN COALESCE(hidden_at, now()) ELSE NULL END,
+			updated_at = now()
+			`+sentExpr+`
+		WHERE id = $1
+	`, id, status, scheduledAt)
+	if err != nil {
+		return model.Notification{}, err
+	}
+	return r.GetNotification(ctx, id, "")
+}
+
+func (r *Repository) PermanentDeleteNotification(ctx context.Context, id string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM communication_deliveries WHERE entity_type = 'notification' AND entity_id = $1`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM communication_read_receipts WHERE entity_type = 'notification' AND entity_id = $1`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM communication_notifications WHERE id = $1`, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) MarkNotificationRead(ctx context.Context, id string, userID string) error {
@@ -350,6 +515,18 @@ func (r *Repository) MarkNotificationRead(ctx context.Context, id string, userID
 }
 
 func (r *Repository) ListDeliveries(ctx context.Context) ([]model.Delivery, error) {
+	return r.listDeliveries(ctx, "", nil)
+}
+
+func (r *Repository) ListDeliveriesForNotification(ctx context.Context, id string) ([]model.Delivery, error) {
+	return r.listDeliveries(ctx, "WHERE d.entity_type = 'notification' AND d.entity_id = $1", id)
+}
+
+func (r *Repository) listDeliveries(ctx context.Context, where string, arg any) ([]model.Delivery, error) {
+	args := []any{}
+	if arg != nil {
+		args = append(args, arg)
+	}
 	rows, err := r.db.Query(ctx, `
 		SELECT
 			d.id,
@@ -361,6 +538,7 @@ func (r *Repository) ListDeliveries(ctx context.Context) ([]model.Delivery, erro
 			END AS entity_title,
 			d.user_id,
 			COALESCE(u.full_name, u.email) AS recipient,
+			COALESCE(props.property_label, '') AS property_label,
 			d.channel,
 			d.status,
 			d.sent_at,
@@ -373,8 +551,16 @@ func (r *Repository) ListDeliveries(ctx context.Context) ([]model.Delivery, erro
 		LEFT JOIN communication_posts p ON d.entity_type = 'post' AND p.id = d.entity_id
 		LEFT JOIN communication_notifications n ON d.entity_type = 'notification' AND n.id = d.entity_id
 		JOIN users u ON u.id = d.user_id
+		LEFT JOIN LATERAL (
+			SELECT string_agg(pr.number, ', ' ORDER BY pr.number) AS property_label
+			FROM property_owners po
+			JOIN property pr ON pr.id = po.property_id
+			WHERE po.user_id = u.id
+				AND po.status = 'active'
+		) props ON true
+		`+where+`
 		ORDER BY d.created_at DESC
-	`)
+	`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -387,7 +573,7 @@ func (r *Repository) ListDeliveries(ctx context.Context) ([]model.Delivery, erro
 		var errorMessage sql.NullString
 		if err := rows.Scan(
 			&item.ID, &item.EntityType, &item.EntityID, &item.EntityTitle,
-			&item.UserID, &item.Recipient, &item.Channel, &item.Status,
+			&item.UserID, &item.Recipient, &item.PropertyLabel, &item.Channel, &item.Status,
 			&sentAt, &deliveredAt, &readAt, &errorMessage, &item.CreatedAt, &item.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -567,6 +753,17 @@ func (r *Repository) attachNotificationRelations(ctx context.Context, items []mo
 	return items, nil
 }
 
+func (r *Repository) attachNotificationDeliveries(ctx context.Context, items []model.Notification) ([]model.Notification, error) {
+	for index := range items {
+		deliveries, err := r.ListDeliveriesForNotification(ctx, items[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		items[index].Deliveries = deliveries
+	}
+	return items, nil
+}
+
 func (r *Repository) postTargets(ctx context.Context, postID string) ([]model.Target, error) {
 	rows, err := r.db.Query(ctx, `SELECT target_type, COALESCE(target_value, '') FROM communication_post_targets WHERE post_id = $1 ORDER BY target_type, target_value`, postID)
 	if err != nil {
@@ -610,7 +807,7 @@ func replacePostTargets(ctx context.Context, tx pgx.Tx, postID string, targets [
 	for index, target := range targets {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO communication_post_targets (id, post_id, target_type, target_value)
-			VALUES ($1, $2, $3, NULLIF($4, ''))
+			VALUES ($1::text, $2::text, $3::text, NULLIF($4::text, ''))
 		`, fmt.Sprintf("%s-target-%d", postID, index), postID, target.Type, target.Value); err != nil {
 			return err
 		}
@@ -625,7 +822,7 @@ func replaceNotificationTargets(ctx context.Context, tx pgx.Tx, id string, targe
 	for index, target := range targets {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO communication_notification_targets (id, notification_id, target_type, target_value)
-			VALUES ($1, $2, $3, NULLIF($4, ''))
+			VALUES ($1::text, $2::text, $3::text, NULLIF($4::text, ''))
 		`, fmt.Sprintf("%s-target-%d", id, index), id, target.Type, target.Value); err != nil {
 			return err
 		}
@@ -640,7 +837,7 @@ func replacePostChannels(ctx context.Context, tx pgx.Tx, postID string, channels
 	for _, channel := range channels {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO communication_channels (id, post_id, channel, enabled)
-			VALUES ($1, $2, $3, $4)
+			VALUES ($1::text, $2::text, $3::text, $4::boolean)
 		`, fmt.Sprintf("%s-channel-%s", postID, channel.Channel), postID, channel.Channel, channel.Enabled); err != nil {
 			return err
 		}
@@ -655,7 +852,7 @@ func replaceNotificationChannels(ctx context.Context, tx pgx.Tx, id string, chan
 	for _, channel := range channels {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO communication_channels (id, notification_id, channel, enabled)
-			VALUES ($1, $2, $3, $4)
+			VALUES ($1::text, $2::text, $3::text, $4::boolean)
 		`, fmt.Sprintf("%s-channel-%s", id, channel.Channel), id, channel.Channel, channel.Enabled); err != nil {
 			return err
 		}
@@ -674,7 +871,7 @@ func createPostDeliveries(ctx context.Context, tx pgx.Tx, postID string, buildin
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO communication_deliveries (
 					id, entity_type, entity_id, user_id, channel, status, sent_at, delivered_at, error_message
-				) VALUES ($1, 'post', $2, $3, $4, $5, CASE WHEN $5 = 'delivered' THEN now() ELSE NULL END, CASE WHEN $5 = 'delivered' THEN now() ELSE NULL END, $6)
+				) VALUES ($1::text, 'post', $2::text, $3::text, $4::text, $5::text, CASE WHEN $5::text = 'delivered' THEN now() ELSE NULL END, CASE WHEN $5::text = 'delivered' THEN now() ELSE NULL END, $6)
 				ON CONFLICT (entity_type, entity_id, user_id, channel) DO UPDATE SET
 					status = EXCLUDED.status,
 					sent_at = EXCLUDED.sent_at,
@@ -700,7 +897,7 @@ func createNotificationDeliveries(ctx context.Context, tx pgx.Tx, id string, bui
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO communication_deliveries (
 					id, entity_type, entity_id, user_id, channel, status, sent_at, delivered_at, error_message
-				) VALUES ($1, 'notification', $2, $3, $4, $5, CASE WHEN $5 = 'delivered' THEN now() ELSE NULL END, CASE WHEN $5 = 'delivered' THEN now() ELSE NULL END, $6)
+				) VALUES ($1::text, 'notification', $2::text, $3::text, $4::text, $5::text, CASE WHEN $5::text = 'delivered' THEN now() ELSE NULL END, CASE WHEN $5::text = 'delivered' THEN now() ELSE NULL END, $6)
 				ON CONFLICT (entity_type, entity_id, user_id, channel) DO UPDATE SET
 					status = EXCLUDED.status,
 					sent_at = EXCLUDED.sent_at,
@@ -721,7 +918,13 @@ func selectTargetUsers(ctx context.Context, tx pgx.Tx, buildingID string, target
 	for _, target := range normalizeTargets(targets) {
 		switch target.Type {
 		case "all":
-			where = append(where, "true")
+			where = append(where, `EXISTS (
+				SELECT 1 FROM property_owners po2
+				JOIN property p2 ON p2.id = po2.property_id
+				WHERE po2.user_id = u.id
+					AND po2.status = 'active'
+					AND p2.building_id = $1
+			)`)
 		case "user":
 			args = append(args, target.Value)
 			where = append(where, fmt.Sprintf("u.id = $%d", len(args)))
@@ -746,9 +949,8 @@ func selectTargetUsers(ctx context.Context, tx pgx.Tx, buildingID string, target
 	rows, err := tx.Query(ctx, `
 		SELECT DISTINCT u.id
 		FROM users u
-		JOIN property_owners po ON po.user_id = u.id AND po.status = 'active'
-		JOIN property p ON p.id = po.property_id AND p.building_id = $1
-		WHERE `+strings.Join(where, " OR ")+`
+		WHERE $1::text IS NOT NULL
+			AND (`+strings.Join(where, " OR ")+`)
 		ORDER BY u.id
 	`, args...)
 	if err != nil {
@@ -786,12 +988,19 @@ func scanPost(rows pgx.Rows) (model.Post, error) {
 
 func scanNotification(rows pgx.Rows) (model.Notification, error) {
 	var item model.Notification
-	var sentAt, readAt sql.NullTime
+	var category, audienceSummary sql.NullString
+	var scheduledAt, sentAt, deletedAt, hiddenAt, readAt sql.NullTime
 	err := rows.Scan(
-		&item.ID, &item.BuildingID, &item.AuthorUserID, &item.Title, &item.Body,
-		&item.Status, &item.CreatedAt, &sentAt, &readAt,
+		&item.ID, &item.BuildingID, &item.AuthorUserID, &item.Title, &item.Body, &item.BodyHTML,
+		&item.Status, &category, &audienceSummary, &item.CreatedAt, &item.UpdatedAt,
+		&scheduledAt, &sentAt, &deletedAt, &hiddenAt, &readAt,
 	)
+	item.Category = nullStringPtr(category)
+	item.AudienceSummary = nullStringPtr(audienceSummary)
+	item.ScheduledAt = nullTimePtr(scheduledAt)
 	item.SentAt = nullTimePtr(sentAt)
+	item.DeletedAt = nullTimePtr(deletedAt)
+	item.HiddenAt = nullTimePtr(hiddenAt)
 	item.ReadAt = nullTimePtr(readAt)
 	return item, err
 }
@@ -845,6 +1054,72 @@ func normalizePostChannels(channels []model.Channel) []model.Channel {
 
 func normalizeNotificationChannels(channels []model.Channel) []model.Channel {
 	return normalizeChannels(channels, []string{"portal", "whatsapp", "sms"})
+}
+
+func normalizeNotificationStatus(value string, scheduledAt *time.Time) string {
+	value = strings.TrimSpace(value)
+	switch value {
+	case "draft", "scheduled", "sending", "sent", "hidden", "completed", "deleted":
+		return value
+	default:
+		if scheduledAt != nil && scheduledAt.After(time.Now()) {
+			return "scheduled"
+		}
+		return "sent"
+	}
+}
+
+func audienceSummaryFor(targets []model.Target) string {
+	targets = normalizeTargets(targets)
+	has := func(targetType string, value string) bool {
+		for _, target := range targets {
+			if target.Type == targetType && target.Value == value {
+				return true
+			}
+		}
+		return false
+	}
+	if has("all", "") {
+		return "Все собственники"
+	}
+	if has("property_type", "apartment") && has("property_type", "commercial_room") {
+		return "Квартиры и нежилые помещения"
+	}
+	if has("property_type", "storage") && has("property_type", "parking") {
+		return "Кладовые и паркоместа"
+	}
+	if has("role", "COUNCIL_MEMBER") {
+		return "Только члены совета дома"
+	}
+	if len(targets) > 0 {
+		onlyUsers := true
+		for _, target := range targets {
+			if target.Type != "user" {
+				onlyUsers = false
+				break
+			}
+		}
+		if onlyUsers {
+			return "Отдельные собственники"
+		}
+	}
+	labels := []string{}
+	for _, target := range targets {
+		switch target.Type {
+		case "all":
+			labels = append(labels, "Все собственники")
+		case "role":
+			labels = append(labels, target.Value)
+		case "property_type":
+			labels = append(labels, target.Value)
+		case "user":
+			labels = append(labels, target.Value)
+		}
+	}
+	if len(labels) == 0 {
+		return "Все собственники"
+	}
+	return strings.Join(labels, ", ")
 }
 
 func normalizeChannels(channels []model.Channel, allowed []string) []model.Channel {

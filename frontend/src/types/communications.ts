@@ -36,12 +36,37 @@ export type CommunicationNotification = {
   author_user_id: string;
   title: string;
   body: string;
-  status: "draft" | "sent" | "deleted";
+  body_html: string;
+  status:
+    | "draft"
+    | "scheduled"
+    | "sending"
+    | "sent"
+    | "partially_delivered"
+    | "delivered"
+    | "partially_read"
+    | "read"
+    | "failed"
+    | "hidden"
+    | "completed"
+    | "deleted";
+  category?: string | null;
+  audience_summary?: string | null;
   created_at: string;
+  updated_at: string;
+  scheduled_at?: string | null;
   sent_at?: string | null;
+  deleted_at?: string | null;
+  hidden_at?: string | null;
   read_at?: string | null;
   targets: CommunicationTarget[];
   channels: CommunicationChannel[];
+  delivery_stats: {
+    recipients: number;
+    delivered: number;
+    read: number;
+    errors: number;
+  };
 };
 
 export type CommunicationDelivery = {
@@ -51,6 +76,7 @@ export type CommunicationDelivery = {
   entity_title: string;
   user_id: string;
   recipient: string;
+  property_label?: string;
   channel: "portal" | "whatsapp" | "telegram" | "sms";
   status:
     | "created"

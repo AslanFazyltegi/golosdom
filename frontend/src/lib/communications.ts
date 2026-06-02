@@ -50,20 +50,63 @@ export async function fetchCommunicationNotifications(): Promise<
 
 export async function fetchCommunicationNotificationsForRole(
   activeRole?: string,
+  params: Record<string, string> = {},
 ): Promise<CommunicationNotification[]> {
-  const roleQuery = activeRole ? `?active_role=${activeRole}` : "";
-  return apiFetch(`/api/v1/communications/notifications${roleQuery}`) as Promise<
+  const query = new URLSearchParams();
+  if (activeRole) query.set("active_role", activeRole);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value && value !== "all") query.set(key, value);
+  });
+  return apiFetch(`/api/v1/communications/notifications?${query.toString()}`) as Promise<
     CommunicationNotification[]
   >;
 }
 
 export async function sendCommunicationNotification(
   payload: Partial<CommunicationNotification>,
+  mode = "send",
 ): Promise<CommunicationNotification> {
-  return apiFetch("/api/v1/communications/notifications", {
+  return apiFetch(`/api/v1/communications/notifications?mode=${mode}`, {
     method: "POST",
     body: JSON.stringify(payload),
   }) as Promise<CommunicationNotification>;
+}
+
+export async function updateCommunicationNotification(
+  id: string,
+  payload: Partial<CommunicationNotification>,
+  mode = "",
+): Promise<CommunicationNotification> {
+  const suffix = mode ? `?mode=${mode}` : "";
+  return apiFetch(`/api/v1/communications/notifications/${id}${suffix}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  }) as Promise<CommunicationNotification>;
+}
+
+export async function runCommunicationNotificationAction(
+  id: string,
+  action: string,
+  payload: Record<string, unknown> = {},
+): Promise<CommunicationNotification> {
+  return apiFetch(`/api/v1/communications/notifications/${id}/${action}`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }) as Promise<CommunicationNotification>;
+}
+
+export async function permanentDeleteCommunicationNotification(id: string) {
+  return apiFetch(`/api/v1/communications/notifications/${id}/permanent`, {
+    method: "DELETE",
+  });
+}
+
+export async function fetchCommunicationNotificationReport(
+  id: string,
+): Promise<CommunicationDelivery[]> {
+  return apiFetch(`/api/v1/communications/notifications/${id}/report`) as Promise<
+    CommunicationDelivery[]
+  >;
 }
 
 export async function markCommunicationNotificationRead(id: string) {

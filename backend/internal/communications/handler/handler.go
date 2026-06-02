@@ -101,7 +101,8 @@ func (h *Handler) PostByID(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Notifications(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		items, err := h.service.ListNotifications(userID(r), effectiveRoles(r))
+		query := r.URL.Query()
+		items, err := h.service.ListNotifications(userID(r), effectiveRoles(r), query.Get("status"), query.Get("search"), query.Get("category"), query.Get("audience"), query.Get("sort"))
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err.Error())
 			return
@@ -116,7 +117,7 @@ func (h *Handler) Notifications(w http.ResponseWriter, r *http.Request) {
 			response.Error(w, http.StatusBadRequest, "invalid request body")
 			return
 		}
-		item, err := h.service.SendNotification(userID(r), req)
+		item, err := h.service.SaveNotification(userID(r), req, "", r.URL.Query().Get("mode"))
 		if err != nil {
 			response.Error(w, http.StatusBadRequest, err.Error())
 			return
@@ -141,7 +142,65 @@ func (h *Handler) NotificationByID(w http.ResponseWriter, r *http.Request) {
 		response.JSON(w, http.StatusOK, map[string]string{"status": "read"})
 		return
 	}
-	response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+	switch {
+	case action == "" && r.Method == http.MethodGet:
+		item, err := h.service.GetNotification(userID(r), id)
+		if err != nil {
+			response.Error(w, http.StatusNotFound, "notification not found")
+			return
+		}
+		response.JSON(w, http.StatusOK, item)
+	case action == "" && r.Method == http.MethodPut:
+		if !requireChairman(w, r) {
+			return
+		}
+		var req dto.SaveNotificationRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			response.Error(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		item, err := h.service.SaveNotification(userID(r), req, id, r.URL.Query().Get("mode"))
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		response.JSON(w, http.StatusOK, item)
+	case action == "report" && r.Method == http.MethodGet:
+		if !requireChairman(w, r) {
+			return
+		}
+		items, err := h.service.NotificationReport(id)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		response.JSON(w, http.StatusOK, items)
+	case action == "permanent" && r.Method == http.MethodDelete:
+		if !requireChairman(w, r) {
+			return
+		}
+		if err := h.service.PermanentDeleteNotification(id); err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		response.JSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	case r.Method == http.MethodPost:
+		if !requireChairman(w, r) {
+			return
+		}
+		var req dto.NotificationActionRequest
+		if r.Body != nil {
+			_ = json.NewDecoder(r.Body).Decode(&req)
+		}
+		item, err := h.service.RunNotificationAction(userID(r), id, action, req)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		response.JSON(w, http.StatusOK, item)
+	default:
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
 }
 
 func (h *Handler) Deliveries(w http.ResponseWriter, r *http.Request) {

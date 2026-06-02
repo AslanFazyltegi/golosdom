@@ -90,43 +90,131 @@ func (s *Service) MarkPostRead(userID string, id string) error {
 	return s.repo.MarkPostRead(context.Background(), id, userID)
 }
 
-func (s *Service) ListNotifications(userID string, roles []string) ([]dto.NotificationResponse, error) {
-	items, err := s.repo.ListNotifications(context.Background(), userID, roles)
+func (s *Service) ListNotifications(userID string, roles []string, status string, search string, category string, audience string, sort string) ([]dto.NotificationResponse, error) {
+	items, err := s.repo.ListNotifications(context.Background(), userID, roles, repository.NotificationListFilter{
+		Status: strings.TrimSpace(status), Search: strings.TrimSpace(search), Category: strings.TrimSpace(category),
+		Audience: strings.TrimSpace(audience), Sort: strings.TrimSpace(sort),
+	})
 	if err != nil {
 		return nil, err
 	}
 	return mapNotifications(items), nil
 }
 
-func (s *Service) SendNotification(userID string, req dto.SaveNotificationRequest) (dto.NotificationResponse, error) {
+func (s *Service) GetNotification(userID string, id string) (dto.NotificationResponse, error) {
+	item, err := s.repo.GetNotification(context.Background(), id, userID)
+	if err != nil {
+		return dto.NotificationResponse{}, err
+	}
+	return mapNotification(item), nil
+}
+
+func (s *Service) SaveNotification(userID string, req dto.SaveNotificationRequest, existingID string, mode string) (dto.NotificationResponse, error) {
 	title := strings.TrimSpace(req.Title)
+	bodyHTML := strings.TrimSpace(req.BodyHTML)
+	if bodyHTML == "" {
+		bodyHTML = strings.TrimSpace(req.Body)
+	}
 	body := strings.TrimSpace(req.Body)
+	if body == "" {
+		body = bodyHTML
+	}
 	if title == "" {
 		return dto.NotificationResponse{}, errors.New("title is required")
 	}
-	if body == "" {
+	if strings.TrimSpace(stripHTML(bodyHTML)) == "" {
 		return dto.NotificationResponse{}, errors.New("body is required")
 	}
-	if len([]rune(body)) > 1000 {
-		return dto.NotificationResponse{}, errors.New("notification body is too long")
+	channels := mapChannels(req.Channels)
+	if len(channels) == 0 {
+		return dto.NotificationResponse{}, errors.New("at least one channel is required")
+	}
+	targets := mapTargets(req.Targets)
+	if len(targets) == 0 {
+		return dto.NotificationResponse{}, errors.New("audience is required")
 	}
 	buildingID, err := s.repo.GetPrimaryBuildingID(context.Background())
 	if err != nil {
 		return dto.NotificationResponse{}, err
 	}
+	status := strings.TrimSpace(req.Status)
+	if mode == "draft" {
+		status = "draft"
+	} else if mode == "schedule" {
+		status = "scheduled"
+	} else if mode == "send" || mode == "publish" {
+		status = "sent"
+	}
+	id := existingID
+	if id == "" {
+		id = fmt.Sprintf("communication-notification-%d", time.Now().UnixNano())
+	}
 	item, err := s.repo.SaveNotification(context.Background(), repository.SaveNotificationData{
-		ID:           fmt.Sprintf("communication-notification-%d", time.Now().UnixNano()),
+		ID:           id,
 		BuildingID:   buildingID,
 		AuthorUserID: userID,
 		Title:        title,
 		Body:         body,
-		Targets:      mapTargets(req.Targets),
-		Channels:     mapChannels(req.Channels),
+		BodyHTML:     bodyHTML,
+		Status:       status,
+		Category:     req.Category,
+		ScheduledAt:  req.ScheduledAt,
+		Targets:      targets,
+		Channels:     channels,
 	})
 	if err != nil {
 		return dto.NotificationResponse{}, err
 	}
 	return mapNotification(item), nil
+}
+
+func (s *Service) SendNotification(userID string, req dto.SaveNotificationRequest) (dto.NotificationResponse, error) {
+	return s.SaveNotification(userID, req, "", "send")
+}
+
+func (s *Service) RunNotificationAction(userID string, id string, action string, req dto.NotificationActionRequest) (dto.NotificationResponse, error) {
+	var status string
+	var scheduledAt *time.Time
+	switch strings.TrimSpace(action) {
+	case "hide":
+		status = "hidden"
+	case "show":
+		status = "sent"
+	case "restore":
+		status = "draft"
+	case "delete":
+		status = "deleted"
+	case "send", "publish":
+		status = "sent"
+	case "schedule":
+		status = "scheduled"
+		scheduledAt = req.ScheduledAt
+	case "complete":
+		status = "completed"
+	default:
+		return dto.NotificationResponse{}, errors.New("unsupported action")
+	}
+	item, err := s.repo.SetNotificationStatus(context.Background(), id, status, scheduledAt)
+	if err != nil {
+		return dto.NotificationResponse{}, err
+	}
+	return mapNotification(item), nil
+}
+
+func (s *Service) PermanentDeleteNotification(id string) error {
+	return s.repo.PermanentDeleteNotification(context.Background(), id)
+}
+
+func (s *Service) NotificationReport(id string) ([]dto.DeliveryResponse, error) {
+	items, err := s.repo.ListDeliveriesForNotification(context.Background(), id)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]dto.DeliveryResponse, 0, len(items))
+	for _, item := range items {
+		result = append(result, mapDelivery(item))
+	}
+	return result, nil
 }
 
 func (s *Service) MarkNotificationRead(userID string, id string) error {
@@ -140,13 +228,7 @@ func (s *Service) ListDeliveries() ([]dto.DeliveryResponse, error) {
 	}
 	result := make([]dto.DeliveryResponse, 0, len(items))
 	for _, item := range items {
-		result = append(result, dto.DeliveryResponse{
-			ID: item.ID, EntityType: item.EntityType, EntityID: item.EntityID,
-			EntityTitle: item.EntityTitle, UserID: item.UserID, Recipient: item.Recipient,
-			Channel: item.Channel, Status: item.Status, SentAt: item.SentAt,
-			DeliveredAt: item.DeliveredAt, ReadAt: item.ReadAt, ErrorMessage: item.ErrorMessage,
-			CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
-		})
+		result = append(result, mapDelivery(item))
 	}
 	return result, nil
 }
@@ -232,10 +314,43 @@ func mapNotifications(items []model.Notification) []dto.NotificationResponse {
 func mapNotification(item model.Notification) dto.NotificationResponse {
 	return dto.NotificationResponse{
 		ID: item.ID, BuildingID: item.BuildingID, AuthorUserID: item.AuthorUserID,
-		Title: item.Title, Body: item.Body, Status: item.Status,
-		CreatedAt: item.CreatedAt, SentAt: item.SentAt, ReadAt: item.ReadAt,
+		Title: item.Title, Body: item.Body, BodyHTML: item.BodyHTML, Status: item.Status,
+		Category: item.Category, AudienceSummary: item.AudienceSummary, CreatedAt: item.CreatedAt,
+		UpdatedAt: item.UpdatedAt, ScheduledAt: item.ScheduledAt, SentAt: item.SentAt,
+		DeletedAt: item.DeletedAt, HiddenAt: item.HiddenAt, ReadAt: item.ReadAt,
 		Targets: dtoTargets(item.Targets), Channels: dtoChannels(item.Channels),
+		DeliveryStats: deliveryStats(item.Deliveries),
 	}
+}
+
+func mapDelivery(item model.Delivery) dto.DeliveryResponse {
+	return dto.DeliveryResponse{
+		ID: item.ID, EntityType: item.EntityType, EntityID: item.EntityID,
+		EntityTitle: item.EntityTitle, UserID: item.UserID, Recipient: item.Recipient,
+		PropertyLabel: item.PropertyLabel, Channel: item.Channel, Status: item.Status, SentAt: item.SentAt,
+		DeliveredAt: item.DeliveredAt, ReadAt: item.ReadAt, ErrorMessage: item.ErrorMessage,
+		CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
+	}
+}
+
+func deliveryStats(items []model.Delivery) dto.DeliveryStatsResponse {
+	recipients := map[string]bool{}
+	delivered := map[string]bool{}
+	read := map[string]bool{}
+	errors := 0
+	for _, item := range items {
+		recipients[item.UserID] = true
+		if item.Status == "delivered" || item.Status == "read" {
+			delivered[item.UserID] = true
+		}
+		if item.Status == "read" {
+			read[item.UserID] = true
+		}
+		if item.Status == "failed" || item.Status == "channel_not_connected" {
+			errors++
+		}
+	}
+	return dto.DeliveryStatsResponse{Recipients: len(recipients), Delivered: len(delivered), Read: len(read), Errors: errors}
 }
 
 func dtoTargets(items []model.Target) []dto.TargetRequest {
@@ -252,4 +367,22 @@ func dtoChannels(items []model.Channel) []dto.ChannelRequest {
 		result = append(result, dto.ChannelRequest{Channel: item.Channel, Enabled: item.Enabled})
 	}
 	return result
+}
+
+func stripHTML(value string) string {
+	var builder strings.Builder
+	inTag := false
+	for _, char := range value {
+		switch char {
+		case '<':
+			inTag = true
+		case '>':
+			inTag = false
+		default:
+			if !inTag {
+				builder.WriteRune(char)
+			}
+		}
+	}
+	return strings.ReplaceAll(builder.String(), "&nbsp;", " ")
 }

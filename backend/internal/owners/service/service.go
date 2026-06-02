@@ -18,3 +18,7 @@ func New(repo *repository.Repository) *Service {
 func (s *Service) GetOwners(ctx context.Context) ([]dto.OwnerResponse, error) {
 	return s.repo.GetOwners(ctx)
 }
+
+func (s *Service) SearchOwners(ctx context.Context, query string) ([]dto.OwnerSearchResponse, error) {
+	return s.repo.SearchOwners(ctx, query)
+}
