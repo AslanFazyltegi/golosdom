@@ -282,8 +282,33 @@ function ChairmanNotifications({ owners, activeRole }: CabinetModuleProps) {
   }
 
   useEffect(() => {
-    void load();
+    let cancelled = false;
+    Promise.resolve().then(async () => {
+      if (cancelled) return;
+      setLoading(true);
+      setError("");
+      try {
+        const data = await fetchCommunicationNotificationsForRole(activeRole, { status: tab, search, category, audience, sort });
+        if (!cancelled) setItems(data);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Ошибка загрузки");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [activeRole, tab, sort]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      fetchCommunicationNotificationsForRole(activeRole, { status: tab, search, category, audience, sort })
+        .then(setItems)
+        .catch(() => undefined);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [activeRole, audience, category, search, sort, tab]);
 
   return (
     <main className="min-h-screen bg-slate-100 p-6 text-slate-900">
@@ -591,19 +616,22 @@ function NotificationAudiencePicker({
   useEffect(() => {
     if (audienceType !== "individual_owners" || !open) return;
     let cancelled = false;
-    setSearchLoading(true);
-    searchOwners(manual.trim())
-      .then((items) => {
-        if (!cancelled) {
-          setOwnerOptions(items);
-          setSearchError("");
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) setSearchError(err instanceof Error ? err.message : "Не удалось найти собственников");
-      })
-      .finally(() => {
-        if (!cancelled) setSearchLoading(false);
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setSearchLoading(true);
+      searchOwners(manual.trim())
+        .then((items) => {
+          if (!cancelled) {
+            setOwnerOptions(items);
+            setSearchError("");
+          }
+        })
+        .catch((err) => {
+          if (!cancelled) setSearchError(err instanceof Error ? err.message : "Не удалось найти собственников");
+        })
+        .finally(() => {
+          if (!cancelled) setSearchLoading(false);
+        });
       });
     return () => {
       cancelled = true;
@@ -965,56 +993,166 @@ function OwnerNotifications({ activeRole, refreshCommunicationUnreadCounts }: Ca
   const [items, setItems] = useState<CommunicationNotification[]>([]);
   const [selected, setSelected] = useState<CommunicationNotification | null>(null);
   const [filter, setFilter] = useState<OwnerFilter>("all");
+  const [search, setSearch] = useState("");
+  const [visibleCount, setVisibleCount] = useState(6);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
 
   async function load() {
-    setItems(await fetchCommunicationNotificationsForRole(activeRole));
+    setLoading(true);
+    setError("");
+    try {
+      setItems(await fetchCommunicationNotificationsForRole(activeRole));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ошибка загрузки");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
+    let cancelled = false;
     fetchCommunicationNotificationsForRole(activeRole)
-      .then(setItems)
-      .catch((err) => setError(err instanceof Error ? err.message : "Ошибка загрузки"));
+      .then((data) => {
+        if (!cancelled) setItems(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Ошибка загрузки");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [activeRole]);
 
-  const visibleItems = items.filter((item) => (filter === "unread" ? !item.read_at : true));
+  const visibleItems = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return items.filter((item) => {
+      if (filter === "unread" && item.read_at) return false;
+      if (filter === "important" && item.category !== "Аварийное") return false;
+      if (!query) return true;
+      return [item.title, item.category || "", stripHtml(item.body_html || item.body)]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    });
+  }, [filter, items, search]);
+  const shownItems = visibleItems.slice(0, visibleCount);
 
   async function openNotification(item: CommunicationNotification) {
+    let nextItem = item;
     setSelected(item);
     if (!item.read_at) {
-      await markCommunicationNotificationRead(item.id);
-      await load();
-      await refreshCommunicationUnreadCounts?.();
+      try {
+        await markCommunicationNotificationRead(item.id);
+        const readAt = new Date().toISOString();
+        nextItem = {
+          ...item,
+          read_at: readAt,
+          delivery_stats: {
+            ...item.delivery_stats,
+            read: Math.min(item.delivery_stats.recipients, item.delivery_stats.read + 1),
+          },
+        };
+        setItems((current) => current.map((currentItem) => (currentItem.id === item.id ? nextItem : currentItem)));
+        setSelected(nextItem);
+        await load();
+        await refreshCommunicationUnreadCounts?.();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Не удалось отметить уведомление прочитанным.");
+      }
     }
   }
 
   return (
-    <>
-      <Header title="Уведомления" text="Полученные сообщения по вашему МЖК." />
-      <FilterBar
-        items={ownerFilters}
-        value={filter}
-        onChange={(value) => setFilter(value as OwnerFilter)}
-      />
-      {error && <ErrorText text={error} />}
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <section className="space-y-4">
-          {visibleItems.map((item) => (
-            <NotificationCard key={item.id} item={item} onOpen={() => openNotification(item)} />
+    <main className="min-h-screen bg-slate-100 p-6 text-slate-900">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-black tracking-tight">Уведомления</h1>
+            <p className="mt-2 text-sm text-slate-500">Полученные уведомления, адресованные вам.</p>
+          </div>
+          <button onClick={() => void load()} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Обновить
+          </button>
+        </div>
+
+        <OwnerViewerToolbar
+          filter={filter}
+          search={search}
+          placeholder="Поиск по уведомлениям"
+          onFilter={(value) => {
+            setFilter(value);
+            setVisibleCount(6);
+          }}
+          onSearch={(value) => {
+            setSearch(value);
+            setVisibleCount(6);
+          }}
+        />
+
+        {error && <ErrorText text={error} />}
+        {loading && <p className="mb-4 rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-600">Загрузка...</p>}
+
+        <section className="space-y-3">
+          {shownItems.map((item) => (
+            <NotificationCard key={item.id} item={item} onOpen={() => void openNotification(item)} />
           ))}
-          {visibleItems.length === 0 && <EmptyState text="Уведомлений пока нет." />}
+          {visibleItems.length === 0 && !loading && <EmptyState text="Уведомлений пока нет." />}
         </section>
-        {selected ? (
-          <section className="rounded-2xl border bg-white p-6 shadow-sm">
-            <p className="text-sm text-slate-500">{formatAstanaDateTime(selected.sent_at || selected.created_at)}</p>
-            <h2 className="mt-2 text-2xl font-bold">{selected.title}</h2>
-            <p className="mt-4 whitespace-pre-wrap text-slate-700">{selected.body}</p>
-          </section>
-        ) : (
-          <EmptyState text="Откройте уведомление из списка." />
+        {visibleCount < visibleItems.length && (
+          <div className="mt-5 flex justify-center">
+            <button
+              onClick={() => setVisibleCount((value) => value + 6)}
+              className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Показать ещё
+            </button>
+          </div>
         )}
       </div>
-    </>
+      {selected && <OwnerNotificationDetails item={selected} onClose={() => setSelected(null)} />}
+    </main>
+  );
+}
+
+function OwnerViewerToolbar({
+  filter,
+  search,
+  placeholder,
+  onFilter,
+  onSearch,
+}: {
+  filter: OwnerFilter;
+  search: string;
+  placeholder: string;
+  onFilter: (value: OwnerFilter) => void;
+  onSearch: (value: string) => void;
+}) {
+  return (
+    <div className="mb-5 space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {ownerFilters.map((item) => (
+          <button
+            key={item.value}
+            onClick={() => onFilter(item.value)}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+              filter === item.value ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <input
+        value={search}
+        onChange={(event) => onSearch(event.target.value)}
+        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+        placeholder={placeholder}
+      />
+    </div>
   );
 }
 
@@ -1380,18 +1518,54 @@ function PostDetails({ post }: { post: CommunicationPost }) {
 }
 
 function NotificationCard({ item, onOpen }: { item: CommunicationNotification; onOpen?: () => void }) {
+  const bodyText = stripHtml(item.body_html || item.body);
   return (
-    <article className="rounded-2xl border bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-semibold">{item.title}</h2>
-          <p className="mt-1 text-sm text-slate-500">{formatAstanaDateTime(item.sent_at || item.created_at)}</p>
-          <p className="mt-3 line-clamp-2 text-sm text-slate-700">{item.body}</p>
+    <article
+      onClick={onOpen}
+      className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:shadow-md ${
+        onOpen ? "cursor-pointer" : ""
+      }`}
+    >
+      <div className="flex items-center gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-semibold">
+            <span className="text-slate-500">{formatAstanaDateTime(item.sent_at || item.created_at)}</span>
+            {item.category && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">{item.category}</span>}
+            {item.category === "Аварийное" && <span className="rounded-full bg-red-50 px-2 py-1 text-red-700">Важное</span>}
+            {item.read_at ? (
+              <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">Прочитано</span>
+            ) : (
+              <span className="rounded-full bg-red-600 px-2 py-1 text-white">Новое</span>
+            )}
+          </div>
+          <h2 className="truncate text-lg font-bold text-slate-900">{item.title}</h2>
+          <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{bodyText}</p>
         </div>
-        {!item.read_at && onOpen && <span className="rounded-full bg-red-600 px-2 py-1 text-xs text-white">Новое</span>}
+        {onOpen && <span className="shrink-0 text-2xl text-slate-300">›</span>}
       </div>
-      {onOpen && <button onClick={onOpen} className="mt-4 rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white">Открыть</button>}
     </article>
+  );
+}
+
+function OwnerNotificationDetails({ item, onClose }: { item: CommunicationNotification; onClose: () => void }) {
+  return (
+    <Modal title="Уведомление" onClose={onClose} wide>
+      <article>
+        <div className="flex flex-wrap gap-2">
+          {item.category && <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">{item.category}</span>}
+          {item.category === "Аварийное" && <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-bold text-red-700">Важное</span>}
+          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">
+            {item.read_at ? "Прочитано" : "Новое"}
+          </span>
+        </div>
+        <p className="mt-4 text-sm text-slate-500">{formatAstanaDateTime(item.sent_at || item.created_at)}</p>
+        <h2 className="mt-2 text-3xl font-bold text-slate-900">{item.title}</h2>
+        <div className="infocenter-document-content mt-5" dangerouslySetInnerHTML={{ __html: item.body_html || item.body }} />
+      </article>
+      <div className="mt-5 flex justify-end">
+        <button onClick={onClose} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Закрыть</button>
+      </div>
+    </Modal>
   );
 }
 

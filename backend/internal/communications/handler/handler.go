@@ -144,7 +144,7 @@ func (h *Handler) NotificationByID(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case action == "" && r.Method == http.MethodGet:
-		item, err := h.service.GetNotification(userID(r), id)
+		item, err := h.service.GetNotification(userID(r), effectiveRoles(r), id)
 		if err != nil {
 			response.Error(w, http.StatusNotFound, "notification not found")
 			return

@@ -50,6 +50,7 @@ type AnnouncementResponse struct {
 	UpdatedAt      time.Time                    `json:"updated_at"`
 	ViewsCount     int                          `json:"views_count"`
 	ReadsCount     int                          `json:"reads_count"`
+	ReadAt         *time.Time                   `json:"read_at"`
 	History        []AnnouncementActionResponse `json:"history"`
 }
 

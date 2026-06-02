@@ -41,6 +41,7 @@ export type InfocenterAnnouncement = {
   updated_at: string;
   views_count: number;
   reads_count: number;
+  read_at?: string | null;
   history: InfocenterAnnouncementAction[];
 };
 

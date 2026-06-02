@@ -15,6 +15,16 @@ export async function fetchInfocenterAnnouncements(params: {
   return (await apiFetch(`/api/infocenter/announcements?${query.toString()}`)) as InfocenterAnnouncement[];
 }
 
+export async function fetchMyInfocenterAnnouncements() {
+  return (await apiFetch("/api/infocenter/announcements/my")) as InfocenterAnnouncement[];
+}
+
+export async function markInfocenterAnnouncementRead(id: string) {
+  return apiFetch(`/api/infocenter/announcements/${id}/read`, {
+    method: "POST",
+  });
+}
+
 export async function createInfocenterAnnouncement(
   payload: InfocenterAnnouncementPayload,
   mode: "draft" | "publish" | "schedule" = "draft",

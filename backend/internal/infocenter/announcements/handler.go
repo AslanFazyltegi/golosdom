@@ -47,12 +47,48 @@ func (h *Handler) Announcements(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) AnnouncementsByID(w http.ResponseWriter, r *http.Request) {
-	if !requireChairman(w, r) {
-		return
-	}
 	id, action, extra := splitAnnouncementPath(r.URL.Path)
 	if id == "" {
 		response.Error(w, http.StatusNotFound, "not found")
+		return
+	}
+	if id == "my" && action == "" && r.Method == http.MethodGet {
+		if !requireUser(w, r) {
+			return
+		}
+		items, err := h.service.ListForUser(r.Context(), userID(r))
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		response.JSON(w, http.StatusOK, items)
+		return
+	}
+	if action == "read" && r.Method == http.MethodPost {
+		if !requireUser(w, r) {
+			return
+		}
+		if err := h.service.MarkRead(r.Context(), id, userID(r)); err != nil {
+			response.Error(w, http.StatusNotFound, "announcement not found")
+			return
+		}
+		response.JSON(w, http.StatusOK, map[string]string{"status": "read"})
+		return
+	}
+	if !isChairmanRequest(r) {
+		if action == "" && r.Method == http.MethodGet {
+			item, err := h.service.GetForUser(r.Context(), id, userID(r))
+			if err != nil {
+				response.Error(w, http.StatusNotFound, "announcement not found")
+				return
+			}
+			response.JSON(w, http.StatusOK, item)
+			return
+		}
+		response.Error(w, http.StatusForbidden, "only chairman can perform this action")
+		return
+	}
+	if !requireChairman(w, r) {
 		return
 	}
 
@@ -160,6 +196,29 @@ func splitAnnouncementPath(path string) (string, string, string) {
 
 func userID(r *http.Request) string {
 	return r.Header.Get("X-User-ID")
+}
+
+func requireUser(w http.ResponseWriter, r *http.Request) bool {
+	if userID(r) == "" {
+		response.Error(w, http.StatusUnauthorized, "missing user")
+		return false
+	}
+	return true
+}
+
+func isChairmanRequest(r *http.Request) bool {
+	if userID(r) == "" {
+		return false
+	}
+	if strings.TrimSpace(r.URL.Query().Get("active_role")) != "" && strings.TrimSpace(r.URL.Query().Get("active_role")) != "CHAIRMAN" {
+		return false
+	}
+	for _, role := range strings.Split(r.Header.Get("X-User-Roles"), ",") {
+		if strings.TrimSpace(role) == "CHAIRMAN" {
+			return true
+		}
+	}
+	return false
 }
 
 func requireChairman(w http.ResponseWriter, r *http.Request) bool {

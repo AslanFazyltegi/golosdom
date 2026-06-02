@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"golosdom-backend/internal/infocenter/audience"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -70,7 +72,7 @@ func (r *Repository) List(ctx context.Context, filter listFilter) ([]Announcemen
 	}
 
 	rows, err := r.db.Query(ctx, `
-		SELECT `+announcementSelectColumns()+`
+		SELECT `+announcementSelectColumns("NULL::timestamptz")+`
 		FROM infocenter_announcements a
 		LEFT JOIN users u ON u.id = a.created_by
 		WHERE `+strings.Join(where, " AND ")+`
@@ -108,7 +110,7 @@ func (r *Repository) List(ctx context.Context, filter listFilter) ([]Announcemen
 
 func (r *Repository) Get(ctx context.Context, id string) (AnnouncementResponse, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT `+announcementSelectColumns()+`
+		SELECT `+announcementSelectColumns("NULL::timestamptz")+`
 		FROM infocenter_announcements a
 		LEFT JOIN users u ON u.id = a.created_by
 		WHERE a.id = $1
@@ -129,6 +131,84 @@ func (r *Repository) Get(ctx context.Context, id string) (AnnouncementResponse, 
 		return AnnouncementResponse{}, err
 	}
 	return items[0], nil
+}
+
+func (r *Repository) ListForUser(ctx context.Context, userID string) ([]AnnouncementResponse, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT `+announcementSelectColumns("ar.read_at")+`
+		FROM infocenter_announcements a
+		LEFT JOIN users u ON u.id = a.created_by
+		LEFT JOIN infocenter_announcement_reads ar ON ar.announcement_id = a.id AND ar.user_id = $1
+		WHERE `+audience.PublishedAnnouncementPredicate("a")+`
+			AND `+audience.InfocenterItemPredicate("a", "$1")+`
+		ORDER BY
+			a.is_pinned DESC,
+			a.is_important DESC,
+			COALESCE(a.published_at, a.updated_at, a.created_at) DESC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []AnnouncementResponse{}
+	for rows.Next() {
+		item, err := scanAnnouncement(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range items {
+		items[i].History = []AnnouncementActionResponse{}
+	}
+	return items, nil
+}
+
+func (r *Repository) GetForUser(ctx context.Context, id string, userID string) (AnnouncementResponse, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT `+announcementSelectColumns("ar.read_at")+`
+		FROM infocenter_announcements a
+		LEFT JOIN users u ON u.id = a.created_by
+		LEFT JOIN infocenter_announcement_reads ar ON ar.announcement_id = a.id AND ar.user_id = $1
+		WHERE a.id = $2
+			AND `+audience.PublishedAnnouncementPredicate("a")+`
+			AND `+audience.InfocenterItemPredicate("a", "$1")+`
+	`, userID, id)
+	if err != nil {
+		return AnnouncementResponse{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return AnnouncementResponse{}, sql.ErrNoRows
+	}
+	item, err := scanAnnouncement(rows)
+	if err != nil {
+		return AnnouncementResponse{}, err
+	}
+	item.History = []AnnouncementActionResponse{}
+	return item, nil
+}
+
+func (r *Repository) MarkRead(ctx context.Context, id string, userID string) error {
+	var announcementID string
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO infocenter_announcement_reads (id, announcement_id, user_id, read_at)
+		SELECT $1::uuid, a.id, $2::text, now()
+		FROM infocenter_announcements a
+		WHERE a.id = $3
+			AND `+audience.PublishedAnnouncementPredicate("a")+`
+			AND `+audience.InfocenterItemPredicate("a", "$2::text")+`
+		ON CONFLICT (announcement_id, user_id) DO UPDATE SET read_at = infocenter_announcement_reads.read_at
+		RETURNING announcement_id
+	`, newID(), userID, id).Scan(&announcementID)
+	if err == pgx.ErrNoRows {
+		return sql.ErrNoRows
+	}
+	return err
 }
 
 func (r *Repository) Create(ctx context.Context, id string, req SaveRequest, actorID string, status string) (AnnouncementResponse, error) {
@@ -264,7 +344,7 @@ func (r *Repository) history(ctx context.Context, announcementID string) ([]Anno
 	return items, rows.Err()
 }
 
-func announcementSelectColumns() string {
+func announcementSelectColumns(readAtExpr string) string {
 	return `
 		a.id,
 		a.title,
@@ -290,21 +370,22 @@ func announcementSelectColumns() string {
 		a.created_at,
 		a.updated_at,
 		(SELECT COUNT(*)::int FROM infocenter_announcement_reads r WHERE r.announcement_id = a.id) AS views_count,
-		(SELECT COUNT(*)::int FROM infocenter_announcement_reads r WHERE r.announcement_id = a.id) AS reads_count
+		(SELECT COUNT(*)::int FROM infocenter_announcement_reads r WHERE r.announcement_id = a.id) AS reads_count,
+		` + readAtExpr + ` AS read_at
 	`
 }
 
 func scanAnnouncement(rows pgx.Rows) (AnnouncementResponse, error) {
 	var item AnnouncementResponse
 	var updatedBy sql.NullString
-	var publishedAt, scheduledAt, actualUntil, hiddenAt, completedAt, deletedAt sql.NullTime
+	var publishedAt, scheduledAt, actualUntil, hiddenAt, completedAt, deletedAt, readAt sql.NullTime
 	err := rows.Scan(
 		&item.ID, &item.Title, &item.BodyJSON, &item.BodyHTML,
 		&item.Category, &item.AudienceType, &item.AudienceFilter, &item.Status,
 		&item.IsVisible, &item.IsPinned, &item.IsImportant, &item.NotifyEnabled,
 		&publishedAt, &scheduledAt, &actualUntil, &hiddenAt, &completedAt,
 		&deletedAt, &item.CreatedBy, &updatedBy, &item.AuthorName, &item.CreatedAt,
-		&item.UpdatedAt, &item.ViewsCount, &item.ReadsCount,
+		&item.UpdatedAt, &item.ViewsCount, &item.ReadsCount, &readAt,
 	)
 	item.UpdatedBy = nullString(updatedBy)
 	item.PublishedAt = nullTime(publishedAt)
@@ -313,6 +394,7 @@ func scanAnnouncement(rows pgx.Rows) (AnnouncementResponse, error) {
 	item.HiddenAt = nullTime(hiddenAt)
 	item.CompletedAt = nullTime(completedAt)
 	item.DeletedAt = nullTime(deletedAt)
+	item.ReadAt = nullTime(readAt)
 	return item, err
 }
 

@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   createInfocenterAnnouncement,
   fetchInfocenterAnnouncements,
+  fetchMyInfocenterAnnouncements,
+  markInfocenterAnnouncementRead,
   permanentDeleteInfocenterAnnouncement,
   runInfocenterAnnouncementAction,
   updateInfocenterAnnouncement,
@@ -73,7 +75,7 @@ function emptyForm(): InfocenterAnnouncementPayload {
   };
 }
 
-export function InfocenterAnnouncementsPage({ activeRole }: CabinetModuleProps) {
+export function InfocenterAnnouncementsPage({ activeRole, refreshCommunicationUnreadCounts }: CabinetModuleProps) {
   const [items, setItems] = useState<InfocenterAnnouncement[]>([]);
   const [tab, setTab] = useState<TabValue>("all");
   const [search, setSearch] = useState("");
@@ -110,14 +112,7 @@ export function InfocenterAnnouncementsPage({ activeRole }: CabinetModuleProps) 
   }, [tab, search]);
 
   if (activeRole !== "CHAIRMAN") {
-    return (
-      <section className="min-h-screen bg-slate-100 p-6 text-slate-900">
-        <div className="mx-auto max-w-7xl rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
-          <h1 className="text-2xl font-bold">Нет доступа</h1>
-          <p className="mt-2 text-slate-500">Управление объявлениями доступно только председателю.</p>
-        </div>
-      </section>
-    );
+    return <AnnouncementsViewer refreshCommunicationUnreadCounts={refreshCommunicationUnreadCounts} />;
   }
 
   return (
@@ -231,6 +226,232 @@ export function InfocenterAnnouncementsPage({ activeRole }: CabinetModuleProps) 
         />
       )}
     </main>
+  );
+}
+
+function AnnouncementsViewer({
+  refreshCommunicationUnreadCounts,
+}: {
+  refreshCommunicationUnreadCounts?: () => Promise<void>;
+}) {
+  const [items, setItems] = useState<InfocenterAnnouncement[]>([]);
+  const [details, setDetails] = useState<InfocenterAnnouncement | null>(null);
+  const [filter, setFilter] = useState<"all" | "unread" | "important">("all");
+  const [search, setSearch] = useState("");
+  const [visibleCount, setVisibleCount] = useState(6);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      setItems(await fetchMyInfocenterAnnouncements());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось загрузить объявления.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchMyInfocenterAnnouncements()
+      .then((data) => {
+        if (!cancelled) setItems(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Не удалось загрузить объявления.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const visibleItems = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return items.filter((item) => {
+      if (filter === "unread" && item.read_at) return false;
+      if (filter === "important" && !item.is_important && !item.is_pinned) return false;
+      if (!query) return true;
+      return [item.title, item.category, stripHtml(item.body_html)]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    });
+  }, [filter, items, search]);
+  const shownItems = visibleItems.slice(0, visibleCount);
+
+  async function openItem(item: InfocenterAnnouncement) {
+    let nextItem = item;
+    setDetails(item);
+    if (!item.read_at) {
+      try {
+        await markInfocenterAnnouncementRead(item.id);
+        const readAt = new Date().toISOString();
+        nextItem = { ...item, read_at: readAt, reads_count: item.reads_count + 1, views_count: item.views_count + 1 };
+        setItems((current) => current.map((currentItem) => (currentItem.id === item.id ? nextItem : currentItem)));
+        setDetails(nextItem);
+        await refreshCommunicationUnreadCounts?.();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Не удалось отметить объявление прочитанным.");
+      }
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-slate-100 p-6 text-slate-900">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-black tracking-tight">Объявления</h1>
+            <p className="mt-2 text-sm text-slate-500">Опубликованные объявления, доступные вашей аудитории.</p>
+          </div>
+          <button onClick={() => void load()} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            Обновить
+          </button>
+        </div>
+
+        <ViewerToolbar
+          filter={filter}
+          search={search}
+          placeholder="Поиск по объявлениям"
+          onFilter={(value) => {
+            setFilter(value);
+            setVisibleCount(6);
+          }}
+          onSearch={(value) => {
+            setSearch(value);
+            setVisibleCount(6);
+          }}
+        />
+
+        {error && <Message tone="error" text={error} />}
+        {loading && <Message text="Загрузка..." />}
+
+        <section className="space-y-3">
+          {shownItems.map((item) => (
+            <ViewerAnnouncementCard key={item.id} item={item} onOpen={() => void openItem(item)} />
+          ))}
+          {visibleItems.length === 0 && !loading && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500 shadow-sm">
+              Доступных объявлений пока нет.
+            </div>
+          )}
+        </section>
+        {visibleCount < visibleItems.length && (
+          <div className="mt-5 flex justify-center">
+            <button
+              onClick={() => setVisibleCount((value) => value + 6)}
+              className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Показать ещё
+            </button>
+          </div>
+        )}
+      </div>
+      {details && <ViewerAnnouncementDetails item={details} onClose={() => setDetails(null)} />}
+    </main>
+  );
+}
+
+function ViewerToolbar({
+  filter,
+  search,
+  placeholder,
+  onFilter,
+  onSearch,
+}: {
+  filter: "all" | "unread" | "important";
+  search: string;
+  placeholder: string;
+  onFilter: (value: "all" | "unread" | "important") => void;
+  onSearch: (value: string) => void;
+}) {
+  const items: { value: "all" | "unread" | "important"; label: string }[] = [
+    { value: "all", label: "Все" },
+    { value: "unread", label: "Непрочитанные" },
+    { value: "important", label: "Важные" },
+  ];
+  return (
+    <div className="mb-5 space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {items.map((item) => (
+          <button
+            key={item.value}
+            onClick={() => onFilter(item.value)}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+              filter === item.value ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <input
+        value={search}
+        onChange={(event) => onSearch(event.target.value)}
+        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+        placeholder={placeholder}
+      />
+    </div>
+  );
+}
+
+function ViewerAnnouncementCard({ item, onOpen }: { item: InfocenterAnnouncement; onOpen: () => void }) {
+  return (
+    <article
+      onClick={onOpen}
+      className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:shadow-md"
+    >
+      <div className="flex items-center gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-semibold">
+            <span className="text-slate-500">{item.published_at ? formatAstanaDateTime(item.published_at) : "Дата не указана"}</span>
+            <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">{item.category}</span>
+            {item.actual_until && <span className="text-slate-500">Актуально до {formatAstanaDateTime(item.actual_until)}</span>}
+            {item.is_important && <span className="rounded-full bg-red-50 px-2 py-1 text-red-700">Важное</span>}
+            {item.is_pinned && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">Закреплено</span>}
+            {item.read_at ? (
+              <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">Прочитано</span>
+            ) : (
+              <span className="rounded-full bg-red-600 px-2 py-1 text-white">Новое</span>
+            )}
+          </div>
+          <h2 className="truncate text-lg font-bold text-slate-900">{item.title}</h2>
+          <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{stripHtml(item.body_html)}</p>
+        </div>
+        <span className="shrink-0 text-2xl text-slate-300">›</span>
+      </div>
+    </article>
+  );
+}
+
+function ViewerAnnouncementDetails({ item, onClose }: { item: InfocenterAnnouncement; onClose: () => void }) {
+  return (
+    <Modal title="Объявление" onClose={onClose} wide>
+      <article>
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">{item.category}</span>
+          {item.is_important && <Pill tone="red">Важное объявление</Pill>}
+          {item.is_pinned && <Pill tone="blue">Закреплено</Pill>}
+        </div>
+        <h2 className="mt-4 text-3xl font-bold">{item.title}</h2>
+        <div className="mt-5 grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm md:grid-cols-2">
+          <Meta label="Дата публикации" value={item.published_at ? formatAstanaDateTime(item.published_at) : "Не указано"} />
+          <Meta label="Актуально до" value={item.actual_until ? formatAstanaDateTime(item.actual_until) : "Не указано"} />
+          <Meta label="Категория" value={item.category} />
+          <Meta label="Статус" value={item.read_at ? "прочитано" : "не прочитано"} />
+        </div>
+        <div className="infocenter-document-content mt-5" dangerouslySetInnerHTML={{ __html: item.body_html }} />
+      </article>
+      <div className="mt-5 flex justify-end">
+        <button onClick={onClose} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Закрыть</button>
+      </div>
+    </Modal>
   );
 }
 

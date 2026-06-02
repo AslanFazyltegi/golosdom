@@ -101,8 +101,14 @@ func (s *Service) ListNotifications(userID string, roles []string, status string
 	return mapNotifications(items), nil
 }
 
-func (s *Service) GetNotification(userID string, id string) (dto.NotificationResponse, error) {
-	item, err := s.repo.GetNotification(context.Background(), id, userID)
+func (s *Service) GetNotification(userID string, roles []string, id string) (dto.NotificationResponse, error) {
+	var item model.Notification
+	var err error
+	if hasRole(roles, "CHAIRMAN") {
+		item, err = s.repo.GetNotification(context.Background(), id, userID)
+	} else {
+		item, err = s.repo.GetNotificationForUser(context.Background(), id, userID)
+	}
 	if err != nil {
 		return dto.NotificationResponse{}, err
 	}
@@ -266,6 +272,15 @@ func normalizeImportance(value string) string {
 		return value
 	}
 	return "normal"
+}
+
+func hasRole(roles []string, role string) bool {
+	for _, item := range roles {
+		if strings.TrimSpace(item) == role {
+			return true
+		}
+	}
+	return false
 }
 
 func mapTargets(items []dto.TargetRequest) []model.Target {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"golosdom-backend/internal/communications/model"
+	"golosdom-backend/internal/infocenter/audience"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -82,7 +83,8 @@ func (r *Repository) ListPosts(ctx context.Context, userID string, roles []strin
 		}
 	} else {
 		args = append(args, userID)
-		where = append(where, fmt.Sprintf(`p.status = 'published'
+		userParam := fmt.Sprintf("$%d", len(args))
+		where = append(where, `p.status = 'published'
 			AND p.deleted_at IS NULL
 			AND (p.visible_from IS NULL OR p.visible_from <= now())
 			AND (p.visible_until IS NULL OR p.visible_until >= now())
@@ -90,26 +92,8 @@ func (r *Repository) ListPosts(ctx context.Context, userID string, roles []strin
 				SELECT 1
 				FROM communication_post_targets t
 				WHERE t.post_id = p.id
-					AND (
-						t.target_type = 'all'
-						OR (t.target_type = 'user' AND t.target_value = $%d)
-						OR (t.target_type = 'role' AND EXISTS (
-							SELECT 1
-							FROM user_roles ur
-							JOIN roles r ON r.id = ur.role_id
-							WHERE ur.user_id = $%d AND r.code = t.target_value
-						))
-						OR (t.target_type = 'property_type' AND EXISTS (
-							SELECT 1
-							FROM property_owners po
-							JOIN property pr ON pr.id = po.property_id
-							WHERE po.user_id = $%d
-								AND po.status = 'active'
-								AND pr.building_id = p.building_id
-								AND pr.type = t.target_value
-						))
-					)
-			)`, len(args), len(args), len(args)))
+					AND `+audience.CommunicationTargetPredicate("t", "p.building_id", userParam)+`
+			)`)
 	}
 
 	rows, err := r.db.Query(ctx, `
@@ -278,28 +262,14 @@ func (r *Repository) ListNotifications(ctx context.Context, userID string, roles
 		}
 	} else {
 		args = append(args, userID)
-		where = append(where, fmt.Sprintf(`n.status = 'sent'
+		userParam := fmt.Sprintf("$%d", len(args))
+		where = append(where, audience.VisibleNotificationPredicate("n")+`
 			AND EXISTS (
 				SELECT 1
 				FROM communication_notification_targets t
 				WHERE t.notification_id = n.id
-					AND (
-						t.target_type = 'all'
-						OR (t.target_type = 'user' AND t.target_value = $%d)
-						OR (t.target_type = 'role' AND EXISTS (
-							SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-							WHERE ur.user_id = $%d AND r.code = t.target_value
-						))
-						OR (t.target_type = 'property_type' AND EXISTS (
-							SELECT 1 FROM property_owners po
-							JOIN property pr ON pr.id = po.property_id
-							WHERE po.user_id = $%d
-								AND po.status = 'active'
-								AND pr.building_id = n.building_id
-								AND pr.type = t.target_value
-						))
-					)
-			)`, len(args), len(args), len(args)))
+					AND `+audience.CommunicationTargetPredicate("t", "n.building_id", userParam)+`
+			)`)
 	}
 	if len(where) == 0 {
 		where = append(where, "true")
@@ -471,6 +441,47 @@ func (r *Repository) GetNotification(ctx context.Context, id string, userID stri
 	return items[0], nil
 }
 
+func (r *Repository) GetNotificationForUser(ctx context.Context, id string, userID string) (model.Notification, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT n.id, n.building_id, n.author_user_id, n.title, n.body, n.body_html,
+			n.status, n.category, n.audience_summary, n.created_at, n.updated_at,
+			n.scheduled_at, n.sent_at, n.deleted_at, n.hidden_at, rr.read_at
+		FROM communication_notifications n
+		LEFT JOIN communication_read_receipts rr
+			ON rr.entity_type = 'notification'
+			AND rr.entity_id = n.id
+			AND rr.user_id = $2
+		WHERE n.id = $1
+			AND `+audience.VisibleNotificationPredicate("n")+`
+			AND EXISTS (
+				SELECT 1
+				FROM communication_notification_targets t
+				WHERE t.notification_id = n.id
+					AND `+audience.CommunicationTargetPredicate("t", "n.building_id", "$2")+`
+			)
+	`, id, userID)
+	if err != nil {
+		return model.Notification{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return model.Notification{}, sql.ErrNoRows
+	}
+	item, err := scanNotification(rows)
+	if err != nil {
+		return model.Notification{}, err
+	}
+	items, err := r.attachNotificationRelations(ctx, []model.Notification{item})
+	if err != nil {
+		return model.Notification{}, err
+	}
+	items, err = r.attachNotificationDeliveries(ctx, items)
+	if err != nil {
+		return model.Notification{}, err
+	}
+	return items[0], nil
+}
+
 func (r *Repository) SetNotificationStatus(ctx context.Context, id string, status string, scheduledAt *time.Time) (model.Notification, error) {
 	var sentExpr string
 	if status == "sent" || status == "sending" {
@@ -511,7 +522,41 @@ func (r *Repository) PermanentDeleteNotification(ctx context.Context, id string)
 }
 
 func (r *Repository) MarkNotificationRead(ctx context.Context, id string, userID string) error {
-	return r.markRead(ctx, "notification", id, userID)
+	now := time.Now()
+	var entityID string
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO communication_read_receipts (id, entity_type, entity_id, user_id, read_at)
+		SELECT $1, 'notification', n.id, $2, $4
+		FROM communication_notifications n
+		WHERE n.id = $3
+			AND `+audience.VisibleNotificationPredicate("n")+`
+			AND EXISTS (
+				SELECT 1
+				FROM communication_notification_targets t
+				WHERE t.notification_id = n.id
+					AND `+audience.CommunicationTargetPredicate("t", "n.building_id", "$2")+`
+			)
+		ON CONFLICT (entity_type, entity_id, user_id) DO UPDATE SET read_at = communication_read_receipts.read_at
+		RETURNING entity_id
+	`, fmt.Sprintf("read-notification-%s-%s", id, userID), userID, id, now).Scan(&entityID)
+	if err == pgx.ErrNoRows {
+		return sql.ErrNoRows
+	}
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec(ctx, `
+		UPDATE communication_deliveries
+		SET status = 'read',
+			read_at = COALESCE(read_at, $3),
+			updated_at = $3
+		WHERE entity_type = 'notification'
+			AND entity_id = $1
+			AND user_id = $2
+			AND channel = 'portal'
+			AND status <> 'read'
+	`, entityID, userID, now)
+	return err
 }
 
 func (r *Repository) ListDeliveries(ctx context.Context) ([]model.Delivery, error) {
@@ -592,41 +637,29 @@ func (r *Repository) UnreadCounts(ctx context.Context, userID string) (map[strin
 	rows, err := r.db.Query(ctx, `
 		SELECT key, COUNT(*)::int
 		FROM (
-			SELECT p.id, p.type AS key
-			FROM communication_posts p
-			WHERE p.status = 'published'
-				AND p.deleted_at IS NULL
-				AND (p.visible_from IS NULL OR p.visible_from <= now())
-				AND (p.visible_until IS NULL OR p.visible_until >= now())
+			SELECT n.id::text, 'news' AS key
+			FROM infocenter_news n
+			WHERE `+audience.PublishedNewsPredicate("n")+`
 				AND NOT EXISTS (
-					SELECT 1 FROM communication_read_receipts rr
-					WHERE rr.entity_type = 'post' AND rr.entity_id = p.id AND rr.user_id = $1
-				)
-				AND EXISTS (
 					SELECT 1
-					FROM communication_post_targets t
-					WHERE t.post_id = p.id
-						AND (
-							t.target_type = 'all'
-							OR (t.target_type = 'user' AND t.target_value = $1)
-							OR (t.target_type = 'role' AND EXISTS (
-								SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-								WHERE ur.user_id = $1 AND r.code = t.target_value
-							))
-							OR (t.target_type = 'property_type' AND EXISTS (
-								SELECT 1 FROM property_owners po
-								JOIN property pr ON pr.id = po.property_id
-								WHERE po.user_id = $1
-									AND po.status = 'active'
-									AND pr.building_id = p.building_id
-									AND pr.type = t.target_value
-							))
-						)
+					FROM infocenter_news_reads nr
+					WHERE nr.news_id = n.id AND nr.user_id = $1
 				)
+				AND `+audience.InfocenterItemPredicate("n", "$1")+`
+			UNION ALL
+			SELECT a.id::text, 'announcement' AS key
+			FROM infocenter_announcements a
+			WHERE `+audience.PublishedAnnouncementPredicate("a")+`
+				AND NOT EXISTS (
+					SELECT 1
+					FROM infocenter_announcement_reads ar
+					WHERE ar.announcement_id = a.id AND ar.user_id = $1
+				)
+				AND `+audience.InfocenterItemPredicate("a", "$1")+`
 			UNION ALL
 			SELECT n.id, 'notification' AS key
 			FROM communication_notifications n
-			WHERE n.status = 'sent'
+			WHERE `+audience.VisibleNotificationPredicate("n")+`
 				AND NOT EXISTS (
 					SELECT 1 FROM communication_read_receipts rr
 					WHERE rr.entity_type = 'notification' AND rr.entity_id = n.id AND rr.user_id = $1
@@ -635,22 +668,7 @@ func (r *Repository) UnreadCounts(ctx context.Context, userID string) (map[strin
 					SELECT 1
 					FROM communication_notification_targets t
 					WHERE t.notification_id = n.id
-						AND (
-							t.target_type = 'all'
-							OR (t.target_type = 'user' AND t.target_value = $1)
-							OR (t.target_type = 'role' AND EXISTS (
-								SELECT 1 FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-								WHERE ur.user_id = $1 AND r.code = t.target_value
-							))
-							OR (t.target_type = 'property_type' AND EXISTS (
-								SELECT 1 FROM property_owners po
-								JOIN property pr ON pr.id = po.property_id
-								WHERE po.user_id = $1
-									AND po.status = 'active'
-									AND pr.building_id = n.building_id
-									AND pr.type = t.target_value
-							))
-						)
+						AND `+audience.CommunicationTargetPredicate("t", "n.building_id", "$1")+`
 				)
 		) unread
 		GROUP BY key

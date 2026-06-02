@@ -26,6 +26,16 @@ export async function fetchInfocenterNews(params: {
   }
 }
 
+export async function fetchMyInfocenterNews() {
+  return (await apiFetch("/api/infocenter/news/my")) as InfocenterNews[];
+}
+
+export async function markInfocenterNewsRead(id: string) {
+  return apiFetch(`/api/infocenter/news/${id}/read`, {
+    method: "POST",
+  });
+}
+
 export async function createInfocenterNews(
   payload: InfocenterNewsPayload,
   mode: "draft" | "publish" | "schedule" = "draft",

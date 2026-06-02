@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"golosdom-backend/internal/infocenter/audience"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -70,7 +72,7 @@ func (r *Repository) List(ctx context.Context, filter listFilter) ([]NewsRespons
 	}
 
 	rows, err := r.db.Query(ctx, `
-		SELECT `+newsSelectColumns()+`
+		SELECT `+newsSelectColumns("NULL::timestamptz")+`
 		FROM infocenter_news n
 		LEFT JOIN users u ON u.id = n.created_by
 		WHERE `+strings.Join(where, " AND ")+`
@@ -107,7 +109,7 @@ func (r *Repository) List(ctx context.Context, filter listFilter) ([]NewsRespons
 
 func (r *Repository) Get(ctx context.Context, id string) (NewsResponse, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT `+newsSelectColumns()+`
+		SELECT `+newsSelectColumns("NULL::timestamptz")+`
 		FROM infocenter_news n
 		LEFT JOIN users u ON u.id = n.created_by
 		WHERE n.id = $1
@@ -128,6 +130,84 @@ func (r *Repository) Get(ctx context.Context, id string) (NewsResponse, error) {
 		return NewsResponse{}, err
 	}
 	return items[0], nil
+}
+
+func (r *Repository) ListForUser(ctx context.Context, userID string) ([]NewsResponse, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT `+newsSelectColumns("nr.read_at")+`
+		FROM infocenter_news n
+		LEFT JOIN users u ON u.id = n.created_by
+		LEFT JOIN infocenter_news_reads nr ON nr.news_id = n.id AND nr.user_id = $1
+		WHERE `+audience.PublishedNewsPredicate("n")+`
+			AND `+audience.InfocenterItemPredicate("n", "$1")+`
+		ORDER BY
+			n.is_pinned DESC,
+			n.is_important DESC,
+			COALESCE(n.published_at, n.updated_at, n.created_at) DESC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := []NewsResponse{}
+	for rows.Next() {
+		item, err := scanNews(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return r.attachImages(ctx, items)
+}
+
+func (r *Repository) GetForUser(ctx context.Context, id string, userID string) (NewsResponse, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT `+newsSelectColumns("nr.read_at")+`
+		FROM infocenter_news n
+		LEFT JOIN users u ON u.id = n.created_by
+		LEFT JOIN infocenter_news_reads nr ON nr.news_id = n.id AND nr.user_id = $1
+		WHERE n.id = $2
+			AND `+audience.PublishedNewsPredicate("n")+`
+			AND `+audience.InfocenterItemPredicate("n", "$1")+`
+	`, userID, id)
+	if err != nil {
+		return NewsResponse{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return NewsResponse{}, sql.ErrNoRows
+	}
+	item, err := scanNews(rows)
+	if err != nil {
+		return NewsResponse{}, err
+	}
+	items, err := r.attachImages(ctx, []NewsResponse{item})
+	if err != nil {
+		return NewsResponse{}, err
+	}
+	return items[0], nil
+}
+
+func (r *Repository) MarkRead(ctx context.Context, id string, userID string) error {
+	var newsID string
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO infocenter_news_reads (id, news_id, user_id, read_at)
+		SELECT $1::uuid, n.id, $2::text, now()
+		FROM infocenter_news n
+		WHERE n.id = $3
+			AND `+audience.PublishedNewsPredicate("n")+`
+			AND `+audience.InfocenterItemPredicate("n", "$2::text")+`
+		ON CONFLICT (news_id, user_id) DO UPDATE SET read_at = infocenter_news_reads.read_at
+		RETURNING news_id
+	`, newID(), userID, id).Scan(&newsID)
+	if err == pgx.ErrNoRows {
+		return sql.ErrNoRows
+	}
+	return err
 }
 
 func (r *Repository) Create(ctx context.Context, id string, req SaveRequest, actorID string, status string) (NewsResponse, error) {
@@ -341,6 +421,18 @@ func (r *Repository) attachDetails(ctx context.Context, items []NewsResponse) ([
 	return items, nil
 }
 
+func (r *Repository) attachImages(ctx context.Context, items []NewsResponse) ([]NewsResponse, error) {
+	for i := range items {
+		images, err := r.images(ctx, items[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		items[i].Images = images
+		items[i].History = []ActionResponse{}
+	}
+	return items, nil
+}
+
 func (r *Repository) images(ctx context.Context, newsID string) ([]ImageResponse, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT id, news_id, file_name, file_path, file_url, mime_type, size_bytes, sort_order, created_at
@@ -387,7 +479,7 @@ func (r *Repository) history(ctx context.Context, newsID string) ([]ActionRespon
 	return items, rows.Err()
 }
 
-func newsSelectColumns() string {
+func newsSelectColumns(readAtExpr string) string {
 	return `
 		n.id,
 		n.title,
@@ -414,21 +506,22 @@ func newsSelectColumns() string {
 		n.created_at,
 		n.updated_at,
 		(SELECT COUNT(*)::int FROM infocenter_news_reads r WHERE r.news_id = n.id) AS views_count,
-		(SELECT COUNT(*)::int FROM infocenter_news_reads r WHERE r.news_id = n.id) AS reads_count
+		(SELECT COUNT(*)::int FROM infocenter_news_reads r WHERE r.news_id = n.id) AS reads_count,
+		` + readAtExpr + ` AS read_at
 	`
 }
 
 func scanNews(rows pgx.Rows) (NewsResponse, error) {
 	var item NewsResponse
 	var coverID, updatedBy sql.NullString
-	var publishedAt, scheduledAt, hiddenAt, unpublishedAt, deletedAt sql.NullTime
+	var publishedAt, scheduledAt, hiddenAt, unpublishedAt, deletedAt, readAt sql.NullTime
 	err := rows.Scan(
 		&item.ID, &item.Title, &item.Summary, &item.BodyJSON, &item.BodyHTML,
 		&item.Category, &item.AudienceType, &item.AudienceFilter, &item.Status,
 		&item.IsVisible, &item.IsPinned, &item.IsImportant, &item.NotifyEnabled,
 		&coverID, &publishedAt, &scheduledAt, &hiddenAt, &unpublishedAt,
 		&deletedAt, &item.CreatedBy, &updatedBy, &item.AuthorName, &item.CreatedAt,
-		&item.UpdatedAt, &item.ViewsCount, &item.ReadsCount,
+		&item.UpdatedAt, &item.ViewsCount, &item.ReadsCount, &readAt,
 	)
 	item.CoverImageID = nullString(coverID)
 	item.UpdatedBy = nullString(updatedBy)
@@ -437,6 +530,7 @@ func scanNews(rows pgx.Rows) (NewsResponse, error) {
 	item.HiddenAt = nullTime(hiddenAt)
 	item.UnpublishedAt = nullTime(unpublishedAt)
 	item.DeletedAt = nullTime(deletedAt)
+	item.ReadAt = nullTime(readAt)
 	return item, err
 }
 

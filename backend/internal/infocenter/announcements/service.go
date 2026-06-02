@@ -61,6 +61,18 @@ func (s *Service) Get(ctx context.Context, id string) (AnnouncementResponse, err
 	return s.repo.Get(ctx, id)
 }
 
+func (s *Service) ListForUser(ctx context.Context, userID string) ([]AnnouncementResponse, error) {
+	return s.repo.ListForUser(ctx, userID)
+}
+
+func (s *Service) GetForUser(ctx context.Context, id string, userID string) (AnnouncementResponse, error) {
+	return s.repo.GetForUser(ctx, id, userID)
+}
+
+func (s *Service) MarkRead(ctx context.Context, id string, userID string) error {
+	return s.repo.MarkRead(ctx, id, userID)
+}
+
 func (s *Service) Create(ctx context.Context, req SaveRequest, actorID string, mode string) (AnnouncementResponse, error) {
 	prepared, err := s.prepare(req)
 	if err != nil {
