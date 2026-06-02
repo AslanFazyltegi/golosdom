@@ -21,6 +21,7 @@ import (
 	communicationsRepo "golosdom-backend/internal/communications/repository"
 	communicationsService "golosdom-backend/internal/communications/service"
 
+	infocenterAnnouncements "golosdom-backend/internal/infocenter/announcements"
 	infocenterNews "golosdom-backend/internal/infocenter/news"
 
 	objectsHandler "golosdom-backend/internal/objects/handler"
@@ -66,6 +67,9 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 	infocenterNewsRepo := infocenterNews.NewRepository(dbPool)
 	infocenterNewsSvc := infocenterNews.NewService(infocenterNewsRepo)
 	infocenterNewsH := infocenterNews.NewHandler(infocenterNewsSvc)
+	infocenterAnnouncementsRepo := infocenterAnnouncements.NewRepository(dbPool)
+	infocenterAnnouncementsSvc := infocenterAnnouncements.NewService(infocenterAnnouncementsRepo)
+	infocenterAnnouncementsH := infocenterAnnouncements.NewHandler(infocenterAnnouncementsSvc)
 
 	objectsRepo := objectsRepo.New(dbPool)
 	objectsSvc := objectsService.New(objectsRepo)
@@ -121,6 +125,10 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 	mux.HandleFunc("/api/infocenter/news/", authMiddleware(authSvc, infocenterNewsH.NewsByID))
 	mux.HandleFunc("/api/v1/infocenter/news", authMiddleware(authSvc, infocenterNewsH.News))
 	mux.HandleFunc("/api/v1/infocenter/news/", authMiddleware(authSvc, infocenterNewsH.NewsByID))
+	mux.HandleFunc("/api/infocenter/announcements", authMiddleware(authSvc, infocenterAnnouncementsH.Announcements))
+	mux.HandleFunc("/api/infocenter/announcements/", authMiddleware(authSvc, infocenterAnnouncementsH.AnnouncementsByID))
+	mux.HandleFunc("/api/v1/infocenter/announcements", authMiddleware(authSvc, infocenterAnnouncementsH.Announcements))
+	mux.HandleFunc("/api/v1/infocenter/announcements/", authMiddleware(authSvc, infocenterAnnouncementsH.AnnouncementsByID))
 	mux.Handle("/uploads/news/", http.StripPrefix("/uploads/news/", http.FileServer(http.Dir("uploads/news"))))
 
 	mux.HandleFunc("/api/v1/auth/register", authH.Register)
