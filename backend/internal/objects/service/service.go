@@ -339,6 +339,26 @@ func (s *Service) GetPropertyUpdateRequests(roles string) (dto.PropertyUpdateReq
 	return result, nil
 }
 
+func (s *Service) CountPropertyUpdateRequests(roles string) (dto.PropertyUpdateRequestCountResponse, error) {
+	if !isChairman(roles) {
+		return dto.PropertyUpdateRequestCountResponse{}, ErrForbidden
+	}
+
+	building, err := s.repo.GetBuilding(context.Background())
+	if err != nil {
+		return dto.PropertyUpdateRequestCountResponse{}, err
+	}
+
+	pendingCount, err := s.repo.CountPendingPropertyUpdateRequests(context.Background(), building.ID)
+	if err != nil {
+		return dto.PropertyUpdateRequestCountResponse{}, err
+	}
+
+	return dto.PropertyUpdateRequestCountResponse{
+		PendingCount: pendingCount,
+	}, nil
+}
+
 func (s *Service) ProcessPropertyUpdateRequest(requestID string, userID string, roles string) error {
 	if !isChairman(roles) {
 		return ErrForbidden

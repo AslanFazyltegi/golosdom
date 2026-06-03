@@ -48,7 +48,6 @@ const audiences = [
   { value: "all_owners", label: "Все собственники" },
   { value: "apartments_commercial", label: "Квартиры и нежилые помещения" },
   { value: "storage_parking", label: "Кладовые и паркоместа" },
-  { value: "council_members", label: "Только члены совета дома" },
 ];
 
 const emptyDoc = { type: "doc", content: [{ type: "paragraph" }] };
@@ -57,7 +56,7 @@ const inputClass =
 const secondaryButton =
   "inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45";
 const primaryButton =
-  "inline-flex items-center justify-center rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-slate-300";
+  `${secondaryButton} border-blue-600 bg-blue-600 text-white hover:bg-blue-700`;
 
 function emptyForm(): InfocenterAnnouncementPayload {
   return {
@@ -123,7 +122,8 @@ export function InfocenterAnnouncementsPage({ activeRole, refreshCommunicationUn
             <p className="text-sm font-semibold text-blue-600">Инфоцентр / Объявления</p>
             <h1 className="mt-1 text-4xl font-black tracking-tight">Объявления</h1>
           </div>
-          <button onClick={() => setDrawer({ mode: "create" })} className={primaryButton}>
+          <button onClick={() => setDrawer({ mode: "create" })} 
+                  className="rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
             + Создать объявление
           </button>
         </div>
@@ -591,7 +591,7 @@ function AnnouncementDrawer({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40">
-      <aside className="h-full w-full max-w-3xl overflow-hidden bg-white shadow-2xl">
+      <aside className="h-full w-full max-w-4xl overflow-hidden bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-100 px-7 py-5">
           <div>
             <p className="text-sm font-medium text-blue-600">Инфоцентр / Объявления</p>
@@ -607,17 +607,11 @@ function AnnouncementDrawer({
         <div className="h-[calc(100%-156px)] overflow-y-auto bg-slate-50 px-7 py-6">
           {error && <Message tone="error" text={error} />}
           <div className="space-y-5">
-            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <Field label="Заголовок" required>
-                <input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className={inputClass} />
-              </Field>
-              <Field label="Текст объявления" required>
-                <InfocenterRichTextEditor
-                  value={form.body_html}
-                  onChange={(html) => setForm({ ...form, body_html: html, body_json: htmlDocumentJSON(html) })}
-                />
-              </Field>
+            <FormBlock title="Основные данные" description="Заполните заголовок, категорию, аудиторию и срок актуальности.">
               <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Заголовок" required>
+                  <input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className={inputClass} />
+                </Field>
                 <Field label="Категория">
                   <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })} className={inputClass}>
                     {categories.map((category) => <option key={category}>{category}</option>)}
@@ -645,24 +639,36 @@ function AnnouncementDrawer({
                   />
                 </Field>
               </div>
+            </FormBlock>
+
+            <FormBlock title="Содержание" description="Текст сохраняется с форматированием для предпросмотра и публикации.">
+              <Field label="Текст объявления" required>
+                <InfocenterRichTextEditor
+                  value={form.body_html}
+                  onChange={(html) => setForm({ ...form, body_html: html, body_json: htmlDocumentJSON(html) })}
+                />
+              </Field>
+            </FormBlock>
+
+            <FormBlock title="Дополнительные параметры" description="Настройте важность объявления, закрепление и отправку уведомления.">
               <div className="mt-4 grid gap-3 md:grid-cols-3">
                 <CheckBox checked={form.is_important} onChange={(value) => setForm({ ...form, is_important: value })}>Важное объявление</CheckBox>
                 <CheckBox checked={form.is_pinned} onChange={(value) => setForm({ ...form, is_pinned: value })}>Закрепить наверху</CheckBox>
                 <CheckBox checked={form.notify_enabled} onChange={(value) => setForm({ ...form, notify_enabled: value })}>Отправить уведомление</CheckBox>
               </div>
-            </section>
+            </FormBlock>
           </div>
         </div>
 
         <div className="flex flex-wrap justify-end gap-3 border-t border-slate-100 bg-white px-7 py-4">
           <div className="mr-auto text-sm font-medium text-slate-500">{validation.valid ? "Готово к предпросмотру" : validation.messages[0]}</div>
-          <button onClick={onClose} className={secondaryButton}>Отмена</button>
-          <button disabled={saving || !validation.valid} onClick={() => void save("draft")} className={secondaryButton}>
-            {item ? "Сохранить изменения" : "Сохранить черновик"}
-          </button>
-          <button disabled={saving || !validation.valid} onClick={() => setPreviewOpen(true)} className={primaryButton}>
-            Предпросмотр
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={onClose} className={secondaryButton}>Отмена</button>
+            <button disabled={saving || !validation.valid} onClick={() => void save("draft")} className={secondaryButton}>Сохранить как черновик</button>
+            <button disabled={saving || !validation.valid} onClick={() => setPreviewOpen(true)} className={primaryButton}>
+              Предпросмотр
+            </button>
+          </div>
         </div>
       </aside>
       {previewOpen && (
@@ -710,7 +716,7 @@ function PreviewModal({
       </article>
       <div className="mt-5 flex justify-end gap-2">
         <button onClick={onClose} className={secondaryButton}>Назад к редактированию</button>
-        <button disabled={!validation.valid} onClick={onDraft} className={secondaryButton}>Сохранить черновик</button>
+        <button disabled={!validation.valid} onClick={onDraft} className={secondaryButton}>Сохранить как черновик</button>
         <button disabled={!validation.valid} onClick={onPublish} className={primaryButton}>
           {form.scheduled_at ? "Запланировать" : "Опубликовать"}
         </button>
@@ -933,6 +939,16 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
         <div className="max-h-[68vh] overflow-y-auto px-6 py-5">{children}</div>
       </section>
     </div>
+  );
+}
+
+function FormBlock({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h3 className="text-lg font-bold text-slate-900">{title}</h3>
+      {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
+      {children}
+    </section>
   );
 }
 

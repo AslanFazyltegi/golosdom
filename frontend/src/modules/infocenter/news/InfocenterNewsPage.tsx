@@ -54,7 +54,6 @@ const audiences = [
   { value: "all_owners", label: "Все собственники Galamat Park" },
   { value: "apartments_commercial", label: "Квартиры и нежилые помещения" },
   { value: "storage_parking", label: "Кладовые и паркоместа" },
-  { value: "council_members", label: "Только члены совета дома" },
 ];
 
 const emptyDoc = {
@@ -727,7 +726,7 @@ function NewsDrawer({
           <div className="mr-auto text-sm font-medium text-slate-500">{validation.valid ? "Готово к предпросмотру" : validation.messages[0]}</div>
           <div className="flex flex-wrap gap-2">
             <button onClick={onClose} className={drawerButtonClass}>Отмена</button>
-            <button disabled={saving || !validation.valid} onClick={() => void save("draft")} className={drawerButtonClass}>Сохранить черновик</button>
+            <button disabled={saving || !validation.valid} onClick={() => void save("draft")} className={drawerButtonClass}>Сохранить как черновик</button>
             <button disabled={saving || !validation.valid} onClick={() => setPreviewOpen(true)} className={drawerPrimaryButtonClass}>
               Предпросмотр
             </button>
@@ -896,7 +895,7 @@ function PreviewModal({
       </div>
       <div className="mt-5 flex justify-end gap-2">
         <button onClick={onClose} className={drawerButtonClass}>Назад к редактированию</button>
-        <button disabled={!validation.valid} onClick={onDraft} className={drawerButtonClass}>Сохранить черновик</button>
+        <button disabled={!validation.valid} onClick={onDraft} className={drawerButtonClass}>Сохранить как черновик</button>
         <button disabled={!validation.valid} onClick={onPublish} className={drawerPrimaryButtonClass}>
           {form.scheduled_at ? "Запланировать" : "Опубликовать"}
         </button>

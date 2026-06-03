@@ -198,6 +198,11 @@ func (h *Handler) PropertyUpdateRequests(
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/objects/update-requests")
 	path = strings.Trim(path, "/")
 
+	if path == "count" {
+		h.PropertyUpdateRequestsCount(w, r)
+		return
+	}
+
 	if path != "" {
 		h.PropertyUpdateRequestAction(w, r, path)
 		return
@@ -215,6 +220,24 @@ func (h *Handler) PropertyUpdateRequests(
 	default:
 		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (h *Handler) PropertyUpdateRequestsCount(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+	if r.Method != http.MethodGet {
+		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	data, err := h.service.CountPropertyUpdateRequests(r.Header.Get("X-User-Roles"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+
+	response.JSON(w, http.StatusOK, data)
 }
 
 func (h *Handler) PropertyUpdateRequestAction(

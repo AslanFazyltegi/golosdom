@@ -856,15 +856,8 @@ func (r *Repository) CreatePropertyUpdateRequest(ctx context.Context, data Creat
 }
 
 func (r *Repository) GetPropertyUpdateRequests(ctx context.Context, buildingID string) ([]PropertyUpdateRequestData, int, error) {
-	var pendingCount int
-	if err := r.db.QueryRow(ctx, `
-		SELECT COUNT(*)
-		FROM property_update_requests pur
-		JOIN property p
-			ON p.id = pur.property_id
-		WHERE p.building_id = $1
-			AND pur.status = 'pending'
-	`, buildingID).Scan(&pendingCount); err != nil {
+	pendingCount, err := r.CountPendingPropertyUpdateRequests(ctx, buildingID)
+	if err != nil {
 		return nil, 0, err
 	}
 
@@ -926,6 +919,20 @@ func (r *Repository) GetPropertyUpdateRequests(ctx context.Context, buildingID s
 	}
 
 	return result, pendingCount, rows.Err()
+}
+
+func (r *Repository) CountPendingPropertyUpdateRequests(ctx context.Context, buildingID string) (int, error) {
+	var pendingCount int
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM property_update_requests pur
+		JOIN property p
+			ON p.id = pur.property_id
+		WHERE p.building_id = $1
+			AND pur.status = 'pending'
+	`, buildingID).Scan(&pendingCount)
+
+	return pendingCount, err
 }
 
 func (r *Repository) ProcessPropertyUpdateRequest(ctx context.Context, buildingID, requestID, userID string) error {

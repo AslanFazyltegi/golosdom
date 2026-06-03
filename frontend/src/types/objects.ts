@@ -96,3 +96,7 @@ export type PropertyCorrectionRequestsResponse = {
   pendingCount: number;
   requests: PropertyCorrectionRequest[];
 };
+
+export type PropertyCorrectionRequestCountResponse = {
+  pendingCount: number;
+};

@@ -25,7 +25,7 @@ export function ParentMenuItem({
       <span className="flex items-center gap-3">
         <span className="text-xl">{icon}</span>
         <span>{text}</span>
-        {Boolean(unreadCount) && (
+        {typeof unreadCount === "number" && unreadCount > 0 && (
           <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
             {unreadCount}
           </span>

@@ -1,6 +1,7 @@
 import { apiFetch } from "@/lib/api";
 import type {
   MyPropertiesResponse,
+  PropertyCorrectionRequestCountResponse,
   PropertyCorrectionRequestsResponse,
   PropertyUpdateRequestPayload,
 } from "@/types/objects";
@@ -27,6 +28,12 @@ export async function fetchPropertyCorrectionRequests() {
   return apiFetch(
     "/api/v1/objects/update-requests",
   ) as Promise<PropertyCorrectionRequestsResponse>;
+}
+
+export async function fetchPropertyCorrectionRequestCount() {
+  return apiFetch(
+    "/api/v1/objects/update-requests/count",
+  ) as Promise<PropertyCorrectionRequestCountResponse>;
 }
 
 export async function processPropertyCorrectionRequest(requestId: string) {

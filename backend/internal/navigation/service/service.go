@@ -25,7 +25,26 @@ func (s *Service) GetMenuByRole(roleCode string) ([]dto.MenuItemResponse, error)
 		return nil, err
 	}
 
+	items = filterMenuItemsByRole(items, roleCode)
+
 	return buildTree(items), nil
+}
+
+func filterMenuItemsByRole(items []model.NavigationItem, roleCode string) []model.NavigationItem {
+	if roleCode == "OWNER" {
+		return items
+	}
+
+	result := []model.NavigationItem{}
+	for _, item := range items {
+		if item.Code == "notifications" {
+			continue
+		}
+
+		result = append(result, item)
+	}
+
+	return result
 }
 
 func buildTree(items []model.NavigationItem) []dto.MenuItemResponse {

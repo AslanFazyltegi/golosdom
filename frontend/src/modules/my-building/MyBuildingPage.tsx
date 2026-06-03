@@ -120,7 +120,12 @@ const emptyStats: Statistics = {
   uniqueOwners: 0,
 };
 
-export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModuleProps) {
+export function MyBuildingPage({
+  activeRole,
+  objects,
+  openModule,
+  updateCorrectionRequestsBadgeCount,
+}: CabinetModuleProps) {
   const [activeTab, setActiveTab] = useState<Tab>("properties");
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [properties, setProperties] = useState<PropertyItem[]>([]);
@@ -263,6 +268,7 @@ export function MyBuildingPage({ activeRole, objects, openModule }: CabinetModul
       const data = await fetchPropertyCorrectionRequests();
       setCorrectionRequests(data.requests);
       setCorrectionRequestsPendingCount(data.pendingCount);
+      updateCorrectionRequestsBadgeCount?.(data.pendingCount);
     } catch (err) {
       setCorrectionRequestsError(
         err instanceof Error ? err.message : "Не удалось загрузить запросы",

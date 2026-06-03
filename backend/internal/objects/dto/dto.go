@@ -192,6 +192,10 @@ type PropertyUpdateRequestsResponse struct {
 	Requests     []PropertyUpdateRequest `json:"requests"`
 }
 
+type PropertyUpdateRequestCountResponse struct {
+	PendingCount int `json:"pendingCount"`
+}
+
 type PropertyUpdateRequest struct {
 	ID             string  `json:"id"`
 	PropertyID     string  `json:"propertyId"`

@@ -7,7 +7,10 @@ import { getToken, removeToken } from "@/lib/auth";
 import { createMeeting, fetchMeetings } from "@/lib/meetings";
 import { fetchCommunicationUnreadCounts } from "@/lib/communications";
 import { fetchNavigation } from "@/lib/navigation";
-import { fetchObjects } from "@/lib/objects";
+import {
+  fetchObjects,
+  fetchPropertyCorrectionRequestCount,
+} from "@/lib/objects";
 import { fetchOwners, type MeetingOwner } from "@/lib/owners";
 import { fetchProfile, updateProfile as saveProfile } from "@/lib/profile";
 import { fetchVotings } from "@/lib/votings";
@@ -36,6 +39,8 @@ export function CabinetLayout() {
   const [objects, setObjects] = useState<unknown>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [correctionRequestsBadgeCount, setCorrectionRequestsBadgeCount] =
+    useState(0);
 
   const [loading, setLoading] = useState(true);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -114,7 +119,11 @@ export function CabinetLayout() {
         setActiveRole(role);
 
         const menuData = await fetchNavigation(role);
-        setMenu(role === "OWNER" ? await withCommunicationUnreadCounts(menuData) : menuData);
+        const baseMenu =
+          role === "OWNER"
+            ? await withCommunicationUnreadCounts(menuData)
+            : menuData;
+        setMenu(baseMenu);
 
         const defaultItem =
           menuData.find((item) => item.is_default) || menuData[0];
@@ -137,6 +146,9 @@ export function CabinetLayout() {
 
         const votingData = await fetchVotings();
         setVotings(votingData);
+        const correctionCount = await loadCorrectionRequestsBadgeCount(role);
+        setCorrectionRequestsBadgeCount(correctionCount);
+        setMenu(applyNavigationBadges(baseMenu, votingData, correctionCount));
 
         if (defaultComponent.startsWith("meetings")) {
           await loadMeetingsByComponent(defaultComponent);
@@ -184,6 +196,9 @@ export function CabinetLayout() {
   async function loadVotings() {
     const data = await fetchVotings();
     setVotings(data);
+    setMenu((current) =>
+      applyNavigationBadges(current, data, correctionRequestsBadgeCount),
+    );
   }
 
   async function refreshCommunicationUnreadCounts() {
@@ -194,6 +209,12 @@ export function CabinetLayout() {
     } catch (err) {
       console.error("Не удалось загрузить счётчики инфоцентра:", err);
     }
+  }
+
+  function updateCorrectionRequestsBadgeCount(count: number) {
+    const safeCount = Math.max(0, count);
+    setCorrectionRequestsBadgeCount(safeCount);
+    setMenu((current) => applyCorrectionRequestsBadgeCount(current, safeCount));
   }
 
   async function loadProfile(role: string) {
@@ -252,7 +273,9 @@ export function CabinetLayout() {
     setActiveRole(role);
 
     const menuData = await fetchNavigation(role);
-    setMenu(role === "OWNER" ? await withCommunicationUnreadCounts(menuData) : menuData);
+    const baseMenu =
+      role === "OWNER" ? await withCommunicationUnreadCounts(menuData) : menuData;
+    setMenu(baseMenu);
 
     const defaultItem = menuData.find((item) => item.is_default) || menuData[0];
     const defaultComponent = getModuleCode(defaultItem);
@@ -268,6 +291,12 @@ export function CabinetLayout() {
     setObjects(objectsData);
     setMeetingLocationAddress(buildMeetingAddress(objectsData));
     await loadProfile(role);
+
+    const votingData = await fetchVotings();
+    setVotings(votingData);
+    const correctionCount = await loadCorrectionRequestsBadgeCount(role);
+    setCorrectionRequestsBadgeCount(correctionCount);
+    setMenu(applyNavigationBadges(baseMenu, votingData, correctionCount));
 
     setExpandedMenuCodes([]);
     setAccountOpen(false);
@@ -440,6 +469,7 @@ export function CabinetLayout() {
           openModule={openAccountModule}
           switchRole={switchRole}
           refreshCommunicationUnreadCounts={refreshCommunicationUnreadCounts}
+          updateCorrectionRequestsBadgeCount={updateCorrectionRequestsBadgeCount}
           updateProfile={updateCurrentProfile}
           votingConstructorInitial={votingConstructorInitial}
           votings={votings}
@@ -566,4 +596,99 @@ function applyCommunicationUnreadCounts(
       ? applyCommunicationUnreadCounts(item.children, counts)
       : item.children,
   }));
+}
+
+async function loadCorrectionRequestsBadgeCount(role: string) {
+  if (role.trim().toUpperCase() !== "CHAIRMAN") return 0;
+
+  try {
+    const data = await fetchPropertyCorrectionRequestCount();
+    return data.pendingCount || 0;
+  } catch (err) {
+    console.error("Не удалось загрузить счётчик заявок на корректировку:", err);
+    return 0;
+  }
+}
+
+function applyNavigationBadges(
+  menu: NavigationItem[],
+  votings: Voting[],
+  correctionRequestsCount: number,
+): NavigationItem[] {
+  const votingCounts = getVotingConstructorBadgeCounts(votings);
+
+  return menu.map((item) => {
+    const children = item.children
+      ? applyNavigationBadges(item.children, votings, correctionRequestsCount)
+      : item.children;
+
+    return {
+      ...item,
+      unread_count: getNavigationBadgeCount(
+        item.code,
+        item.unread_count,
+        votingCounts,
+        correctionRequestsCount,
+      ),
+      children,
+    };
+  });
+}
+
+function applyCorrectionRequestsBadgeCount(
+  menu: NavigationItem[],
+  count: number,
+): NavigationItem[] {
+  return menu.map((item) => ({
+    ...item,
+    unread_count: item.code === "my_building" ? count : item.unread_count,
+    children: item.children
+      ? applyCorrectionRequestsBadgeCount(item.children, count)
+      : item.children,
+  }));
+}
+
+function getNavigationBadgeCount(
+  code: string,
+  currentCount: number | undefined,
+  votingCounts: Record<string, number>,
+  correctionRequestsCount: number,
+) {
+  if (code === "my_building") return correctionRequestsCount;
+  if (code in votingCounts) return votingCounts[code];
+
+  return currentCount || 0;
+}
+
+function getVotingConstructorBadgeCounts(votings: Voting[]) {
+  const counts: Record<string, number> = {
+    voting_constructor: 0,
+    voting_constructor_approval: 0,
+    voting_constructor_revision: 0,
+    voting_constructor_pending_publication: 0,
+    voting_constructor_published: 0,
+  };
+
+  for (const voting of votings) {
+    if (voting.status === "council_review") {
+      counts.voting_constructor_approval += 1;
+    }
+    if (voting.status === "revision_required") {
+      counts.voting_constructor_revision += 1;
+    }
+    if (voting.status === "pending_publish") {
+      counts.voting_constructor_pending_publication += 1;
+    }
+    if (voting.status === "published") {
+      counts.voting_constructor_published += 1;
+    }
+  }
+
+  counts.voting_constructor =
+    counts.voting_constructor_approval +
+    counts.voting_constructor_revision +
+    counts.voting_constructor_pending_publication +
+    counts.voting_constructor_published;
+
+  return counts;
 }
