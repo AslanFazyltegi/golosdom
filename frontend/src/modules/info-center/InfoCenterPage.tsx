@@ -578,10 +578,20 @@ function NotificationDrawer({
           <button onClick={onClose} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Отмена</button>
           <button disabled={saving || !valid} onClick={() => void save("draft")} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-45">Сохранить как черновик</button>
           <button disabled={!valid} onClick={() => setPreviewOpen(true)} className="rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-45">Предпросмотр</button>
-          <button disabled={saving || !valid} onClick={() => void save("send")} className="rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-45">Отправить уведомление</button>
+          
         </div>
       </aside>
-      {previewOpen && <NotificationPreview form={form} audienceType={audienceType} missingOwners={missingOwners} onClose={() => setPreviewOpen(false)} />}
+      {previewOpen && (
+  <NotificationPreview
+    form={form}
+    audienceType={audienceType}
+    missingOwners={missingOwners}
+    onClose={() => setPreviewOpen(false)}
+    saving={saving}
+    valid={valid}
+    onSend={() => void save("send")}
+  />
+)}
     </div>
   );
 }
@@ -725,7 +735,23 @@ function NotificationAudiencePicker({
   );
 }
 
-function NotificationPreview({ form, audienceType, missingOwners, onClose }: { form: Partial<CommunicationNotification>; audienceType: string; missingOwners: string[]; onClose: () => void }) {
+function NotificationPreview({
+  form,
+  audienceType,
+  missingOwners,
+  onClose,
+  saving,
+  valid,
+  onSend,
+}: {
+  form: Partial<CommunicationNotification>;
+  audienceType: string;
+  missingOwners: string[];
+  onClose: () => void;
+  saving: boolean;
+  valid: boolean;
+  onSend: () => void;
+}) {
   const validOwners = (form.targets || []).filter((target) => target.type === "user" && target.value).length;
   return (
     <Modal title="Предпросмотр уведомления" onClose={onClose} wide>
@@ -739,11 +765,35 @@ function NotificationPreview({ form, audienceType, missingOwners, onClose }: { f
           <Meta label="Каналы" value={enabledChannels(form).map(channelLabel).join(", ") || "Не выбраны"} />
           <Meta label="Дата отправки" value={form.scheduled_at ? formatAstanaDateTime(form.scheduled_at) : "сразу после публикации"} />
         </div>
-        {missingOwners.length > 0 && <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">Не найдены в БД: {missingOwners.join(", ")}. Им уведомление не будет отправлено.</p>}
+        {missingOwners.length > 0 && (
+          <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            Не найдены в БД: {missingOwners.join(", ")}. Им уведомление не будет отправлено.
+          </p>
+        )}
+
+        <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+          >
+            Назад к редактированию
+          </button>
+
+          <button
+            type="button"
+            disabled={saving || !valid}
+            onClick={onSend}
+            className="rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-45"
+          >
+            Отправить уведомление
+          </button>
+        </div>
       </article>
     </Modal>
   );
 }
+
 
 function NotificationDetails({ item, onClose, onEdit, onReport }: { item: CommunicationNotification; onClose: () => void; onEdit: () => void; onReport: () => void }) {
   const stats = item.delivery_stats || { recipients: 0, delivered: 0, read: 0 };
