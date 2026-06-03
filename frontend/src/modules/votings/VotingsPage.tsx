@@ -699,12 +699,6 @@ function VotingCard({
         </div>
       </div>
 
-      {expanded && (
-        <div className="mt-4 border-t border-slate-100 pt-4">
-          <VotingResultsBlock results={results} error={resultsError} />
-        </div>
-      )}
-
       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {isOwner && mode === "active" && !hasVoted && (
           <>
@@ -716,15 +710,28 @@ function VotingCard({
             </Button>
           </>
         )}
+
         {isOwner && hasVoted && (
           <Button onClick={onViewAnswers}>Просмотреть мои ответы</Button>
         )}
+
         {isChairman && (
-          <Button variant="primary" onClick={() => setExpanded(true)}>
-            Посмотреть результаты
-          </Button>
+          <>
+            <Button variant="primary" onClick={() => setExpanded((value) => !value)}>
+              {expanded ? "Свернуть результаты" : "Посмотреть результаты"}
+            </Button>
+            <Button onClick={downloadBlank} disabled={downloading}>
+              {downloading ? "Скачиваем..." : "Скачать бланк опросника"}
+            </Button>
+          </>
         )}
       </div>
+
+      {expanded && (
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <VotingResultsBlock results={results} error={resultsError} />
+        </div>
+      )}
     </article>
   );
 }
