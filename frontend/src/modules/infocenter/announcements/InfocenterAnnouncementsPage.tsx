@@ -122,10 +122,15 @@ export function InfocenterAnnouncementsPage({ activeRole, refreshCommunicationUn
             <p className="text-sm font-semibold text-blue-600">Инфоцентр / Объявления</p>
             <h1 className="mt-1 text-4xl font-black tracking-tight">Объявления</h1>
           </div>
-          <button onClick={() => setDrawer({ mode: "create" })} 
-                  className="rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
-            + Создать объявление
-          </button>
+          <div className="flex gap-2">
+            <button onClick={load} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              Обновить
+            </button>
+            <button onClick={() => setDrawer({ mode: "create" })} 
+                    className="rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+              + Создать объявление
+            </button>
+          </div>
         </div>
 
         <div className="mb-5 flex flex-wrap gap-2">

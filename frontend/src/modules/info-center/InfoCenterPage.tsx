@@ -318,9 +318,14 @@ function ChairmanNotifications({ owners, activeRole }: CabinetModuleProps) {
             <p className="text-sm font-semibold text-blue-600">Инфоцентр / Уведомления</p>
             <h1 className="mt-1 text-4xl font-black tracking-tight">Уведомления</h1>
           </div>
-          <button onClick={() => setDrawer({ mode: "create" })} className="inline-flex items-center justify-center rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700">
-            + Создать уведомление
-          </button>
+          <div className="flex gap-2">
+            <button onClick={load} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              Обновить
+            </button>
+            <button onClick={() => setDrawer({ mode: "create" })} className="inline-flex items-center justify-center rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700">
+              + Создать уведомление
+            </button>
+          </div>
         </div>
 
         <FilterBar items={[
