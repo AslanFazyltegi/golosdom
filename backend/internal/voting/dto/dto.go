@@ -58,3 +58,7 @@ type OwnerBatchVoteRequest struct {
 	Answers         []OwnerBatchVoteItemRequest `json:"answers"`
 	SignatureMethod string                      `json:"signature_method"`
 }
+
+type VotingReminderRequest struct {
+	UserIDs []string `json:"user_ids"`
+}

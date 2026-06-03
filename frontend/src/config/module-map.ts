@@ -16,6 +16,7 @@ import { NotificationsPage } from "@/modules/notifications";
 import { ProfilePage } from "@/modules/profile";
 import { SystemSettingsPage } from "@/modules/system-settings";
 import { VotingConstructorPage } from "@/modules/voting-constructor";
+import { VotingSummaryPage } from "@/modules/voting-summary";
 import { PastVotingsPage, VotingsPage } from "@/modules/votings";
 import type { CabinetModuleComponent } from "@/shared/types/cabinet";
 
@@ -38,6 +39,7 @@ export const moduleMap: Record<string, CabinetModuleComponent> = {
   votings: VotingsPage,
   votings_active: VotingsPage,
   votings_past: PastVotingsPage,
+  voting_summary: VotingSummaryPage,
 
   voting_constructor: VotingConstructorPage,
   voting_constructor_create: VotingConstructorPage,

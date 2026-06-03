@@ -7,6 +7,7 @@ import (
 
 	"golosdom-backend/internal/common/response"
 	"golosdom-backend/internal/voting/dto"
+	"golosdom-backend/internal/voting/model"
 	"golosdom-backend/internal/voting/service"
 )
 
@@ -115,6 +116,11 @@ func (h *Handler) VotingByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if id == "summary" {
+		h.summary(w, r, action)
+		return
+	}
+
 	if action == "" && r.Method == http.MethodGet && (id == "active" || id == "completed") {
 		if !requireOwner(w, r) {
 			return
@@ -174,6 +180,99 @@ func (h *Handler) VotingByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (h *Handler) summary(w http.ResponseWriter, r *http.Request, action string) {
+	if !requireCouncil(w, r) {
+		return
+	}
+
+	if action == "" && r.Method == http.MethodGet {
+		summary, err := h.service.VotingSummary(summaryFilter(r))
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		response.JSON(w, http.StatusOK, summary)
+		return
+	}
+
+	if action == "export.csv" && r.Method == http.MethodGet {
+		content, filename, err := h.service.VotingSummaryCSV(summaryFilter(r))
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeDownload(w, "text/csv; charset=utf-8", filename, content)
+		return
+	}
+
+	votingID, subAction := splitSummaryAction(action)
+	if votingID == "" {
+		response.Error(w, http.StatusNotFound, "not found")
+		return
+	}
+
+	if subAction == "" && r.Method == http.MethodGet {
+		detail, err := h.service.VotingSummaryDetail(votingID)
+		if err != nil {
+			response.Error(w, http.StatusNotFound, "voting summary not found")
+			return
+		}
+		response.JSON(w, http.StatusOK, detail)
+		return
+	}
+
+	if subAction == "export.csv" && r.Method == http.MethodGet {
+		content, filename, err := h.service.VotingSummaryDetailCSV(votingID)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeDownload(w, "text/csv; charset=utf-8", filename, content)
+		return
+	}
+
+	if subAction == "report" && r.Method == http.MethodGet {
+		content, filename, err := h.service.VotingSummaryReportHTML(votingID)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeDownload(w, "text/html; charset=utf-8", filename, content)
+		return
+	}
+
+	if subAction == "reminders" && r.Method == http.MethodPost {
+		if !requireChairman(w, r) {
+			return
+		}
+		var req dto.VotingReminderRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			response.Error(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+		sent, err := h.service.SendVotingReminders(votingID, r.Header.Get("X-User-ID"), req)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		response.JSON(w, http.StatusOK, map[string]any{"sent": sent})
+		return
+	}
+
+	ownerID := ownerIDFromPrintAction(subAction)
+	if ownerID != "" && r.Method == http.MethodGet {
+		content, filename, err := h.service.VotingOwnerPrintHTML(votingID, ownerID)
+		if err != nil {
+			response.Error(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeDownload(w, "text/html; charset=utf-8", filename, content)
+		return
+	}
+
+	response.Error(w, http.StatusMethodNotAllowed, "method not allowed")
 }
 
 func (h *Handler) updateDraft(w http.ResponseWriter, r *http.Request, id string) {
@@ -386,6 +485,50 @@ func splitVotingPath(path string) (string, string) {
 		return parts[0], ""
 	}
 	return parts[0], strings.Join(parts[1:], "/")
+}
+
+func splitSummaryAction(action string) (string, string) {
+	parts := strings.Split(strings.Trim(action, "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return "", ""
+	}
+	if len(parts) == 1 {
+		return parts[0], ""
+	}
+	return parts[0], strings.Join(parts[1:], "/")
+}
+
+func ownerIDFromPrintAction(action string) string {
+	parts := strings.Split(strings.Trim(action, "/"), "/")
+	if len(parts) == 3 && parts[0] == "owners" && parts[2] == "print" {
+		return parts[1]
+	}
+	return ""
+}
+
+func summaryFilter(r *http.Request) model.VotingSummaryFilter {
+	query := r.URL.Query()
+	return model.VotingSummaryFilter{
+		Search:              strings.TrimSpace(query.Get("search")),
+		MeetingDateFrom:     strings.TrimSpace(query.Get("meeting_date_from")),
+		MeetingDateTo:       strings.TrimSpace(query.Get("meeting_date_to")),
+		PublicationDateFrom: strings.TrimSpace(query.Get("publication_date_from")),
+		PublicationDateTo:   strings.TrimSpace(query.Get("publication_date_to")),
+		CompletionDateFrom:  strings.TrimSpace(query.Get("completion_date_from")),
+		CompletionDateTo:    strings.TrimSpace(query.Get("completion_date_to")),
+		Status:              strings.TrimSpace(query.Get("status")),
+		Category:            strings.TrimSpace(query.Get("category")),
+		Quorum:              strings.TrimSpace(query.Get("quorum")),
+		Risk:                strings.TrimSpace(query.Get("risk")),
+	}
+}
+
+func writeDownload(w http.ResponseWriter, contentType, filename, content string) {
+	filename = strings.ReplaceAll(filename, `"`, "")
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(content))
 }
 
 func requireChairman(w http.ResponseWriter, r *http.Request) bool {

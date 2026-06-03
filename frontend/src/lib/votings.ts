@@ -9,6 +9,8 @@ import type {
   VotingPublicationSchedulePayload,
   VotingResult,
   VotingSavePayload,
+  VotingSummaryDetail,
+  VotingSummaryResponse,
   StopVotingPayload,
 } from "@/types/voting";
 
@@ -60,6 +62,58 @@ export function fetchMyVotingAnswers(votingId: string): Promise<OwnerVotingAnswe
 
 export function fetchVotingResults(votingId: string): Promise<VotingResult[]> {
   return apiFetch(`/api/v1/votings/${votingId}/results`) as Promise<VotingResult[]>;
+}
+
+export type VotingSummaryFilters = {
+  search?: string;
+  meetingDateFrom?: string;
+  meetingDateTo?: string;
+  publicationDateFrom?: string;
+  publicationDateTo?: string;
+  completionDateFrom?: string;
+  completionDateTo?: string;
+  status?: string;
+  category?: string;
+  quorum?: string;
+  risk?: string;
+};
+
+export function fetchVotingSummary(
+  filters: VotingSummaryFilters = {},
+): Promise<VotingSummaryResponse> {
+  return apiFetch(`/api/v1/votings/summary${buildVotingSummaryQuery(filters)}`) as Promise<VotingSummaryResponse>;
+}
+
+export function fetchVotingSummaryDetail(votingId: string): Promise<VotingSummaryDetail> {
+  return apiFetch(`/api/v1/votings/summary/${votingId}`) as Promise<VotingSummaryDetail>;
+}
+
+export function sendVotingSummaryReminders(
+  votingId: string,
+  userIds: string[] = [],
+): Promise<{ sent: number }> {
+  return apiFetch(`/api/v1/votings/summary/${votingId}/reminders`, {
+    method: "POST",
+    body: JSON.stringify({ user_ids: userIds }),
+  }) as Promise<{ sent: number }>;
+}
+
+export function downloadVotingSummaryCSV(filters: VotingSummaryFilters = {}) {
+  return downloadFromApi(`/api/v1/votings/summary/export.csv${buildVotingSummaryQuery(filters)}`, "voting-summary.csv");
+}
+
+export function downloadVotingSummaryDetailCSV(votingId: string) {
+  return downloadFromApi(`/api/v1/votings/summary/${votingId}/export.csv`, `voting-${votingId}-summary.csv`);
+}
+
+export async function openVotingSummaryReport(votingId: string) {
+  const html = await fetchTextFromApi(`/api/v1/votings/summary/${votingId}/report`);
+  openPrintWindow(html, false);
+}
+
+export async function printVotingSummaryOwnerSheet(votingId: string, ownerId: string) {
+  const html = await fetchTextFromApi(`/api/v1/votings/summary/${votingId}/owners/${ownerId}/print`);
+  openPrintWindow(html, true);
 }
 
 export async function downloadVotingBlank(votingId: string): Promise<void> {
@@ -158,4 +212,87 @@ function extractDownloadFilename(response: Response) {
   const disposition = response.headers.get("content-disposition") || "";
   const match = disposition.match(/filename="?([^"]+)"?/i);
   return match?.[1] || "";
+}
+
+function buildVotingSummaryQuery(filters: VotingSummaryFilters) {
+  const params = new URLSearchParams();
+  appendParam(params, "search", filters.search);
+  appendParam(params, "meeting_date_from", filters.meetingDateFrom);
+  appendParam(params, "meeting_date_to", filters.meetingDateTo);
+  appendParam(params, "publication_date_from", filters.publicationDateFrom);
+  appendParam(params, "publication_date_to", filters.publicationDateTo);
+  appendParam(params, "completion_date_from", filters.completionDateFrom);
+  appendParam(params, "completion_date_to", filters.completionDateTo);
+  appendParam(params, "status", filters.status);
+  appendParam(params, "category", filters.category);
+  appendParam(params, "quorum", filters.quorum);
+  appendParam(params, "risk", filters.risk);
+
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+function appendParam(params: URLSearchParams, key: string, value?: string) {
+  const normalized = String(value || "").trim();
+  if (!normalized || normalized === "all") return;
+  params.set(key, normalized);
+}
+
+async function downloadFromApi(path: string, fallbackFilename: string) {
+  const token = typeof window !== "undefined" ? getToken() : null;
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Не удалось скачать файл"));
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = extractDownloadFilename(response) || fallbackFilename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+async function fetchTextFromApi(path: string) {
+  const token = typeof window !== "undefined" ? getToken() : null;
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+
+  if (!response.ok) {
+    throw new Error(await responseError(response, "Не удалось открыть документ"));
+  }
+
+  return response.text();
+}
+
+async function responseError(response: Response, fallback: string) {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    const data = await response.json();
+    return data?.error || fallback;
+  }
+  return fallback;
+}
+
+function openPrintWindow(html: string, printImmediately: boolean) {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    throw new Error("Не удалось открыть окно печати");
+  }
+
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  if (printImmediately) {
+    window.setTimeout(() => {
+      printWindow.print();
+    }, 250);
+  }
 }

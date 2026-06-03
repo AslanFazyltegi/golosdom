@@ -162,3 +162,274 @@ export type VotingStatus =
   | "stopped"
   | "completed"
   | "expired";
+
+export type VotingSummaryStatus = "active" | "completed" | "stopped";
+export type VotingSummaryRisk = "low" | "medium" | "high";
+export type VotingSummaryQuestionResult =
+  | "accepted"
+  | "rejected"
+  | "not_enough_votes"
+  | "needs_review";
+
+export type VotingSummaryResponse = {
+  kpi: VotingSummaryKPI;
+  meetings: VotingSummaryMeeting[];
+};
+
+export type VotingSummaryKPI = {
+  total_votings: number;
+  active_votings: number;
+  completed_votings: number;
+  quorum_reached: number;
+  quorum_missing: number;
+  with_risks: number;
+};
+
+export type VotingSummaryMeeting = {
+  id: string;
+  scheduled_at?: string | null;
+  location: string;
+  initiator: string;
+  meeting_form: string;
+  agenda: string[];
+  votings_count: number;
+  votings: VotingSummaryListItem[];
+};
+
+export type VotingSummaryListItem = {
+  id: string;
+  title: string;
+  version: number;
+  category: VotingCategory;
+  status: VotingSummaryStatus;
+  status_label: string;
+  publication_start_at?: string | null;
+  publication_end_at?: string | null;
+  completed_at?: string | null;
+  stopped_at?: string | null;
+  questions_count: number;
+  eligible_owners_count: number;
+  voted_owners_count: number;
+  total_property_votes: number;
+  voted_property_votes: number;
+  not_voted_property_votes: number;
+  participation_percent: number;
+  quorum_required_votes: number;
+  has_quorum: boolean;
+  quorum_missing_votes: number;
+  accepted_questions: number;
+  total_questions: number;
+  risk_level: VotingSummaryRisk;
+  risk_reasons: string[];
+  warnings: string[];
+};
+
+export type VotingSummaryDetail = {
+  voting: VotingSummaryDetailHeader;
+  overview: VotingSummaryOverview;
+  questions: VotingQuestionSummary[];
+  owners: VotingOwnerSummary[];
+  not_voted: VotingNotVotedOwner[];
+  properties: VotingPropertyBreakdown[];
+  notifications: VotingNotificationSummary;
+  documents: VotingDocumentsSummary;
+  procedure: VotingProcedureSummary;
+  action_log: VotingActionLogItem[];
+};
+
+export type VotingSummaryDetailHeader = {
+  id: string;
+  title: string;
+  version: number;
+  category: VotingCategory;
+  status: VotingSummaryStatus;
+  status_label: string;
+  meeting_id?: string;
+  meeting_location: string;
+  meeting_scheduled_at?: string | null;
+  publication_start_at?: string | null;
+  publication_end_at?: string | null;
+  completed_at?: string | null;
+  stopped_at?: string | null;
+  questions_count: number;
+  eligible_owners_count: number;
+  voted_owners_count: number;
+  not_voted_owners_count: number;
+  total_property_votes: number;
+  voted_property_votes: number;
+  not_voted_property_votes: number;
+  participation_percent: number;
+  quorum_required_votes: number;
+  has_quorum: boolean;
+  quorum_missing_votes: number;
+  days_left?: number | null;
+  accepted_questions: number;
+  rejected_questions: number;
+  risk_level: VotingSummaryRisk;
+  risk_reasons: string[];
+  warnings: string[];
+};
+
+export type VotingSummaryOverview = {
+  participation: VotingOverviewMetric;
+  quorum: VotingOverviewMetric;
+  timeline: VotingOverviewMetric;
+  decisions: VotingOverviewMetric;
+  documents: VotingOverviewMetric;
+  problems: VotingOverviewMetric;
+  total_property_votes: number;
+  voted_property_votes: number;
+  not_voted_property_votes: number;
+  participation_percent: number;
+};
+
+export type VotingOverviewMetric = {
+  title: string;
+  value: string;
+  hint: string;
+  state: string;
+  items?: string[];
+};
+
+export type VotingQuestionSummary = {
+  id: string;
+  number: number;
+  text: string;
+  for_votes: number;
+  against_votes: number;
+  abstain_votes: number;
+  not_voted_votes: number;
+  for_percent: number;
+  result: VotingSummaryQuestionResult;
+  details: VotingQuestionAnswerBreakdown;
+};
+
+export type VotingQuestionAnswerBreakdown = {
+  for: VotingQuestionOwnerAnswer[];
+  against: VotingQuestionOwnerAnswer[];
+  abstain: VotingQuestionOwnerAnswer[];
+};
+
+export type VotingQuestionOwnerAnswer = {
+  owner_id: string;
+  owner_name: string;
+  property_votes: number;
+  properties: string[];
+};
+
+export type VotingOwnerSummary = {
+  owner_id: string;
+  owner_name: string;
+  email: string;
+  phone: string;
+  properties: VotingOwnerProperty[];
+  property_label: string;
+  property_types: string;
+  erc_accounts: string;
+  property_votes: number;
+  status: "voted" | "not_voted";
+  voted_at?: string | null;
+  method: string;
+  signature: VotingSignatureInfo;
+  pdf_status: "formed" | "not_formed" | string;
+  answers: VotingOwnerAnswer[];
+};
+
+export type VotingOwnerProperty = {
+  id: string;
+  type: string;
+  type_label: string;
+  number: string;
+  erc_account: string;
+  share?: number | null;
+};
+
+export type VotingSignatureInfo = {
+  status: "signed" | "error" | "none" | "not_required" | string;
+  method: string;
+  signed_at?: string | null;
+  certificate_subject?: string;
+  certificate_serial?: string;
+  document_hash?: string;
+};
+
+export type VotingOwnerAnswer = {
+  question_id: string;
+  question_text: string;
+  answer: VotingAnswerValue;
+};
+
+export type VotingNotVotedOwner = {
+  owner_id: string;
+  owner_name: string;
+  email: string;
+  phone: string;
+  properties: VotingOwnerProperty[];
+  property_label: string;
+  property_types: string;
+  property_votes: number;
+  notification_status: string;
+  last_reminder_at?: string | null;
+};
+
+export type VotingPropertyBreakdown = {
+  type: string;
+  type_label: string;
+  total_objects: number;
+  eligible_objects: number;
+  voted_objects: number;
+  not_voted_objects: number;
+  participation_percent: number;
+};
+
+export type VotingNotificationSummary = {
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  no_contacts: number;
+  last_reminder_at?: string | null;
+  events: VotingNotificationEvent[];
+};
+
+export type VotingNotificationEvent = {
+  date?: string | null;
+  type: string;
+  recipients: number;
+  delivered: number;
+  read: number;
+  failed: number;
+};
+
+export type VotingDocumentsSummary = {
+  items: VotingDocumentItem[];
+};
+
+export type VotingDocumentItem = {
+  code: string;
+  title: string;
+  status: string;
+  available: boolean;
+  description: string;
+};
+
+export type VotingProcedureSummary = {
+  status: string;
+  checks: VotingProcedureCheck[];
+};
+
+export type VotingProcedureCheck = {
+  code: string;
+  title: string;
+  status: "ok" | "warning" | "error" | string;
+  comment: string;
+};
+
+export type VotingActionLogItem = {
+  id: string;
+  action: string;
+  actor_name: string;
+  actor_role: string;
+  details: string;
+  created_at?: string | null;
+};
