@@ -727,7 +727,7 @@ function NewsDrawer({
           <div className="flex flex-wrap gap-2">
             <button onClick={onClose} className={drawerButtonClass}>Отмена</button>
             <button disabled={saving || !validation.valid} onClick={() => void save("draft")} className={drawerButtonClass}>Сохранить как черновик</button>
-            <button disabled={saving || !validation.valid} onClick={() => setPreviewOpen(true)} className={drawerPrimaryButtonClass}>
+            <button disabled={saving || !validation.valid} onClick={() => setPreviewOpen(true)} className="rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-45">
               Предпросмотр
             </button>
           </div>
@@ -896,7 +896,7 @@ function PreviewModal({
       <div className="mt-5 flex justify-end gap-2">
         <button onClick={onClose} className={drawerButtonClass}>Назад к редактированию</button>
         <button disabled={!validation.valid} onClick={onDraft} className={drawerButtonClass}>Сохранить как черновик</button>
-        <button disabled={!validation.valid} onClick={onPublish} className={drawerPrimaryButtonClass}>
+        <button disabled={!validation.valid} onClick={onPublish} className="rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-45">
           {form.scheduled_at ? "Запланировать" : "Опубликовать"}
         </button>
       </div>
