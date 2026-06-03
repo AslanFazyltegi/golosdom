@@ -24,6 +24,9 @@ import type {
 import type { PropertyObject } from "@/types/objects";
 
 type VotingMode = "active" | "completed";
+type VotingViewerRole = "OWNER" | "CHAIRMAN";
+type VotingFilter = "all" | VotingCategory;
+type StatusBadgeColor = "blue" | "emerald" | "slate" | "amber";
 type WizardStep = "answers" | "review";
 
 type VotingSelectionState = {
@@ -56,24 +59,28 @@ const VOTING_SECTIONS: Array<{
   },
   {
     category: "apartments_and_commercial",
-    title: "Голосования по квартирам и нежилым помещениям",
+    title: "Квартиры и НП",
   },
   {
     category: "parking_and_storerooms",
-    title: "Голосования по кладовым и паркоместам",
+    title: "Паркоместа и кладовые",
   },
 ];
 
 export function VotingsPage(props: CabinetModuleProps) {
-  if (props.activeRole !== "OWNER") {
+  const viewerRole = getVotingViewerRole(props.activeRole);
+
+  if (!viewerRole) {
     return <OwnerOnly title="Активные голосования" />;
   }
 
   return (
-    <OwnerVotingsList
+    <VotingsList
+      key={viewerRole}
       title="Активные голосования"
       mode="active"
       emptyText="Нет активных голосований."
+      activeRole={viewerRole}
       objects={props.objects}
       onReloadLayout={props.loadVotings}
     />
@@ -81,15 +88,19 @@ export function VotingsPage(props: CabinetModuleProps) {
 }
 
 export function PastVotingsPage(props: CabinetModuleProps) {
-  if (props.activeRole !== "OWNER") {
+  const viewerRole = getVotingViewerRole(props.activeRole);
+
+  if (!viewerRole) {
     return <OwnerOnly title="Прошедшие голосования" />;
   }
 
   return (
-    <OwnerVotingsList
+    <VotingsList
+      key={viewerRole}
       title="Прошедшие голосования"
       mode="completed"
       emptyText="Прошедших голосований пока нет."
+      activeRole={viewerRole}
       objects={props.objects}
       onReloadLayout={props.loadVotings}
     />
@@ -101,22 +112,29 @@ function OwnerOnly({ title }: { title: string }) {
     <>
       <h1 className="mb-6 text-3xl font-bold">{title}</h1>
       <div className="rounded-lg border bg-white p-5 text-sm text-slate-600 shadow-sm">
-        Раздел онлайн-голосования доступен только роли OWNER.
+        Раздел онлайн-голосования доступен только собственнику или председателю.
       </div>
     </>
   );
 }
 
-function OwnerVotingsList({
+function getVotingViewerRole(activeRole: string): VotingViewerRole | null {
+  if (activeRole === "OWNER" || activeRole === "CHAIRMAN") return activeRole;
+  return null;
+}
+
+function VotingsList({
   title,
   mode,
   emptyText,
+  activeRole,
   objects,
   onReloadLayout,
 }: {
   title: string;
   mode: VotingMode;
   emptyText: string;
+  activeRole: VotingViewerRole;
   objects: unknown;
   onReloadLayout: () => void;
 }) {
@@ -125,6 +143,8 @@ function OwnerVotingsList({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [refreshToken, setRefreshToken] = useState(0);
+  const [filter, setFilter] = useState<VotingFilter>("all");
+  const [search, setSearch] = useState("");
   const [wizardVotings, setWizardVotings] = useState<Voting[]>([]);
   const [selectionState, setSelectionState] = useState<VotingSelectionState | null>(null);
   const [answersVoting, setAnswersVoting] = useState<Voting | null>(null);
@@ -157,12 +177,19 @@ function OwnerVotingsList({
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const votingSections = useMemo(
-    () => buildOwnerVotingSections(votings, objects),
-    [objects, votings],
+  const visibleVotings = useMemo(
+    () => filterVotingsForDisplay(votings, objects, activeRole, filter, search),
+    [activeRole, filter, objects, search, votings],
   );
+  const pageDescription =
+    mode === "active"
+      ? "Опросные листы, доступные для онлайн-голосования."
+      : "Архив завершенных и остановленных опросных листов.";
+  const filteredEmptyText = votings.length > 0 ? "Голосования не найдены." : emptyText;
 
   async function startOnlineVoting(voting: Voting) {
+    if (activeRole !== "OWNER") return;
+
     try {
       setError("");
       setSuccess("");
@@ -254,16 +281,22 @@ function OwnerVotingsList({
 
   return (
     <>
-      <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-bold">{title}</h1>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-4xl font-black tracking-tight">{title}</h1>
+          <p className="mt-2 text-sm text-slate-500">{pageDescription}</p>
+        </div>
         <button
           type="button"
-          onClick={load}
-          className="rounded-md border bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+          onClick={() => void load()}
+          disabled={loading}
+          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Обновить
         </button>
       </div>
+
+      <VotingToolbar filter={filter} search={search} onFilter={setFilter} onSearch={setSearch} />
 
       {success && (
         <p className="mb-4 rounded-md bg-emerald-50 p-3 text-sm text-emerald-700">{success}</p>
@@ -272,33 +305,29 @@ function OwnerVotingsList({
 
       {loading ? (
         <p className="text-slate-500">Загрузка...</p>
-      ) : votingSections.length === 0 ? (
-        <div className="rounded-lg border bg-white p-5 text-slate-500 shadow-sm">{emptyText}</div>
-      ) : (
-        <div className="grid gap-8">
-          {votingSections.map((section) => (
-            <section key={section.category}>
-              <h2 className="mb-4 text-xl font-semibold text-slate-900">{section.title}</h2>
-              <div className="grid gap-4">
-                {section.votings.map((voting) => (
-                  <OwnerVotingCard
-                    key={voting.id}
-                    voting={voting}
-                    mode={mode}
-                    refreshToken={refreshToken}
-                    opening={openingVotingId === voting.id}
-                    onStartVoting={() => startOnlineVoting(voting)}
-                    onViewAnswers={() => setAnswersVoting(voting)}
-                    onError={setError}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
+      ) : visibleVotings.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500 shadow-sm">
+          {filteredEmptyText}
         </div>
+      ) : (
+        <section className="space-y-3">
+          {visibleVotings.map((voting) => (
+            <VotingCard
+              key={voting.id}
+              voting={voting}
+              mode={mode}
+              activeRole={activeRole}
+              refreshToken={refreshToken}
+              opening={openingVotingId === voting.id}
+              onStartVoting={() => startOnlineVoting(voting)}
+              onViewAnswers={() => setAnswersVoting(voting)}
+              onError={setError}
+            />
+          ))}
+        </section>
       )}
 
-      {selectionState && (
+      {activeRole === "OWNER" && selectionState && (
         <VotingSelectionModal
           state={selectionState}
           objects={objects}
@@ -308,7 +337,7 @@ function OwnerVotingsList({
         />
       )}
 
-      {wizardVotings.length > 0 && (
+      {activeRole === "OWNER" && wizardVotings.length > 0 && (
         <VotingWizard
           votings={wizardVotings}
           onClose={() => setWizardVotings([])}
@@ -316,7 +345,7 @@ function OwnerVotingsList({
         />
       )}
 
-      {answersVoting && (
+      {activeRole === "OWNER" && answersVoting && (
         <MyAnswersModal
           voting={answersVoting}
           onClose={() => setAnswersVoting(null)}
@@ -326,23 +355,81 @@ function OwnerVotingsList({
   );
 }
 
-function buildOwnerVotingSections(votings: Voting[], objects: unknown) {
-  return VOTING_SECTIONS.map((section) => {
-    const seenVotingIDs = new Set<string>();
-    const sectionVotings = votings.filter((voting) => {
-      if (getVotingCategory(voting) !== section.category) return false;
-      if (!isVotingCategoryAvailableForOwner(section.category, objects)) return false;
+function VotingToolbar({
+  filter,
+  search,
+  onFilter,
+  onSearch,
+}: {
+  filter: VotingFilter;
+  search: string;
+  onFilter: (value: VotingFilter) => void;
+  onSearch: (value: string) => void;
+}) {
+  const items: Array<{ value: VotingFilter; label: string }> = [
+    { value: "all", label: "Все" },
+    ...VOTING_SECTIONS.map((section) => ({
+      value: section.category,
+      label: section.title,
+    })),
+  ];
+
+  return (
+    <div className="mb-5 space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {items.map((item) => (
+          <button
+            key={item.value}
+            type="button"
+            onClick={() => onFilter(item.value)}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+              filter === item.value
+                ? "bg-slate-900 text-white"
+                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <input
+        value={search}
+        onChange={(event) => onSearch(event.target.value)}
+        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+        placeholder="Поиск по голосованиям"
+      />
+    </div>
+  );
+}
+
+function filterVotingsForDisplay(
+  votings: Voting[],
+  objects: unknown,
+  activeRole: VotingViewerRole,
+  filter: VotingFilter,
+  search: string,
+) {
+  const seenVotingIDs = new Set<string>();
+  const normalizedSearch = normalizeSearchText(search);
+
+  return votings
+    .filter((voting) => {
+      const category = getVotingCategory(voting);
+      if (filter !== "all" && category !== filter) return false;
+      if (activeRole === "OWNER" && !isVotingCategoryAvailableForOwner(category, objects)) return false;
       if (seenVotingIDs.has(voting.id)) return false;
+      if (normalizedSearch && !matchesVotingSearch(voting, normalizedSearch)) return false;
 
       seenVotingIDs.add(voting.id);
       return true;
+    })
+    .sort((left, right) => {
+      const categoryDiff = getVotingCategorySortIndex(left) - getVotingCategorySortIndex(right);
+      if (categoryDiff !== 0) return categoryDiff;
+      return String(getVotingPrimaryDate(left) || left.created_at || left.id).localeCompare(
+        String(getVotingPrimaryDate(right) || right.created_at || right.id),
+      );
     });
-
-    return {
-      ...section,
-      votings: sectionVotings,
-    };
-  }).filter((section) => section.votings.length > 0);
 }
 
 function getVotingCategory(voting: Voting): VotingCategory {
@@ -358,6 +445,68 @@ function getVotingCategoryLabel(category: VotingCategory) {
     parking_and_storerooms: "Опросный лист для кладовых и паркомест",
   };
   return labels[category] || "Опросный лист";
+}
+
+function getVotingCategoryShortLabel(category: VotingCategory) {
+  const section = VOTING_SECTIONS.find((item) => item.category === category);
+  return section?.title || "Общие голосования";
+}
+
+function getVotingCategorySortIndex(voting: Voting) {
+  const index = VOTING_SECTIONS.findIndex((section) => section.category === getVotingCategory(voting));
+  return index >= 0 ? index : VOTING_SECTIONS.length;
+}
+
+function matchesVotingSearch(voting: Voting, normalizedSearch: string) {
+  return buildVotingSearchText(voting).includes(normalizedSearch);
+}
+
+function buildVotingSearchText(voting: Voting) {
+  const category = getVotingCategory(voting);
+  const meetingDate = voting.meeting?.scheduled_at;
+  const values = [
+    voting.title,
+    voting.description,
+    getVotingCategoryLabel(category),
+    getVotingCategoryShortLabel(category),
+    getVotingStatusLabel(voting.status),
+    voting.status,
+    meetingDate ? formatAstanaDate(meetingDate) : "",
+    meetingDate ? formatAstanaDateTime(meetingDate) : "",
+    voting.published_at ? formatAstanaDateTime(voting.published_at) : "",
+    voting.publication_end_at ? formatAstanaDateTime(voting.publication_end_at) : "",
+    voting.meeting?.location,
+    voting.meeting?.agenda?.join(" "),
+    voting.meeting?.initiator_name,
+    voting.user_has_voted ? "Проголосовал" : "",
+    getVotingSearchCompletionText(voting),
+  ];
+
+  return normalizeSearchText(values.filter(Boolean).join(" "));
+}
+
+function normalizeSearchText(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function getVotingPrimaryDate(voting: Voting) {
+  return voting.meeting?.scheduled_at || voting.published_at || voting.publication_start_at || voting.created_at;
+}
+
+function getVotingSearchCompletionText(voting: Voting) {
+  if (
+    voting.completion_reason ||
+    voting.completed_at ||
+    voting.expired_at ||
+    voting.stopped_at ||
+    voting.status === "completed" ||
+    voting.status === "expired" ||
+    voting.status === "stopped"
+  ) {
+    return getCompletionReason(voting);
+  }
+
+  return "";
 }
 
 function isVotingCurrentlyActive(voting: Voting) {
@@ -429,9 +578,10 @@ function hasAnyOwnerPropertyType(objects: unknown, allowedTypes: Set<string>) {
   );
 }
 
-function OwnerVotingCard({
+function VotingCard({
   voting,
   mode,
+  activeRole,
   refreshToken,
   opening,
   onStartVoting,
@@ -440,6 +590,7 @@ function OwnerVotingCard({
 }: {
   voting: Voting;
   mode: VotingMode;
+  activeRole: VotingViewerRole;
   refreshToken: number;
   opening: boolean;
   onStartVoting: () => void;
@@ -451,6 +602,12 @@ function OwnerVotingCard({
   const [resultsError, setResultsError] = useState("");
   const [downloading, setDownloading] = useState(false);
   const hasVoted = Boolean(voting.user_has_voted);
+  const isOwner = activeRole === "OWNER";
+  const isChairman = activeRole === "CHAIRMAN";
+  const category = getVotingCategory(voting);
+  const primaryDate = getVotingPrimaryDate(voting);
+  const displayStatus = getVotingDisplayStatus(voting, mode);
+  const votingSubtitle = voting.title && voting.title !== "Опросный лист" ? voting.title : "";
 
   useEffect(() => {
     let active = true;
@@ -485,51 +642,71 @@ function OwnerVotingCard({
   }
 
   return (
-    <article className="rounded-lg border bg-white p-5 shadow-sm">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold">{voting.title || "Опросный лист"}</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            {voting.meeting
-              ? `Собрание: ${formatAstanaDate(voting.meeting.scheduled_at)}`
-              : "Собрание не указано"}
-          </p>
+    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:shadow-md">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-2xl font-black text-blue-600 sm:h-20 sm:w-20">
+          ✓
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={mode === "active" ? statusBadgeClass("blue") : statusBadgeClass("slate")}>
-            {mode === "active" ? "Идет голосование" : getVotingStatusLabel(voting.status)}
-          </span>
-          {hasVoted && (
-            <span className={statusBadgeClass("emerald")}>Вы проголосовали</span>
-          )}
+
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-semibold">
+            <span className="text-slate-500">
+              {primaryDate ? formatAstanaDateTime(primaryDate) : "Дата не указана"}
+            </span>
+            <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">
+              {getVotingCategoryShortLabel(category)}
+            </span>
+            <span className={statusBadgeClass(displayStatus.color)}>{displayStatus.label}</span>
+            {isOwner && hasVoted && <span className={statusBadgeClass("emerald")}>Проголосовал</span>}
+          </div>
+
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg font-bold text-slate-900">Опросный лист</h2>
+              {votingSubtitle && <p className="mt-1 truncate text-sm text-slate-600">{votingSubtitle}</p>}
+              <div className="mt-3 grid gap-2 text-sm text-slate-600 md:grid-cols-2">
+                <p>
+                  <span className="font-semibold text-slate-900">Дата собрания:</span>{" "}
+                  {voting.meeting ? formatAstanaDateTime(voting.meeting.scheduled_at) : "Не указана"}
+                </p>
+                <p>
+                  <span className="font-semibold text-slate-900">Крайний срок:</span>{" "}
+                  {voting.publication_end_at ? formatAstanaDateTime(voting.publication_end_at) : "Не указан"}
+                </p>
+                {mode === "completed" && (
+                  <>
+                    <p>
+                      <span className="font-semibold text-slate-900">Дата завершения:</span>{" "}
+                      {formatCompletionDate(voting)}
+                    </p>
+                    <p>
+                      <span className="font-semibold text-slate-900">Причина завершения:</span>{" "}
+                      {getCompletionReason(voting)}
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setExpanded((value) => !value)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-2xl leading-none text-slate-300 transition hover:bg-slate-50 hover:text-slate-500"
+              aria-label={expanded ? "Свернуть детали голосования" : "Развернуть детали голосования"}
+            >
+              <span className={`transition-transform ${expanded ? "rotate-90" : ""}`}>›</span>
+            </button>
+          </div>
         </div>
       </div>
-
-      <div className="mb-4 grid gap-2 rounded-md bg-slate-50 p-4 text-sm text-slate-700 md:grid-cols-2">
-        <p>Дата собрания: {voting.meeting ? formatAstanaDateTime(voting.meeting.scheduled_at) : "Не указана"}</p>
-        <p>Крайний срок голосования: {voting.publication_end_at ? formatAstanaDateTime(voting.publication_end_at) : "Не указан"}</p>
-        {mode === "completed" && (
-          <>
-            <p>Дата завершения: {formatCompletionDate(voting)}</p>
-            <p>Причина завершения: {getCompletionReason(voting)}</p>
-          </>
-        )}
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setExpanded((value) => !value)}
-        className="mb-4 text-sm font-medium text-blue-700 hover:text-blue-800"
-      >
-        {expanded ? "Свернуть" : "Развернуть"}
-      </button>
 
       {expanded && (
-        <VotingResultsBlock results={results} error={resultsError} />
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <VotingResultsBlock results={results} error={resultsError} />
+        </div>
       )}
 
-      <div className="mt-5 flex flex-wrap gap-3">
-        {mode === "active" && !hasVoted && (
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        {isOwner && mode === "active" && !hasVoted && (
           <>
             <Button variant="primary" onClick={onStartVoting} disabled={opening}>
               {opening ? "Открываем..." : "Пройти голосование онлайн"}
@@ -539,8 +716,13 @@ function OwnerVotingCard({
             </Button>
           </>
         )}
-        {hasVoted && (mode !== "completed" || expanded) && (
-          <Button onClick={onViewAnswers}>Посмотреть мои ответы</Button>
+        {isOwner && hasVoted && (
+          <Button onClick={onViewAnswers}>Просмотреть мои ответы</Button>
+        )}
+        {isChairman && (
+          <Button variant="primary" onClick={() => setExpanded(true)}>
+            Посмотреть результаты
+          </Button>
         )}
       </div>
     </article>
@@ -1006,28 +1188,51 @@ function Button({
 }) {
   const classes =
     variant === "primary"
-      ? "bg-blue-600 text-white hover:bg-blue-700"
-      : "border bg-white text-slate-700 hover:bg-slate-50";
+      ? "border border-blue-600 bg-blue-600 text-white hover:border-blue-700 hover:bg-blue-700"
+      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50";
 
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-md px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60 ${classes}`}
+      className={`inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${classes}`}
     >
       {children}
     </button>
   );
 }
 
-function statusBadgeClass(color: "blue" | "emerald" | "slate") {
+function statusBadgeClass(color: StatusBadgeColor) {
   const classes = {
     blue: "bg-blue-50 text-blue-700",
     emerald: "bg-emerald-50 text-emerald-700",
     slate: "bg-slate-100 text-slate-700",
+    amber: "bg-amber-50 text-amber-700",
   };
   return `rounded-full px-3 py-1 text-xs font-medium ${classes[color]}`;
+}
+
+function getVotingDisplayStatus(voting: Voting, mode: VotingMode): { label: string; color: StatusBadgeColor } {
+  if (voting.status === "stopped" || voting.stopped_at || voting.completion_type === "manual_stop") {
+    return { label: "Остановлено", color: "amber" };
+  }
+
+  if (
+    voting.status === "completed" ||
+    voting.status === "expired" ||
+    voting.completed_at ||
+    voting.expired_at ||
+    mode === "completed"
+  ) {
+    return { label: "Завершено", color: "slate" };
+  }
+
+  if (voting.status === "published" || mode === "active") {
+    return { label: "Идет голосование", color: "blue" };
+  }
+
+  return { label: getVotingStatusLabel(voting.status), color: "slate" };
 }
 
 function getVotingStatusLabel(status: string) {
