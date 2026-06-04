@@ -1280,6 +1280,7 @@ function PublicationScheduleModal({
   const [startAt, setStartAt] = useState(() => getInitialPublicationStart(voting, limits));
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const publicationMinDateTime = getTodayDateTimeMinValue();
 
   async function submit() {
     const validationError = validatePublicationSchedule(limits, startAt);
@@ -1335,6 +1336,7 @@ function PublicationScheduleModal({
             <span className="text-slate-600">Дата и время начала голосования</span>
             <input
               type="datetime-local"
+              min={publicationMinDateTime}
               className="rounded-md border p-2"
               value={startAt}
               onChange={(event) => setStartAt(event.target.value)}
@@ -1960,6 +1962,18 @@ function parseServerDateTime(value?: string | null) {
 
 function formatDateTimeLocal(date: Date) {
   return formatAstanaDateTimeLocal(date);
+}
+
+function getTodayDateTimeMinValue() {
+  return `${getTodayDateValue()}T00:00`;
+}
+
+function getTodayDateValue() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function formatPayloadDateTime(date: Date) {

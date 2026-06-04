@@ -513,6 +513,7 @@ function NotificationDrawer({
   const [saving, setSaving] = useState(false);
   const validAudience = audienceType !== "individual_owners" || (form.targets || []).some((target) => target.type === "user" && target.value);
   const valid = Boolean(form.title?.trim() && stripHtml(form.body_html || "").trim() && (form.targets || []).length > 0 && validAudience && enabledChannels(form).length > 0);
+  const publicationMinDateTime = getTodayDateTimeMinValue();
 
   async function save(mode: "draft" | "send") {
     if (audienceType === "individual_owners" && !validAudience) {
@@ -562,7 +563,7 @@ function NotificationDrawer({
                 </select>
               </Field>
               <Field label="Дата отправки">
-                <input type="datetime-local" value={toLocalInput(form.scheduled_at)} onChange={(event) => setForm({ ...form, scheduled_at: fromLocalInput(event.target.value) })} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm" />
+                <input type="datetime-local" min={publicationMinDateTime} value={toLocalInput(form.scheduled_at)} onChange={(event) => setForm({ ...form, scheduled_at: fromLocalInput(event.target.value) })} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm" />
               </Field>
             </div>
             <NotificationAudiencePicker
@@ -1714,6 +1715,18 @@ function channelLabel(value: string) {
 function toLocalInput(value?: string | null) {
   if (!value) return "";
   return value.slice(0, 16);
+}
+
+function getTodayDateTimeMinValue() {
+  return `${getTodayDateValue()}T00:00`;
+}
+
+function getTodayDateValue() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function fromLocalInput(value: string) {

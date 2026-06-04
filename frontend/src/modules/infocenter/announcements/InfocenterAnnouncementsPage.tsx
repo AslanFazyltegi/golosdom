@@ -796,6 +796,7 @@ function ConfirmModal({ state, onClose, onDone }: { state: NonNullable<ConfirmSt
   const [scheduledAt, setScheduledAt] = useState("");
   const [error, setError] = useState("");
   const meta = confirmMeta(state.action);
+  const publicationMinDateTime = getTodayDateTimeMinValue();
   const disabled =
     (state.action === "complete" && !reason.trim()) ||
     (state.action === "permanent" && confirmText !== "УДАЛИТЬ") ||
@@ -837,7 +838,7 @@ function ConfirmModal({ state, onClose, onDone }: { state: NonNullable<ConfirmSt
             <input type="radio" checked={publishMode === "schedule"} onChange={() => setPublishMode("schedule")} />
             Запланировать
           </label>
-          {publishMode === "schedule" && <input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className={inputClass} />}
+          {publishMode === "schedule" && <input type="datetime-local" min={publicationMinDateTime} value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className={inputClass} />}
         </div>
       )}
       {state.action === "hide" && (
@@ -1063,6 +1064,18 @@ function datePart(value?: string | null) {
 
 function timePart(value?: string | null) {
   return value ? value.slice(11, 16) : "";
+}
+
+function getTodayDateTimeMinValue() {
+  return `${getTodayDateValue()}T00:00`;
+}
+
+function getTodayDateValue() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function mergeDateTime(date: string, time: string) {

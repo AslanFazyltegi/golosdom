@@ -587,6 +587,7 @@ function NewsDrawer({
   const [saving, setSaving] = useState(false);
 
   const validation = validateForm(form);
+  const publicationMinDateTime = getTodayDateTimeMinValue();
 
   async function save(mode: "draft" | "publish" | "schedule") {
     setSaving(true);
@@ -713,6 +714,7 @@ function NewsDrawer({
                 </label>
                 <input
                   type="datetime-local"
+                  min={publicationMinDateTime}
                   value={toInputDate(form.scheduled_at)}
                   onChange={(e) => setForm({ ...form, scheduled_at: e.target.value ? new Date(e.target.value).toISOString() : null })}
                   className={inputClass}
@@ -1199,6 +1201,18 @@ function dateLabel(item: InfocenterNews) {
 
 function toInputDate(value?: string | null) {
   return value ? value.slice(0, 16) : "";
+}
+
+function getTodayDateTimeMinValue() {
+  return `${getTodayDateValue()}T00:00`;
+}
+
+function getTodayDateValue() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function pendingCoverIndexSafe(files: File[], index: number) {
