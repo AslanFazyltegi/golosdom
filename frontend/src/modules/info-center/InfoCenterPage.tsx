@@ -423,7 +423,6 @@ const notificationAudienceOptions = [
       { type: "property_type" as const, value: "parking" },
     ],
   },
-  { value: "council_members", label: "Только члены совета дома", targets: [{ type: "role" as const, value: "COUNCIL_MEMBER" }] },
   { value: "individual_owners", label: "Отдельный собственник", targets: [] },
 ];
 

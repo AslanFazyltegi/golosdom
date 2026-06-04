@@ -214,7 +214,7 @@ function VotingWizard({
     async function load() {
       try {
         setLoadingMeetings(true);
-        setMeetings(await fetchMeetings("upcoming"));
+        setMeetings(await fetchMeetings("voting_constructor"));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Не удалось загрузить собрания");
       } finally {
@@ -575,7 +575,7 @@ function VotingMeetingStep({
         </p>
       ) : meetings.length === 0 ? (
         <p className="rounded-md border bg-slate-50 p-3 text-sm text-slate-600">
-          Нет предстоящих собраний
+          Нет собраний, доступных для создания опросного листа
         </p>
       ) : (
         <select

@@ -127,6 +127,17 @@ func (r *Repository) List(ctx context.Context, period string) ([]model.Meeting, 
 				or ($1 = 'active' and scheduled_at::date = current_date)
 				or ($1 = 'upcoming' and scheduled_at::date > current_date)
 				or ($1 = 'past' and scheduled_at::date < current_date)
+				or (
+					$1 = 'voting_constructor'
+					and (
+						scheduled_at::date > current_date
+						or (
+							scheduled_at::date < current_date
+							and current_date >= scheduled_at::date + interval '1 day'
+							and current_date <= scheduled_at::date + interval '2 months' - interval '7 days'
+						)
+					)
+				)
 			)
 		order by
 			case when $1 = 'past' then scheduled_at end desc,

@@ -1106,9 +1106,7 @@ func audienceSummaryFor(targets []model.Target) string {
 	if has("property_type", "storage") && has("property_type", "parking") {
 		return "Кладовые и паркоместа"
 	}
-	if has("role", "COUNCIL_MEMBER") {
-		return "Только члены совета дома"
-	}
+
 	if len(targets) > 0 {
 		onlyUsers := true
 		for _, target := range targets {
