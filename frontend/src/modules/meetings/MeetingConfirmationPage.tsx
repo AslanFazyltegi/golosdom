@@ -22,12 +22,14 @@ export type MeetingConfirmationData = {
 type MeetingConfirmationPageProps = {
   creating?: boolean;
   data?: MeetingConfirmationData;
-  meeting?: any;
+  meeting?: MeetingConfirmationSource;
   mode?: "create" | "preview";
   error?: string;
   onBack?: () => void;
-  onConfirm?: () => void;
+  onConfirm?: (notificationHtml: string) => void;
 };
+
+type MeetingConfirmationSource = Record<string, unknown> | null | undefined;
 
 function formatCondominiumAddress(address: string) {
   if (!address) return "";
@@ -64,6 +66,15 @@ export function MeetingConfirmationPage({
   );
 
   const isPreview = mode === "preview";
+
+  function handleConfirm() {
+    const notificationHtml =
+      typeof document === "undefined"
+        ? ""
+        : document.getElementById("meeting-confirmation-document")?.outerHTML ??
+          "";
+    onConfirm?.(notificationHtml);
+  }
 
   return (
     <>
@@ -217,7 +228,7 @@ export function MeetingConfirmationPage({
               <button
                 type="button"
                 disabled={!confirmed || creating}
-                onClick={onConfirm}
+                onClick={handleConfirm}
                 className="rounded-xl bg-blue-600 px-5 py-3 font-medium text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {creating ? "Создаём..." : "Подтвердить и Опубликовать"}
@@ -230,28 +241,31 @@ export function MeetingConfirmationPage({
   );
 }
 
-function buildConfirmationDataFromMeeting(meeting: any): MeetingConfirmationData {
-  const meetingDate = formatAstanaDateKey(meeting?.scheduled_at);
-  const meetingTime = formatAstanaTime(meeting?.scheduled_at);
+function buildConfirmationDataFromMeeting(
+  meeting: MeetingConfirmationSource,
+): MeetingConfirmationData {
+  const scheduledAt = stringValue(meeting?.scheduled_at);
+  const meetingDate = formatAstanaDateKey(scheduledAt);
+  const meetingTime = formatAstanaTime(scheduledAt);
 
   return {
     condominiumAddress:
-      meeting?.condominium_address ||
-      meeting?.building_address ||
-      meeting?.address ||
-      meeting?.location ||
+      stringValue(meeting?.condominium_address) ||
+      stringValue(meeting?.building_address) ||
+      stringValue(meeting?.address) ||
+      stringValue(meeting?.location) ||
       "",
     meetingFormLabel:
-      meeting?.meeting_form_label ||
-      meeting?.meeting_format ||
+      stringValue(meeting?.meeting_form_label) ||
+      stringValue(meeting?.meeting_format) ||
       "Очное собрание (Явочный формат)",
     meetingDate,
     meetingTime,
-    meetingLocation: meeting?.location || "",
-    initiators: splitInitiators(meeting?.initiator_name),
-    agenda: Array.isArray(meeting?.agenda) ? meeting.agenda : [],
-    notificationDate: meeting?.created_at
-      ? new Date(meeting.created_at)
+    meetingLocation: stringValue(meeting?.location),
+    initiators: splitInitiators(stringValue(meeting?.initiator_name)),
+    agenda: stringArrayValue(meeting?.agenda),
+    notificationDate: stringValue(meeting?.created_at)
+      ? new Date(stringValue(meeting?.created_at))
       : new Date(),
   };
 }
@@ -263,6 +277,16 @@ function splitInitiators(value: string) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function stringArrayValue(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function DocumentPoint({

@@ -21,6 +21,7 @@ type Building struct {
 }
 
 type BuildingResponse struct {
+	ID   string `json:"id"`
 	Type string `json:"type"`
 
 	City          string  `json:"city"`

@@ -1,4 +1,5 @@
 export type BuildingObject = {
+  id: string;
   type: "building";
   city: string;
   district: string | null;

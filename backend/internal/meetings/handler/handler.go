@@ -72,7 +72,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	meeting, err := h.service.Create(r.Context(), req, userID)
 	if err != nil {
-		response.Error(w, http.StatusBadRequest, "failed to create meeting")
+		response.Error(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

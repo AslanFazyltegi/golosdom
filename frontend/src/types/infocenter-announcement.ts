@@ -31,6 +31,7 @@ export type InfocenterAnnouncement = {
   published_at?: string | null;
   scheduled_at?: string | null;
   actual_until?: string | null;
+  pinned_until?: string | null;
   hidden_at?: string | null;
   completed_at?: string | null;
   deleted_at?: string | null;

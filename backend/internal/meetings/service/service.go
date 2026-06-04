@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"golosdom-backend/internal/common/datetime"
@@ -29,13 +30,32 @@ func (s *Service) Create(ctx context.Context, req dto.CreateMeetingRequest, user
 		meetingForm = "offline"
 	}
 
+	buildingID := strings.TrimSpace(req.BuildingID)
+	if buildingID == "" {
+		return nil, errors.New("building_id is required")
+	}
+
+	notificationHTML := strings.TrimSpace(req.NotificationHTML)
+	if notificationHTML == "" {
+		return nil, errors.New("notification_html is required")
+	}
+
+	deduplicationKey := strings.TrimSpace(req.DeduplicationKey)
+	if deduplicationKey == "" {
+		return nil, errors.New("deduplication_key is required")
+	}
+
 	created, err := s.repo.Create(ctx, model.Meeting{
+		BuildingID:    buildingID,
 		InitiatorName: strings.TrimSpace(req.InitiatorName),
 		ScheduledAt:   scheduledAt,
 		Location:      strings.TrimSpace(req.Location),
 		Agenda:        req.Agenda,
 		MeetingForm:   meetingForm,
 		CreatedBy:     userID,
+	}, repository.PublicationData{
+		DeduplicationKey: deduplicationKey,
+		NotificationHTML: notificationHTML,
 	})
 	if err != nil {
 		return nil, err
@@ -60,13 +80,16 @@ func (s *Service) List(ctx context.Context, period string) ([]dto.MeetingRespons
 
 func toResponse(meeting *model.Meeting) *dto.MeetingResponse {
 	return &dto.MeetingResponse{
-		ID:            meeting.ID,
-		InitiatorName: meeting.InitiatorName,
-		ScheduledAt:   datetime.AsAstanaWallTime(meeting.ScheduledAt),
-		Location:      meeting.Location,
-		Agenda:        meeting.Agenda,
-		MeetingForm:   meeting.MeetingForm,
-		CreatedBy:     meeting.CreatedBy,
-		CreatedAt:     datetime.AsAstanaWallTime(meeting.CreatedAt),
+		ID:             meeting.ID,
+		BuildingID:     meeting.BuildingID,
+		InitiatorName:  meeting.InitiatorName,
+		ScheduledAt:    datetime.AsAstanaWallTime(meeting.ScheduledAt),
+		Location:       meeting.Location,
+		Agenda:         meeting.Agenda,
+		MeetingForm:    meeting.MeetingForm,
+		CreatedBy:      meeting.CreatedBy,
+		CreatedAt:      datetime.AsAstanaWallTime(meeting.CreatedAt),
+		NotificationID: meeting.NotificationID,
+		AnnouncementID: meeting.AnnouncementID,
 	}
 }

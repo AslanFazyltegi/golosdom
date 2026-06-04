@@ -77,7 +77,7 @@ func (r *Repository) List(ctx context.Context, filter listFilter) ([]Announcemen
 		LEFT JOIN users u ON u.id = a.created_by
 		WHERE `+strings.Join(where, " AND ")+`
 		ORDER BY
-			a.is_pinned DESC,
+			`+effectivePinnedExpr("a")+` DESC,
 			CASE a.status
 				WHEN 'published' THEN 1
 				WHEN 'scheduled' THEN 2
@@ -142,7 +142,7 @@ func (r *Repository) ListForUser(ctx context.Context, userID string) ([]Announce
 		WHERE `+audience.PublishedAnnouncementPredicate("a")+`
 			AND `+audience.InfocenterItemPredicate("a", "$1")+`
 		ORDER BY
-			a.is_pinned DESC,
+			`+effectivePinnedExpr("a")+` DESC,
 			a.is_important DESC,
 			COALESCE(a.published_at, a.updated_at, a.created_at) DESC
 	`, userID)
@@ -355,12 +355,13 @@ func announcementSelectColumns(readAtExpr string) string {
 		COALESCE(a.audience_filter, 'null'::jsonb),
 		a.status,
 		a.is_visible,
-		a.is_pinned,
+		` + effectivePinnedExpr("a") + ` AS is_pinned,
 		a.is_important,
 		a.notify_enabled,
 		a.published_at,
 		a.scheduled_at,
 		a.actual_until,
+		a.pinned_until,
 		a.hidden_at,
 		a.completed_at,
 		a.deleted_at,
@@ -378,12 +379,12 @@ func announcementSelectColumns(readAtExpr string) string {
 func scanAnnouncement(rows pgx.Rows) (AnnouncementResponse, error) {
 	var item AnnouncementResponse
 	var updatedBy sql.NullString
-	var publishedAt, scheduledAt, actualUntil, hiddenAt, completedAt, deletedAt, readAt sql.NullTime
+	var publishedAt, scheduledAt, actualUntil, pinnedUntil, hiddenAt, completedAt, deletedAt, readAt sql.NullTime
 	err := rows.Scan(
 		&item.ID, &item.Title, &item.BodyJSON, &item.BodyHTML,
 		&item.Category, &item.AudienceType, &item.AudienceFilter, &item.Status,
 		&item.IsVisible, &item.IsPinned, &item.IsImportant, &item.NotifyEnabled,
-		&publishedAt, &scheduledAt, &actualUntil, &hiddenAt, &completedAt,
+		&publishedAt, &scheduledAt, &actualUntil, &pinnedUntil, &hiddenAt, &completedAt,
 		&deletedAt, &item.CreatedBy, &updatedBy, &item.AuthorName, &item.CreatedAt,
 		&item.UpdatedAt, &item.ViewsCount, &item.ReadsCount, &readAt,
 	)
@@ -391,6 +392,7 @@ func scanAnnouncement(rows pgx.Rows) (AnnouncementResponse, error) {
 	item.PublishedAt = nullTime(publishedAt)
 	item.ScheduledAt = nullTime(scheduledAt)
 	item.ActualUntil = nullTime(actualUntil)
+	item.PinnedUntil = nullTime(pinnedUntil)
 	item.HiddenAt = nullTime(hiddenAt)
 	item.CompletedAt = nullTime(completedAt)
 	item.DeletedAt = nullTime(deletedAt)
@@ -403,6 +405,10 @@ func jsonOrNull(value json.RawMessage) string {
 		return "null"
 	}
 	return string(value)
+}
+
+func effectivePinnedExpr(alias string) string {
+	return "(" + alias + ".is_pinned = true AND (" + alias + ".pinned_until IS NULL OR " + alias + ".pinned_until >= now()))"
 }
 
 func nullString(value sql.NullString) *string {

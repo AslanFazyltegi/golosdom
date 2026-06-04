@@ -44,6 +44,7 @@ func (s *Service) GetObjects(
 		}
 
 		return dto.BuildingResponse{
+			ID:   building.ID,
 			Type: "building",
 
 			City:          building.City,

@@ -18,6 +18,7 @@ import { addAstanaDays, formatAstanaDateKey } from "@/shared/lib/dateTime";
 import type { Meeting } from "@/types/meeting";
 import type { NavigationItem } from "@/types/navigation";
 import type { UpdateProfilePayload, UserProfile } from "@/types/profile";
+import type { SubmitMeetingOptions } from "@/shared/types/cabinet";
 import type { User } from "@/types/user";
 import type { Voting } from "@/types/voting";
 import { CabinetHeader } from "./CabinetHeader";
@@ -348,8 +349,14 @@ export function CabinetLayout() {
     setAccountOpen(false);
   }
 
-  async function submitMeeting(e?: FormEvent) {
-    e?.preventDefault();
+  async function submitMeeting(e?: FormEvent | SubmitMeetingOptions) {
+    let options: SubmitMeetingOptions = {};
+    if (e && "preventDefault" in e) {
+      e.preventDefault();
+    } else if (e) {
+      options = e;
+    }
+
     setMeetingError("");
     setCreatingMeeting(true);
 
@@ -391,14 +398,29 @@ export function CabinetLayout() {
       return;
     }
 
+    const buildingID = getBuildingID(objects);
+    if (!buildingID) {
+      setMeetingError("Не удалось определить дом для публикации");
+      setCreatingMeeting(false);
+      return;
+    }
+
+    const notificationHtml = options.notificationHtml?.trim() ?? "";
+    if (!notificationHtml) {
+      setMeetingError("Не удалось получить шаблон уведомления");
+      setCreatingMeeting(false);
+      return;
+    }
+
     try {
       console.log("CREATE MEETING PAYLOAD", {
         initiator_name: meetingInitiators.join(", "),
         scheduled_at: scheduledAt,
         location,
         agenda,
-        meeting_form: "offline",
+        meeting_form: options.meetingForm || "offline",
         status: "upcoming",
+        building_id: buildingID,
       });
 
       await createMeeting({
@@ -406,8 +428,11 @@ export function CabinetLayout() {
         scheduled_at: scheduledAt,
         location,
         agenda,
-        meeting_form: "offline",
+        meeting_form: options.meetingForm || "offline",
         status: "upcoming",
+        building_id: buildingID,
+        deduplication_key: options.deduplicationKey || "",
+        notification_html: notificationHtml,
       });
 
       setMeetingInitiators(["Председатель ОСИ", "Совет дома"]);
@@ -569,6 +594,13 @@ function buildMeetingAddress(objects: unknown) {
   ]
     .filter(Boolean)
     .join(", ");
+}
+
+function getBuildingID(objects: unknown) {
+  if (!objects || Array.isArray(objects)) return "";
+
+  const building = objects as Record<string, unknown>;
+  return typeof building.id === "string" ? building.id : "";
 }
 
 async function withCommunicationUnreadCounts(menu: NavigationItem[]) {

@@ -11,7 +11,10 @@ export async function createMeeting(payload: {
   scheduled_at: string;
   location: string;
   agenda: string[];
+  building_id: string;
+  deduplication_key?: string;
   meeting_form?: string;
+  notification_html: string;
   status?: string;
 }) {
   return apiFetch("/api/v1/meetings", {

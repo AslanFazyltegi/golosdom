@@ -40,6 +40,7 @@ type AnnouncementResponse struct {
 	PublishedAt    *time.Time                   `json:"published_at"`
 	ScheduledAt    *time.Time                   `json:"scheduled_at"`
 	ActualUntil    *time.Time                   `json:"actual_until"`
+	PinnedUntil    *time.Time                   `json:"pinned_until"`
 	HiddenAt       *time.Time                   `json:"hidden_at"`
 	CompletedAt    *time.Time                   `json:"completed_at"`
 	DeletedAt      *time.Time                   `json:"deleted_at"`

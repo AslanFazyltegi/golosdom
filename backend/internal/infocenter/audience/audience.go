@@ -17,6 +17,7 @@ func VisibleNotificationPredicate(alias string) string {
 }
 
 func InfocenterItemPredicate(alias string, userExpr string) string {
+	buildingExpr := fmt.Sprintf("NULLIF(%s.audience_filter->>'building_id', '')", alias)
 	return fmt.Sprintf(`(
 		(%[1]s.audience_type = 'all_owners' AND %[2]s)
 		OR (%[1]s.audience_type = 'apartments_commercial' AND %[3]s)
@@ -24,9 +25,9 @@ func InfocenterItemPredicate(alias string, userExpr string) string {
 		OR (%[1]s.audience_type = 'council_members' AND %[5]s)
 	)`,
 		alias,
-		UserHasAnyPropertyPredicate(userExpr, ""),
-		UserHasPropertyTypePredicate(userExpr, "", "'apartment', 'commercial_room'"),
-		UserHasPropertyTypePredicate(userExpr, "", "'storage', 'parking'"),
+		UserHasAnyPropertyOptionalBuildingPredicate(userExpr, buildingExpr),
+		UserHasPropertyTypeOptionalBuildingPredicate(userExpr, buildingExpr, "'apartment', 'commercial_room'"),
+		UserHasPropertyTypeOptionalBuildingPredicate(userExpr, buildingExpr, "'storage', 'parking'"),
 		UserHasRolePredicate(userExpr, "'"+CouncilMemberRole+"'"),
 	)
 }
@@ -75,6 +76,29 @@ func UserHasPropertyTypePredicate(userExpr string, buildingExpr string, typeExpr
 			AND p_audience_type.type IN (%[2]s)
 			%[3]s
 	)`, userExpr, typeExpr, buildingClause)
+}
+
+func UserHasAnyPropertyOptionalBuildingPredicate(userExpr string, buildingExpr string) string {
+	return fmt.Sprintf(`EXISTS (
+		SELECT 1
+		FROM property_owners po_audience
+		JOIN property p_audience ON p_audience.id = po_audience.property_id
+		WHERE po_audience.user_id = %[1]s
+			AND po_audience.status = 'active'
+			AND (%[2]s IS NULL OR p_audience.building_id = %[2]s)
+	)`, userExpr, buildingExpr)
+}
+
+func UserHasPropertyTypeOptionalBuildingPredicate(userExpr string, buildingExpr string, typeExpr string) string {
+	return fmt.Sprintf(`EXISTS (
+		SELECT 1
+		FROM property_owners po_audience_type
+		JOIN property p_audience_type ON p_audience_type.id = po_audience_type.property_id
+		WHERE po_audience_type.user_id = %[1]s
+			AND po_audience_type.status = 'active'
+			AND p_audience_type.type IN (%[2]s)
+			AND (%[3]s IS NULL OR p_audience_type.building_id = %[3]s)
+	)`, userExpr, typeExpr, buildingExpr)
 }
 
 func UserHasRolePredicate(userExpr string, roleExpr string) string {

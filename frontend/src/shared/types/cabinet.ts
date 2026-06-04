@@ -7,6 +7,12 @@ import type { UpdateProfilePayload } from "@/types/profile";
 import type { User } from "@/types/user";
 import type { Voting } from "@/types/voting";
 
+export type SubmitMeetingOptions = {
+  deduplicationKey?: string;
+  meetingForm?: string;
+  notificationHtml?: string;
+};
+
 export type CabinetModuleProps = {
   user: User;
   objects: unknown;
@@ -50,7 +56,7 @@ export type CabinetModuleProps = {
   meetingAgenda: string[];
   setMeetingAgenda: (v: string[]) => void;
   creatingMeeting: boolean;
-  submitMeeting: (e?: FormEvent) => Promise<void>;
+  submitMeeting: (e?: FormEvent | SubmitMeetingOptions) => Promise<void>;
   logout: () => void;
 };
 

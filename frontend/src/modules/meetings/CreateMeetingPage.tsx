@@ -23,6 +23,7 @@ export function CreateMeetingPage(props: CabinetModuleProps) {
   const [initiatorInput, setInitiatorInput] = useState("");
   const [validationError, setValidationError] = useState("");
   const [notificationDate, setNotificationDate] = useState(new Date());
+  const [confirmationKey, setConfirmationKey] = useState("");
   const { meetingDate, setMeetingDate } = props;
 
   const minDateValue = getMinMeetingDateValue();
@@ -120,6 +121,7 @@ export function CreateMeetingPage(props: CabinetModuleProps) {
     }
 
     setNotificationDate(new Date());
+    setConfirmationKey(createMeetingDeduplicationKey());
     setOwnerDropdownOpen(false);
     setStep("confirmation");
   }
@@ -145,7 +147,13 @@ export function CreateMeetingPage(props: CabinetModuleProps) {
         data={confirmationData}
         error={props.meetingError}
         onBack={() => setStep("form")}
-        onConfirm={() => void props.submitMeeting()}
+        onConfirm={(notificationHtml) =>
+          void props.submitMeeting({
+            deduplicationKey: confirmationKey,
+            meetingForm,
+            notificationHtml,
+          })
+        }
       />
     );
   }
@@ -429,6 +437,14 @@ export function CreateMeetingPage(props: CabinetModuleProps) {
 
 function getMinMeetingDateValue() {
   return formatAstanaDateKey(addAstanaDays(new Date(), 5));
+}
+
+function createMeetingDeduplicationKey() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return `meeting-${crypto.randomUUID()}`;
+  }
+
+  return `meeting-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 function getMeetingLocation(address: string, detail: string) {

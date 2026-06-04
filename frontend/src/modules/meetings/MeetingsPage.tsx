@@ -307,8 +307,10 @@ function MeetingsListTemplate({
                 </p>
 
                 <ul className="space-y-1 text-sm text-slate-600">
-                  {(meeting.agenda ?? []).slice(0, 3).map((item: string) => (
-                    <li key={item}>• {item}</li>
+                  {(meeting.agenda ?? []).slice(0, 3).map((item: string, index: number) => (
+                    <li key={`${meeting.id}-agenda-${index}`}>
+                      • {item}
+                    </li>
                   ))}
                 </ul>
 
