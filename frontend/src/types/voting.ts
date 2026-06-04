@@ -219,6 +219,8 @@ export type VotingSummaryListItem = {
   quorum_missing_votes: number;
   accepted_questions: number;
   total_questions: number;
+  signed_owners_count?: number;
+  pdf_formed_owners_count?: number;
   risk_level: VotingSummaryRisk;
   risk_reasons: string[];
   warnings: string[];

@@ -886,9 +886,17 @@ func votingParticipationByProperty(owners []model.VotingOwnerSummary) (map[strin
 
 func buildSummaryListItem(voting model.Voting, owners []model.VotingOwnerSummary, totalPropertyVotes, votedPropertyVotes, acceptedQuestions, totalQuestions int, warnings []string) model.VotingSummaryListItem {
 	votedOwners := 0
+	signedOwners := 0
+	pdfFormedOwners := 0
 	for _, owner := range owners {
 		if owner.Status == "voted" {
 			votedOwners++
+			if owner.Signature.Status == "signed" {
+				signedOwners++
+			}
+			if owner.PDFStatus == "formed" {
+				pdfFormedOwners++
+			}
 		}
 	}
 	quorum := quorumRequired(totalPropertyVotes)
@@ -924,6 +932,8 @@ func buildSummaryListItem(voting model.Voting, owners []model.VotingOwnerSummary
 		QuorumMissingVotes:    missing,
 		AcceptedQuestions:     acceptedQuestions,
 		TotalQuestions:        totalQuestions,
+		SignedOwnersCount:     signedOwners,
+		PDFFormedOwnersCount:  pdfFormedOwners,
 		RiskLevel:             riskLevel,
 		RiskReasons:           riskReasons,
 		Warnings:              warnings,

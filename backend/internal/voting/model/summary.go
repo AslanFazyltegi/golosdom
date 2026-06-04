@@ -64,6 +64,8 @@ type VotingSummaryListItem struct {
 	QuorumMissingVotes    int        `json:"quorum_missing_votes"`
 	AcceptedQuestions     int        `json:"accepted_questions"`
 	TotalQuestions        int        `json:"total_questions"`
+	SignedOwnersCount     int        `json:"signed_owners_count"`
+	PDFFormedOwnersCount  int        `json:"pdf_formed_owners_count"`
 	RiskLevel             string     `json:"risk_level"`
 	RiskReasons           []string   `json:"risk_reasons"`
 	Warnings              []string   `json:"warnings"`
