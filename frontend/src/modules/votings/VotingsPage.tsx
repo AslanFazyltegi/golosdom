@@ -24,8 +24,8 @@ import type {
 import type { PropertyObject } from "@/types/objects";
 
 type VotingMode = "active" | "completed";
-type VotingViewerRole = "OWNER" | "CHAIRMAN";
-type VotingFilter = "all" | VotingCategory;
+export type VotingViewerRole = "OWNER" | "CHAIRMAN";
+export type VotingFilter = "all" | VotingCategory;
 type StatusBadgeColor = "blue" | "emerald" | "slate" | "amber";
 type WizardStep = "answers" | "review";
 
@@ -402,7 +402,7 @@ function VotingToolbar({
   );
 }
 
-function filterVotingsForDisplay(
+export function filterVotingsForDisplay(
   votings: Voting[],
   objects: unknown,
   activeRole: VotingViewerRole,

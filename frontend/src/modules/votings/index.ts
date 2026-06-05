@@ -1,1 +1,5 @@
-export { PastVotingsPage, VotingsPage } from "./VotingsPage";
+export {
+  filterVotingsForDisplay,
+  PastVotingsPage,
+  VotingsPage,
+} from "./VotingsPage";

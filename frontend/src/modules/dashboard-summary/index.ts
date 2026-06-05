@@ -1,1 +1,1 @@
-export { DashboardSummaryPage, VotingList } from "./DashboardSummaryPage";
+export { DashboardSummaryPage } from "./DashboardSummaryPage";
