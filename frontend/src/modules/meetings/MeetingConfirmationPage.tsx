@@ -172,9 +172,21 @@ export function MeetingConfirmationPage({
                 <p style={{ fontWeight: 700, marginBottom: "8px" }}>
                   5. Повестка дня:
                 </p>
-                <ol style={{ marginTop: 0, paddingLeft: "24px" }}>
+                <ol
+                  style={{
+                    margin: "0 0 0 24px",
+                    paddingLeft: "20px",
+                    listStyleType: "decimal",
+                    listStylePosition: "outside",
+                  }}
+                >
                   {preparedData.agenda.map((item, index) => (
-                    <li key={`${item}-${index}`}>{item}</li>
+                    <li
+                      key={`${item}-${index}`}
+                      style={{ display: "list-item", marginBottom: "6px" }}
+                    >
+                      {item}
+                    </li>
                   ))}
                 </ol>
               </div>

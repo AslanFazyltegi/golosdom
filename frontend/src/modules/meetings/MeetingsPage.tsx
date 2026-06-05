@@ -413,8 +413,13 @@ function buildMeetingPrintDocumentHtml(meeting: any) {
 
       <div class="point">
         <p class="point-title">5. Повестка дня:</p>
-        <ol>
-          ${agenda.map((item: string) => `<li>${escapeHtml(item)}</li>`).join("")}
+        <ol class="agenda-list">
+          ${agenda
+            .map(
+              (item: string) =>
+                `<li class="agenda-list-item">${escapeHtml(item)}</li>`,
+            )
+            .join("")}
         </ol>
       </div>
 
@@ -510,12 +515,15 @@ function getPrintStyles() {
       font-weight: 700;
     }
 
-    ol {
-      margin: 0;
-      padding-left: 24px;
+    #meeting-print-document .agenda-list {
+      margin: 0 0 0 24px;
+      padding-left: 20px;
+      list-style-type: decimal;
+      list-style-position: outside;
     }
 
-    li {
+    #meeting-print-document .agenda-list-item {
+      display: list-item;
       margin-bottom: 6px;
     }
 
