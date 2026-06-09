@@ -10,6 +10,7 @@ import {
 } from "@/lib/objects";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
 import { Placeholder } from "@/shared/ui/Placeholder";
+import { AppButton, AppPageHeader } from "@/shared/ui/design-system";
 import type {
   MyPropertiesResponse,
   MyProperty,
@@ -368,20 +369,17 @@ export function MyBuildingPage({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-1 pb-10 text-slate-900 md:px-3">
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-normal">Мой МЖК</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Информация по дому, имуществу и собственникам
-          </p>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+    <div className="space-y-5 pb-10 text-[var(--gd-text)]">
+      <AppPageHeader
+        title="Мой МЖК"
+        description="Информация по дому, имуществу и собственникам"
+        actions={
+          <>
           {isChairmanRole && (
             <button
               type="button"
               onClick={openCorrectionRequests}
-              className="relative inline-flex items-center justify-center rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-60"
+              className="gd-button gd-button-primary relative"
               disabled={correctionRequestsLoading}
             >
               Запросы на корректировку
@@ -392,32 +390,33 @@ export function MyBuildingPage({
               )}
             </button>
           )}
-          <button
+          <AppButton
             type="button"
             onClick={() => refreshData("Данные обновлены")}
-            className="inline-flex items-center justify-center rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:opacity-60"
+            variant="primary"
             disabled={loading}
           >
             {loading ? "Загрузка..." : "Обновить данные"}
-          </button>
-        </div>
-      </div>
+          </AppButton>
+          </>
+        }
+      />
 
       {error && (
-        <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <div className="gd-alert gd-alert-danger mb-4">
           {error}
         </div>
       )}
       {toast && (
-        <div className="fixed right-6 top-6 z-50 rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm font-medium text-emerald-700 shadow-lg">
+        <div className="gd-alert gd-alert-success fixed right-6 top-6 z-50 bg-[var(--gd-surface)] shadow-lg">
           {toast}
         </div>
       )}
 
       <HeroCard building={building} stats={stats} />
 
-      <div className="mt-6 border-b border-slate-200">
-        <nav className="flex gap-1 overflow-x-auto">
+      <div className="gd-tabs mt-6 overflow-x-auto">
+        <nav className="flex gap-2">
           {[
             ["overview", "Обзор"],
             ["building", "Данные МЖК"],
@@ -428,11 +427,7 @@ export function MyBuildingPage({
               key={key}
               type="button"
               onClick={() => setActiveTab(key as Tab)}
-              className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition ${
-                activeTab === key
-                  ? "border-sky-500 text-sky-700"
-                  : "border-transparent text-slate-500 hover:text-slate-900"
-              }`}
+              className={`gd-tab whitespace-nowrap ${activeTab === key ? "gd-tab-active" : ""}`}
             >
               {label}
             </button>
@@ -441,13 +436,13 @@ export function MyBuildingPage({
       </div>
 
       {loading && !dashboard ? (
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 text-slate-500 shadow-sm">
+        <section className="gd-empty-state mt-6">
           Загрузка...
         </section>
       ) : null}
 
       {!loading && !dashboard && !error ? (
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 text-slate-500 shadow-sm">
+        <section className="gd-empty-state mt-6">
           Нет данных
         </section>
       ) : null}
@@ -478,8 +473,8 @@ export function MyBuildingPage({
 
       {dashboard && activeTab === "properties" && (
         <>
-          <section className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-100 p-4">
+          <section className="gd-card mt-6 p-0">
+            <div className="border-b border-[var(--gd-border)] p-4">
               <input
                 value={propertyQuery}
                 onChange={(event) => {
@@ -487,7 +482,7 @@ export function MyBuildingPage({
                   setPage(1);
                 }}
                 placeholder="Поиск по номеру, типу, собственнику, телефону, лицевому счету..."
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-sky-300 focus:bg-white focus:ring-4 focus:ring-sky-100"
+                className="gd-input"
               />
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
                 <Select label="Тип имущества" value={typeFilter} onChange={(value) => {
@@ -544,7 +539,7 @@ export function MyBuildingPage({
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="gd-responsive-table rounded-none border-0 shadow-none">
               <table className="min-w-[1100px] w-full border-collapse text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                   <tr>
@@ -754,9 +749,9 @@ function OwnerObjectsView({
 
   if (error || !data) {
     return (
-      <section className="rounded-3xl border border-red-100 bg-white p-8 text-slate-700 shadow-sm">
-        <h1 className="text-3xl font-bold text-slate-900">Мои объекты</h1>
-        <p className="mt-4 text-red-600">Не удалось загрузить объекты. Попробуйте обновить страницу.</p>
+      <section className="gd-card">
+        <h1 className="gd-page-title">Мои объекты</h1>
+        <p className="mt-4 text-[var(--gd-danger)]">Не удалось загрузить объекты. Попробуйте обновить страницу.</p>
       </section>
     );
   }
@@ -764,16 +759,14 @@ function OwnerObjectsView({
   const ownerObjects = data.properties;
 
   return (
-    <div className="space-y-7 bg-slate-50 pb-8 text-slate-900">
-      <div>
-        <h1 className="text-3xl font-bold">Мои объекты</h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-500">
-          Здесь отображаются все объекты недвижимости, которыми вы владеете в данном ЖК.
-        </p>
-      </div>
+    <div className="space-y-7 pb-8 text-[var(--gd-text)]">
+      <AppPageHeader
+        title="Мои объекты"
+        description="Здесь отображаются все объекты недвижимости, которыми вы владеете в данном ЖК."
+      />
 
       {toast && (
-        <div className="rounded-2xl border border-sky-100 bg-sky-50 px-5 py-3 text-sm font-semibold text-sky-800">
+        <div className="gd-alert gd-alert-success">
           {toast}
         </div>
       )}
@@ -786,9 +779,9 @@ function OwnerObjectsView({
       </div>
 
       {ownerObjects.length === 0 ? (
-        <section className="rounded-3xl border border-slate-100 bg-white p-8 shadow-sm">
-          <h2 className="text-xl font-bold">У вас пока нет привязанных объектов недвижимости.</h2>
-          <p className="mt-3 text-slate-500">
+        <section className="gd-empty-state">
+          <h2 className="text-xl font-bold text-[var(--gd-text-strong)]">У вас пока нет привязанных объектов недвижимости.</h2>
+          <p className="mt-3 text-[var(--gd-muted)]">
             Если вы считаете, что это ошибка, обратитесь к председателю ОСИ.
           </p>
         </section>
@@ -806,9 +799,9 @@ function OwnerObjectsView({
         </div>
       )}
 
-      <section className="flex flex-col gap-4 rounded-3xl border border-sky-100 bg-white p-6 shadow-sm md:flex-row md:items-center md:justify-between">
-        <div className="flex max-w-4xl gap-4 text-sm leading-6 text-slate-600">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-lg font-bold text-sky-700">
+      <section className="gd-card flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="flex max-w-4xl gap-4 text-sm leading-6 text-[var(--gd-muted-strong)]">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--gd-radius-md)] bg-[var(--gd-primary-soft)] text-lg font-bold text-[var(--gd-primary-strong)]">
             i
           </div>
           <div>
@@ -816,13 +809,13 @@ function OwnerObjectsView({
             <p>Если данные плательщика устарели, отправьте заявку на переоформление.</p>
           </div>
         </div>
-        <button
+        <AppButton
           type="button"
           onClick={() => setInfoOpen(true)}
-          className="w-full rounded-2xl border border-sky-200 px-5 py-3 text-sm font-bold text-sky-700 hover:bg-sky-50 md:w-auto"
+          className="w-full md:w-auto"
         >
           Как это работает?
-        </button>
+        </AppButton>
       </section>
 
       {detailsProperty && (
@@ -916,9 +909,9 @@ function OwnerObjectsView({
 
 function OwnerSummaryCard({ label, value }: { label: string; value: number }) {
   return (
-    <section className="flex min-h-32 flex-col justify-between rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
-      <p className="text-sm font-semibold text-slate-500">{label}</p>
-      <p className="mt-3 text-4xl font-bold text-slate-900">{value}</p>
+    <section className="gd-card flex min-h-32 flex-col justify-between">
+      <p className="text-sm font-semibold text-[var(--gd-muted)]">{label}</p>
+      <p className="mt-3 text-4xl font-bold text-[var(--gd-text-strong)]">{value}</p>
     </section>
   );
 }
@@ -935,21 +928,21 @@ function OwnerPropertyCard({
   onVotings: () => void;
 }) {
   return (
-    <section className="grid items-stretch gap-5 overflow-hidden rounded-3xl border border-slate-100 bg-white p-4 shadow-sm md:grid-cols-[180px_minmax(0,1fr)] xl:grid-cols-[180px_minmax(360px,1fr)_280px_180px]">
+    <section className="gd-card grid items-stretch gap-5 overflow-hidden md:grid-cols-[180px_minmax(0,1fr)] xl:grid-cols-[180px_minmax(360px,1fr)_280px_180px]">
       <PropertyPreview property={property} />
 
       <div className="flex min-w-0 flex-col p-1">
         <div className="flex flex-wrap items-center gap-3">
-          <h2 className="min-w-0 text-2xl font-bold text-slate-900">{property.title}</h2>
+          <h2 className="min-w-0 text-2xl font-bold text-[var(--gd-text-strong)]">{property.title}</h2>
           <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${propertyBadgeClass(property.status)}`}>
             {property.statusLabel}
           </span>
         </div>
-        <p className="mt-2 max-w-4xl text-sm font-semibold leading-6 text-slate-600">
+        <p className="mt-2 max-w-4xl text-sm font-semibold leading-6 text-[var(--gd-muted-strong)]">
           {property.building.fullAddress}
         </p>
 
-        <div className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-3 text-sm text-[var(--gd-muted-strong)] sm:grid-cols-2 xl:grid-cols-4">
           <InfoPill label="Площадь" value={property.area === null ? "-" : `${formatArea(property.area)} м²`} />
           <InfoPill label="Этаж" value={formatValue(property.floor)} />
           <InfoPill label="Подъезд" value={formatValue(property.entrance)} />
@@ -959,7 +952,7 @@ function OwnerPropertyCard({
         <VotingParticipation property={property} />
       </div>
 
-      <aside className="min-w-0 rounded-3xl border border-slate-100 bg-slate-50 p-5 md:col-span-2 xl:col-span-1">
+      <aside className="gd-muted-panel min-w-0 p-5 md:col-span-2 xl:col-span-1">
         <p className="text-xs font-bold uppercase text-slate-400">Лицевой счёт ЕРЦ</p>
         <p className="mt-2 break-words text-xl font-bold text-slate-900">{property.ercAccount || "Не указан"}</p>
 
@@ -987,21 +980,21 @@ function OwnerPropertyCard({
         <button
           type="button"
           onClick={onDetails}
-          className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-center text-sm font-bold text-slate-700 hover:bg-slate-50"
+          className="gd-button w-full"
         >
           Подробнее
         </button>
         <button
           type="button"
           onClick={onRequest}
-          className="w-full rounded-2xl border border-sky-200 px-4 py-3 text-center text-sm font-bold text-sky-700 hover:bg-sky-50"
+          className="gd-button w-full"
         >
           Запросить изменение
         </button>
         <button
           type="button"
           onClick={onVotings}
-          className="w-full rounded-2xl bg-sky-600 px-4 py-3 text-center text-sm font-bold text-white hover:bg-sky-700"
+          className="gd-button gd-button-primary w-full"
         >
           Активные голосования
         </button>
@@ -1081,20 +1074,22 @@ function OwnerModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4">
-      <section className="max-h-[90vh] w-full max-w-2xl overflow-auto rounded-3xl bg-white p-6 shadow-2xl">
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <h2 className="text-2xl font-bold text-slate-900">{title}</h2>
+    <div className="gd-modal-overlay">
+      <section className="gd-modal-panel max-w-2xl">
+        <div className="gd-modal-header">
+          <h2 className="text-2xl font-bold text-[var(--gd-text-strong)]">{title}</h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Закрыть"
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-xl text-slate-500 hover:bg-slate-50"
+            className="gd-button"
           >
-            ×
+            Закрыть
           </button>
         </div>
+        <div className="gd-modal-body">
         {children}
+        </div>
       </section>
     </div>
   );
@@ -1102,7 +1097,7 @@ function OwnerModal({
 
 function HeroCard({ building, stats }: { building: Building | null; stats: Statistics }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="gd-card">
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
         <div className="flex flex-col gap-4 md:flex-row">
           <div className="flex h-36 w-full items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-sky-100 to-slate-100 text-5xl text-sky-600 md:w-52">
@@ -1227,11 +1222,11 @@ function BuildingTab({
   ];
 
   return (
-    <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="gd-card mt-6">
       <div className="mb-5 flex items-center justify-between">
         <h2 className="text-lg font-bold">Данные МЖК</h2>
         {canEdit && !editing && (
-          <button type="button" onClick={onEdit} className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700">
+          <button type="button" onClick={onEdit} className="gd-button gd-button-primary">
             Редактировать
           </button>
         )}
@@ -1250,17 +1245,17 @@ function BuildingTab({
                   [key]: type === "number" ? numberOrNull(event.target.value) : event.target.value,
                 })
               }
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none transition disabled:text-slate-600 focus:border-sky-300 focus:bg-white focus:ring-4 focus:ring-sky-100"
+              className="gd-input mt-1 disabled:text-[var(--gd-muted)]"
             />
           </label>
         ))}
       </div>
       {editing && (
         <div className="mt-5 flex justify-end gap-3">
-          <button type="button" onClick={onCancel} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          <button type="button" onClick={onCancel} className="gd-button">
             Отмена
           </button>
-          <button type="button" onClick={onSave} disabled={saving} className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-60">
+          <button type="button" onClick={onSave} disabled={saving} className="gd-button gd-button-primary">
             {saving ? "Сохранение..." : "Сохранить"}
           </button>
         </div>
@@ -1279,16 +1274,16 @@ function OwnersTab({
   setQuery: (value: string) => void;
 }) {
   return (
-    <section className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="border-b border-slate-100 p-4">
+    <section className="gd-card mt-6 p-0">
+      <div className="border-b border-[var(--gd-border)] p-4">
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Поиск по ФИО, email, телефону, номеру имущества..."
-          className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-sky-300 focus:bg-white focus:ring-4 focus:ring-sky-100"
+          className="gd-input"
         />
       </div>
-      <div className="overflow-x-auto">
+      <div className="gd-responsive-table rounded-none border-0 shadow-none">
         <table className="min-w-[900px] w-full border-collapse text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500">
             <tr>
@@ -1347,12 +1342,12 @@ function CorrectionRequestsModal({
       : "Нет заявок во вкладке «Обработанные»";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4">
-      <section className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded-2xl bg-white p-6 shadow-2xl">
-        <div className="mb-5 flex items-center justify-between gap-4">
+    <div className="gd-modal-overlay">
+      <section className="gd-modal-panel max-w-5xl">
+        <div className="gd-modal-header">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">Запросы на корректировку</h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <h2 className="text-xl font-bold text-[var(--gd-text-strong)]">Запросы на корректировку</h2>
+            <p className="mt-1 text-sm text-[var(--gd-muted)]">
               Заявки пользователей на изменение данных об имуществе
             </p>
           </div>
@@ -1360,14 +1355,15 @@ function CorrectionRequestsModal({
             type="button"
             onClick={onClose}
             aria-label="Закрыть"
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-xl text-slate-500 hover:bg-slate-50"
+            className="gd-button"
           >
-            ×
+            Закрыть
           </button>
         </div>
 
-        <div className="mb-5 border-b border-slate-200">
-          <nav className="flex gap-1 overflow-x-auto">
+        <div className="gd-modal-body">
+        <div className="gd-tabs mb-5 overflow-x-auto">
+          <nav className="flex gap-2">
             {[
               ["pending", "Ожидают обработки"],
               ["processed", "Обработанные"],
@@ -1376,11 +1372,7 @@ function CorrectionRequestsModal({
                 key={key}
                 type="button"
                 onClick={() => setActiveTab(key as CorrectionRequestsTab)}
-                className={`whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition ${
-                  activeTab === key
-                    ? "border-sky-500 text-sky-700"
-                    : "border-transparent text-slate-500 hover:text-slate-900"
-                }`}
+                className={`gd-tab whitespace-nowrap ${activeTab === key ? "gd-tab-active" : ""}`}
               >
                 {label}
               </button>
@@ -1480,6 +1472,7 @@ function CorrectionRequestsModal({
             })}
           </div>
         )}
+        </div>
       </section>
     </div>
   );
@@ -1502,9 +1495,9 @@ function PropertyDrawer({
 }) {
   return (
     <div className="fixed inset-0 z-40 bg-slate-950/30">
-      <aside className="ml-auto flex h-full w-full max-w-xl flex-col bg-white shadow-2xl">
-        <div className="border-b border-slate-200 px-6 py-5">
-          <h2 className="text-xl font-bold">Редактирование имущества</h2>
+      <aside className="ml-auto flex h-full w-full max-w-xl flex-col border-l border-[var(--gd-border)] bg-[var(--gd-surface)] shadow-2xl">
+        <div className="border-b border-[var(--gd-border)] px-6 py-5">
+          <h2 className="text-xl font-bold text-[var(--gd-text-strong)]">Редактирование имущества</h2>
         </div>
         <div className="flex-1 space-y-4 overflow-y-auto p-6">
           <Select label="Тип имущества" value={property.type || ""} onChange={(value) => setProperty({ ...property, type: value })}>
@@ -1523,7 +1516,7 @@ function PropertyDrawer({
             <select
               value={property.user_id || ""}
               onChange={(event) => setProperty({ ...property, user_id: event.target.value })}
-              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+              className="gd-input mt-1"
             >
               <option value="">Без собственника</option>
               {users.map((user) => (
@@ -1534,11 +1527,11 @@ function PropertyDrawer({
             </select>
           </label>
         </div>
-        <div className="flex justify-end gap-3 border-t border-slate-200 p-5">
-          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+        <div className="flex justify-end gap-3 border-t border-[var(--gd-border)] p-5">
+          <button type="button" onClick={onClose} className="gd-button">
             Отмена
           </button>
-          <button type="button" onClick={onSave} disabled={saving} className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-60">
+          <button type="button" onClick={onSave} disabled={saving} className="gd-button gd-button-primary">
             {saving ? "Сохранение..." : "Сохранить"}
           </button>
         </div>
@@ -1616,7 +1609,7 @@ function DistributionList({ items, total }: { items: TypeDistribution[]; total: 
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="gd-card">
       <h2 className="mb-4 text-lg font-bold">{title}</h2>
       {children}
     </section>
@@ -1627,7 +1620,7 @@ function InfoGrid({ items }: { items: Array<[string, unknown]> }) {
   return (
     <div className="grid gap-3">
       {items.map(([label, value]) => (
-        <div key={label} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2">
+        <div key={label} className="gd-muted-panel flex items-center justify-between gap-3 px-3 py-2">
           <span className="text-sm text-slate-500">{label}</span>
           <span className="text-right text-sm font-semibold text-slate-900">{formatValue(value)}</span>
         </div>
@@ -1638,7 +1631,7 @@ function InfoGrid({ items }: { items: Array<[string, unknown]> }) {
 
 function StatCard({ label, value }: { label: string; value: unknown }) {
   return (
-    <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 transition hover:border-sky-200 hover:bg-sky-50">
+    <div className="gd-muted-panel p-3 transition hover:border-[var(--gd-primary)] hover:bg-[var(--gd-primary-soft)]">
       <p className="text-xs font-medium text-slate-500">{label}</p>
       <p className="mt-1 text-2xl font-bold text-slate-900">{formatValue(value)}</p>
     </div>
@@ -1662,7 +1655,7 @@ function Select({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+        className="gd-input mt-1"
       >
         {children}
       </select>
@@ -1688,7 +1681,7 @@ function DrawerInput({
         type={type}
         value={formatInputValue(value)}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+        className="gd-input mt-1"
       />
     </label>
   );

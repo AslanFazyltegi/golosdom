@@ -3,6 +3,10 @@
 import { FormEvent, useState } from "react";
 import { roleLabel } from "@/shared/lib/cabinetLabels";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
+import {
+  AppButton,
+  AppPageHeader,
+} from "@/shared/ui/design-system";
 import type { ProfileBuilding, UpdateProfilePayload } from "@/types/profile";
 
 type FormState = UpdateProfilePayload;
@@ -50,38 +54,35 @@ export function ProfilePage({
   }
 
   return (
-    <>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-950">Профиль</h1>
-        <p className="mt-2 text-slate-500">Кабинет пользователя</p>
-      </div>
+    <main className="gd-profile-page min-h-full">
+      <AppPageHeader title="Профиль" description="Кабинет пользователя" />
 
       {profileError && (
-        <section className="mb-6 rounded-2xl border border-red-100 bg-red-50 p-5 text-red-700 shadow-sm">
+        <section className="gd-alert gd-alert-danger mb-6">
           {profileError}
         </section>
       )}
       {success && (
-        <section className="mb-6 rounded-2xl border border-emerald-100 bg-emerald-50 p-5 text-emerald-800 shadow-sm">
+        <section className="gd-alert gd-alert-success mb-6">
           {success}
         </section>
       )}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <section className="rounded-2xl border bg-white p-6 shadow-sm md:p-8">
+        <section className="gd-card md:p-8">
           <div className="mb-6 flex items-start justify-between gap-4">
             <div className="flex items-start gap-4">
               <Avatar name={fullName} photo={photo} size="large" />
               <div>
-                <h2 className="text-xl font-semibold text-slate-950">
+                <h2 className="text-xl font-semibold text-[var(--gd-text-strong)]">
                   Личные данные
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
+                <p className="mt-1 text-sm text-[var(--gd-muted)]">
                   Данные учетной записи из БД
                 </p>
               </div>
             </div>
-            <button
+            <AppButton
               onClick={() => {
                 setForm(
                   buildFormState(
@@ -94,45 +95,44 @@ export function ProfilePage({
                 setSuccess("");
                 setEditing(true);
               }}
-              className="rounded-xl border px-4 py-2 text-sm hover:bg-slate-50"
             >
               Редактировать
-            </button>
+            </AppButton>
           </div>
 
           <div className="space-y-4">
             <div>
-              <p className="text-sm text-slate-500">ФИО</p>
-              <p className="mt-1 text-lg font-semibold text-slate-950">
+              <p className="text-sm text-[var(--gd-muted)]">ФИО</p>
+              <p className="mt-1 text-lg font-semibold text-[var(--gd-text-strong)]">
                 {fullName}
               </p>
             </div>
             <InfoLine label="Email" value={email} />
             <InfoLine label="Телефон" value={phone} />
-            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
-              <p className="text-sm text-blue-700">Активная роль</p>
-              <p className="mt-1 font-semibold text-blue-900">
+            <div className="gd-muted-panel p-4">
+              <p className="text-sm text-[var(--gd-primary-strong)]">Активная роль</p>
+              <p className="mt-1 font-semibold text-[var(--gd-text-strong)]">
                 {roleLabel(activeRole)}
               </p>
             </div>
           </div>
         </section>
 
-        <section className="rounded-2xl border bg-white p-6 shadow-sm md:p-8">
+        <section className="gd-card md:p-8">
           <div className="mb-6 flex items-start gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-xl">
+            <div className="flex h-12 w-12 items-center justify-center rounded-[var(--gd-radius-md)] bg-[var(--gd-success-soft)] text-xl text-[var(--gd-success)]">
               🛡
             </div>
             <div>
-              <h2 className="text-xl font-semibold text-slate-950">Мои роли</h2>
-              <p className="mt-1 text-sm text-slate-500">
+              <h2 className="text-xl font-semibold text-[var(--gd-text-strong)]">Мои роли</h2>
+              <p className="mt-1 text-sm text-[var(--gd-muted)]">
                 Доступные роли пользователя
               </p>
             </div>
           </div>
 
           {roles.length === 0 ? (
-            <p className="rounded-2xl bg-slate-50 p-4 text-slate-600">
+            <p className="gd-muted-panel p-4">
               Роли пользователя пока не указаны.
             </p>
           ) : (
@@ -143,28 +143,25 @@ export function ProfilePage({
                 return (
                   <div
                     key={role}
-                    className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${
-                      isActive ? "border-blue-200 bg-blue-50" : "bg-white"
+                    className={`flex items-center justify-between gap-3 rounded-[var(--gd-radius-md)] border px-4 py-3 ${
+                      isActive ? "border-[var(--gd-primary)] bg-[var(--gd-primary-soft)]" : "border-[var(--gd-border)] bg-[var(--gd-surface)]"
                     }`}
                   >
                     <div>
-                      <p className="font-medium text-slate-950">
+                      <p className="font-medium text-[var(--gd-text-strong)]">
                         {roleLabel(role)}
                       </p>
                       {isActive && (
-                        <p className="mt-1 text-sm text-blue-700">
-                          ✓ Активная роль
-                        </p>
+                        <p className="mt-1 text-sm text-[var(--gd-primary-strong)]">Активная роль</p>
                       )}
                     </div>
 
                     {!isActive && (
-                      <button
+                      <AppButton
                         onClick={() => switchRole(role)}
-                        className="rounded-xl border px-3 py-2 text-sm hover:bg-slate-50"
                       >
                         Выбрать
-                      </button>
+                      </AppButton>
                     )}
                   </div>
                 );
@@ -174,18 +171,18 @@ export function ProfilePage({
         </section>
       </div>
 
-      <section className="mt-6 rounded-2xl border bg-white p-6 shadow-sm md:p-8">
-        <h2 className="text-xl font-semibold text-slate-950">Мой дом / ОСИ</h2>
-        <p className="mt-1 text-sm text-slate-500">
+      <section className="gd-card mt-6 md:p-8">
+        <h2 className="text-xl font-semibold text-[var(--gd-text-strong)]">Мой дом / ОСИ</h2>
+        <p className="mt-1 text-sm text-[var(--gd-muted)]">
           Краткая информация по дому и обслуживающему ОСИ
         </p>
 
         {!profile ? (
-          <p className="mt-6 rounded-2xl bg-slate-50 p-5 text-slate-600">
+          <p className="gd-muted-panel mt-6 p-5">
             Загрузка данных ОСИ...
           </p>
         ) : profile.osi.length === 0 ? (
-          <div className="mt-6 rounded-2xl bg-slate-50 p-5 text-slate-600">
+          <div className="gd-muted-panel mt-6 p-5">
             <p>Данные ОСИ пока не указаны.</p>
             <p className="mt-2">
               У пользователя пока нет привязки к дому или ОСИ.
@@ -198,20 +195,20 @@ export function ProfilePage({
         ) : (
           <div className="mt-6 grid grid-cols-1 gap-4">
             {profile.osi.map((osi) => (
-              <article key={osi.id} className="rounded-2xl border p-5">
+              <article key={osi.id} className="rounded-[var(--gd-radius-md)] border border-[var(--gd-border)] bg-[var(--gd-surface)] p-5">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
-                    <h3 className="text-lg font-semibold text-slate-950">
+                    <h3 className="text-lg font-semibold text-[var(--gd-text-strong)]">
                       {osi.name}
                     </h3>
-                    <p className="mt-2 text-sm text-slate-600">
+                    <p className="mt-2 text-sm text-[var(--gd-muted-strong)]">
                       БИН: {osi.bin || "не указан"}
                     </p>
-                    <p className="mt-1 text-sm text-slate-600">
+                    <p className="mt-1 text-sm text-[var(--gd-muted-strong)]">
                       Адрес: {osi.address || "не указан"}
                     </p>
                   </div>
-                  <div className="rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-900 lg:min-w-72">
+                  <div className="gd-alert gd-alert-success text-sm lg:min-w-72">
                     <p>
                       Председатель:{" "}
                       {osi.chairman?.full_name?.trim() || "не указан"}
@@ -223,15 +220,15 @@ export function ProfilePage({
                 </div>
 
                 <div className="mt-5">
-                  <p className="mb-3 text-sm font-medium text-slate-700">
+                  <p className="mb-3 text-sm font-medium text-[var(--gd-text-strong)]">
                     Управляемые дома:
                   </p>
                   {osi.buildings.length === 0 ? (
-                    <p className="text-sm text-slate-500">
+                    <p className="text-sm text-[var(--gd-muted)]">
                       Дома для этого ОСИ пока не указаны.
                     </p>
                   ) : (
-                    <ul className="space-y-2 text-sm text-slate-600">
+                    <ul className="space-y-2 text-sm text-[var(--gd-muted-strong)]">
                       {osi.buildings.map((building) => (
                         <li key={building.id}>{formatBuilding(building)}</li>
                       ))}
@@ -245,21 +242,23 @@ export function ProfilePage({
       </section>
 
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 p-4">
+        <div className="gd-modal-overlay">
           <form
             onSubmit={submitProfile}
-            className="w-full max-w-2xl rounded-2xl border bg-white p-6 shadow-lg"
+            className="gd-modal-panel max-w-2xl"
           >
-            <div className="mb-6">
-              <h2 className="text-xl font-semibold text-slate-950">
+            <div className="gd-modal-header">
+              <div>
+              <h2 className="text-xl font-semibold text-[var(--gd-text-strong)]">
                 Редактировать личные данные
               </h2>
-              <p className="mt-1 text-sm text-slate-500">
+              <p className="mt-1 text-sm text-[var(--gd-muted)]">
                 Email показывается только для просмотра.
               </p>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
+            <div className="gd-modal-body grid grid-cols-1 gap-4">
               <TextInput
                 label="ФИО"
                 value={form.full_name}
@@ -277,45 +276,44 @@ export function ProfilePage({
                 placeholder="URL или путь к фото"
                 onChange={(value) => setForm((current) => ({ ...current, photo: value }))}
               />
-            </div>
 
             {saveError && (
-              <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">
+              <p className="gd-alert gd-alert-danger">
                 {saveError}
               </p>
             )}
+            </div>
 
-            <div className="mt-6 flex justify-end gap-3">
-              <button
+            <div className="gd-modal-footer">
+              <AppButton
                 type="button"
                 onClick={() => {
                   setEditing(false);
                   setSaveError("");
                 }}
-                className="rounded-xl border px-4 py-2 hover:bg-slate-50"
               >
                 Отмена
-              </button>
-              <button
+              </AppButton>
+              <AppButton
                 type="submit"
                 disabled={saving}
-                className="rounded-xl bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                variant="primary"
               >
                 {saving ? "Сохранение..." : "Сохранить"}
-              </button>
+              </AppButton>
             </div>
           </form>
         </div>
       )}
-    </>
+    </main>
   );
 }
 
 function InfoLine({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-1 font-medium text-slate-900">{value}</p>
+      <p className="text-sm text-[var(--gd-muted)]">{label}</p>
+      <p className="mt-1 font-medium text-[var(--gd-text-strong)]">{value}</p>
     </div>
   );
 }
@@ -333,12 +331,12 @@ function TextInput({
 }) {
   return (
     <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <span className="gd-label">{label}</span>
       <input
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-2 w-full rounded-xl border px-4 py-3 outline-none focus:border-blue-400"
+        className="gd-input mt-2"
       />
     </label>
   );
@@ -347,13 +345,13 @@ function TextInput({
 function ReadOnlyInput({ label, value }: { label: string; value: string }) {
   return (
     <label className="block">
-      <span className="text-sm font-medium text-slate-700">{label}</span>
+      <span className="gd-label">{label}</span>
       <input
         value={value}
         readOnly
-        className="mt-2 w-full rounded-xl border bg-slate-50 px-4 py-3 text-slate-500 outline-none"
+        className="gd-input mt-2 bg-[var(--gd-surface-muted)] text-[var(--gd-muted)]"
       />
-      <span className="mt-1 block text-xs text-slate-500">нельзя изменить</span>
+      <span className="gd-hint">нельзя изменить</span>
     </label>
   );
 }
@@ -378,7 +376,7 @@ function Avatar({
   }
 
   return (
-    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-lg font-semibold text-blue-700">
+    <div className="flex h-16 w-16 items-center justify-center rounded-[var(--gd-radius-md)] bg-[var(--gd-primary-soft)] text-lg font-semibold text-[var(--gd-primary-strong)]">
       {getInitials(name)}
     </div>
   );

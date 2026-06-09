@@ -145,7 +145,7 @@ function ChairmanPosts({
   }
 
   return (
-    <>
+    <main className="gd-infocenter-page min-h-full">
       <Header title={title} text="Управление публикациями для собственников." />
       <FilterBar
         items={chairmanFilters}
@@ -190,7 +190,7 @@ function ChairmanPosts({
           }}
         />
       </div>
-    </>
+    </main>
   );
 }
 
@@ -235,7 +235,7 @@ function OwnerPosts({
   }
 
   return (
-    <>
+    <main className="gd-infocenter-page min-h-full">
       <Header title={title} text="Материалы, опубликованные для вашего объекта." />
       <FilterBar
         items={ownerFilters}
@@ -252,7 +252,7 @@ function OwnerPosts({
         </section>
         {selected ? <PostDetails post={selected} /> : <EmptyState text="Откройте материал из списка." />}
       </div>
-    </>
+    </main>
   );
 }
 
@@ -264,6 +264,7 @@ function ChairmanNotifications({ owners, activeRole }: CabinetModuleProps) {
   const [audience, setAudience] = useState("all");
   const [sort, setSort] = useState("newest");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [drawer, setDrawer] = useState<{ mode: "create" | "edit"; item?: CommunicationNotification } | null>(null);
   const [details, setDetails] = useState<CommunicationNotification | null>(null);
@@ -311,18 +312,18 @@ function ChairmanNotifications({ owners, activeRole }: CabinetModuleProps) {
   }, [activeRole, audience, category, search, sort, tab]);
 
   return (
-    <main className="min-h-full text-slate-900">
-      <div className="mx-auto max-w-7xl">
+    <main className="gd-infocenter-page min-h-full">
+      <div className="w-full">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-blue-600">Инфоцентр / Уведомления</p>
-            <h1 className="mt-1 text-4xl font-black tracking-tight">Уведомления</h1>
+            <p className="gd-page-kicker text-sm font-semibold">Инфоцентр / Уведомления</p>
+            <h1 className="gd-page-title mt-1">Уведомления</h1>
           </div>
           <div className="flex gap-2">
-            <button onClick={load} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <button onClick={load} className="gd-button">
               Обновить
             </button>
-            <button onClick={() => setDrawer({ mode: "create" })} className="inline-flex items-center justify-center rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700">
+            <button onClick={() => setDrawer({ mode: "create" })} className="gd-button gd-button-primary">
               + Создать уведомление
             </button>
           </div>
@@ -343,25 +344,25 @@ function ChairmanNotifications({ owners, activeRole }: CabinetModuleProps) {
             event.preventDefault();
             void load();
           }}
-          className="mb-5 grid gap-3 lg:grid-cols-[1fr_190px_190px_150px]"
+          className="gd-filter-panel grid gap-3 lg:grid-cols-[1fr_190px_190px_150px]"
         >
-          <input value={search} onChange={(event) => setSearch(event.target.value)} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" placeholder="Поиск по заголовку или тексту..." />
-          <select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+          <input value={search} onChange={(event) => setSearch(event.target.value)} className="gd-input" placeholder="Поиск по заголовку или тексту..." />
+          <select value={category} onChange={(event) => setCategory(event.target.value)} className="gd-input">
             <option value="all">Все категории</option>
             {notificationCategories.map((item) => <option key={item}>{item}</option>)}
           </select>
-          <select value={audience} onChange={(event) => setAudience(event.target.value)} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+          <select value={audience} onChange={(event) => setAudience(event.target.value)} className="gd-input">
             <option value="all">Все аудитории</option>
             <option value="all">Все собственники</option>
             <option value="role">ОСИ / роли</option>
             <option value="user">Отдельные пользователи</option>
             <option value="property_type">По типу объекта</option>
           </select>
-          <button className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Фильтры</button>
+          <button className="gd-button">Фильтры</button>
         </form>
 
         <div className="mb-4 flex justify-end">
-          <select value={sort} onChange={(event) => setSort(event.target.value)} className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600">
+          <select value={sort} onChange={(event) => setSort(event.target.value)} className="gd-input max-w-64 font-semibold">
             <option value="newest">Сначала новые</option>
             <option value="oldest">Сначала старые</option>
             <option value="title">По заголовку</option>
@@ -371,9 +372,10 @@ function ChairmanNotifications({ owners, activeRole }: CabinetModuleProps) {
         </div>
 
         {error && <ErrorText text={error} />}
-        {loading && <p className="mb-4 rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-600">Загрузка...</p>}
-        <section className="overflow-visible rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <div className="grid grid-cols-[1.35fr_1fr_0.8fr_1fr_0.8fr_0.8fr_0.9fr_56px] gap-3 border-b border-slate-100 bg-slate-50 px-5 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">
+        {success && <p className="gd-alert gd-alert-success mb-4">{success}</p>}
+        {loading && <p className="gd-muted-panel mb-4 px-4 py-3 text-sm">Загрузка...</p>}
+        <section className="gd-card overflow-visible p-0">
+          <div className="grid grid-cols-[1.35fr_1fr_0.8fr_1fr_0.8fr_0.8fr_0.9fr_56px] gap-3 border-b border-[var(--gd-border)] bg-[var(--gd-surface-muted)] px-5 py-3 text-xs font-bold uppercase tracking-wide text-[var(--gd-muted)]">
             <span>Заголовок</span>
             <span>Аудитория</span>
             <span>Каналы</span>
@@ -393,10 +395,21 @@ function ChairmanNotifications({ owners, activeRole }: CabinetModuleProps) {
               onDone={load}
             />
           ))}
-          {items.length === 0 && !loading && <div className="p-8 text-sm text-slate-500">Уведомления не найдены.</div>}
+          {items.length === 0 && !loading && <div className="p-8 text-sm text-[var(--gd-muted)]">Уведомления не найдены.</div>}
         </section>
       </div>
-      {drawer && <NotificationDrawer state={drawer} owners={owners} onClose={() => setDrawer(null)} onSaved={async () => { setDrawer(null); await load(); }} />}
+      {drawer && (
+        <NotificationDrawer
+          state={drawer}
+          owners={owners}
+          onClose={() => setDrawer(null)}
+          onSaved={async (message) => {
+            setDrawer(null);
+            setSuccess(message);
+            await load();
+          }}
+        />
+      )}
       {details && <NotificationDetails item={details} onClose={() => setDetails(null)} onEdit={() => { setDrawer({ mode: "edit", item: details }); setDetails(null); }} onReport={() => { setReport(details); setDetails(null); }} />}
       {report && <NotificationReport item={report} onClose={() => setReport(null)} />}
     </main>
@@ -454,26 +467,26 @@ function NotificationTableRow({
   }
 
   return (
-    <div onClick={onOpen} className="grid cursor-pointer grid-cols-[1.35fr_1fr_0.8fr_1fr_0.8fr_0.8fr_0.9fr_56px] gap-3 border-b border-slate-100 px-5 py-4 text-sm last:border-b-0 hover:bg-slate-50/70">
+    <div onClick={onOpen} className="grid cursor-pointer grid-cols-[1.35fr_1fr_0.8fr_1fr_0.8fr_0.8fr_0.9fr_56px] gap-3 border-b border-[var(--gd-border)] px-5 py-4 text-sm last:border-b-0 hover:bg-[var(--gd-surface-muted)]">
       <div className="min-w-0">
-        <p className="truncate font-bold text-slate-900">{item.title}</p>
-        <p className="mt-1 line-clamp-1 text-xs text-slate-500">{stripHtml(item.body_html || item.body)}</p>
+        <p className="truncate font-bold text-[var(--gd-text-strong)]">{item.title}</p>
+        <p className="mt-1 line-clamp-1 text-xs text-[var(--gd-muted)]">{stripHtml(item.body_html || item.body)}</p>
       </div>
-      <span className="text-slate-600">
+      <span className="text-[var(--gd-muted-strong)]">
         {audienceLabelByKey(audienceKeyFromTargets(item.targets))}
-        {typeof item.delivery_stats?.recipients === "number" && <small className="mt-1 block text-xs text-slate-400">{item.delivery_stats.recipients} получателей</small>}
+        {typeof item.delivery_stats?.recipients === "number" && <small className="mt-1 block text-xs text-[var(--gd-muted)]">{item.delivery_stats.recipients} получателей</small>}
       </span>
       <span className="flex flex-wrap gap-1">{enabledChannels(item).map((channel) => <Pill key={channel}>{channelLabel(channel)}</Pill>)}</span>
-      <span className="text-slate-600">{item.sent_at || item.scheduled_at ? formatAstanaDateTime(item.sent_at || item.scheduled_at || "") : "сразу после публикации"}</span>
-      <span className="font-semibold text-slate-700">Доставлено: {stats.delivered}/{stats.recipients}</span>
-      <span className="font-semibold text-slate-700">Прочитано: {stats.read}/{stats.recipients}</span>
+      <span className="text-[var(--gd-muted-strong)]">{item.sent_at || item.scheduled_at ? formatAstanaDateTime(item.sent_at || item.scheduled_at || "") : "сразу после публикации"}</span>
+      <span className="font-semibold text-[var(--gd-text)]">Доставлено: {stats.delivered}/{stats.recipients}</span>
+      <span className="font-semibold text-[var(--gd-text)]">Прочитано: {stats.read}/{stats.recipients}</span>
       <span><StatusBadge status={status} /></span>
       <div className="relative" onClick={(event) => event.stopPropagation()}>
-        <button onClick={() => setMenuOpen((value) => !value)} className="rounded-full border border-slate-200 bg-white px-3 py-2 text-lg leading-none text-slate-500 hover:bg-slate-50">⋮</button>
+        <button onClick={() => setMenuOpen((value) => !value)} className="gd-button px-3 py-2 text-lg leading-none">⋮</button>
         {menuOpen && (
-          <div className="absolute right-0 top-11 z-20 w-64 overflow-hidden rounded-2xl border border-slate-200 bg-white py-2 shadow-lg">
+          <div className="absolute right-0 top-11 z-20 w-64 overflow-hidden rounded-[var(--gd-radius-md)] border border-[var(--gd-border)] bg-[var(--gd-surface)] py-2 shadow-lg">
             {notificationActions(item).map((itemAction) => (
-              <button key={itemAction.key} onClick={() => void action(itemAction.key)} className="block w-full px-4 py-2 text-left text-sm hover:bg-slate-50">
+              <button key={itemAction.key} onClick={() => void action(itemAction.key)} className="block w-full px-4 py-2 text-left text-sm hover:bg-[var(--gd-surface-muted)]">
                 {itemAction.label}
               </button>
             ))}
@@ -493,7 +506,7 @@ function NotificationDrawer({
   state: { mode: "create" | "edit"; item?: CommunicationNotification };
   owners: CabinetModuleProps["owners"];
   onClose: () => void;
-  onSaved: () => Promise<void>;
+  onSaved: (message: string) => Promise<void>;
 }) {
   const item = state.item;
   const [form, setForm] = useState<Partial<CommunicationNotification>>(() => item ? {
@@ -529,7 +542,7 @@ function NotificationDrawer({
       const payload = { ...form, body: stripHtml(form.body_html || ""), body_html: form.body_html || "" };
       if (item) await updateCommunicationNotification(item.id, payload, mode);
       else await sendCommunicationNotification(payload, mode);
-      await onSaved();
+      await onSaved(mode === "send" ? "Уведомление отправлено." : "Уведомление сохранено.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось сохранить уведомление");
     } finally {
@@ -538,32 +551,32 @@ function NotificationDrawer({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40">
-      <aside className="h-full w-full max-w-4xl overflow-hidden bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-7 py-5">
+    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40 backdrop-blur-sm">
+      <aside className="h-full w-full max-w-4xl overflow-hidden border-l border-[var(--gd-border)] bg-[var(--gd-surface)] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[var(--gd-border)] px-7 py-5">
           <div>
-            <p className="text-sm font-medium text-blue-600">Инфоцентр / Уведомления</p>
-            <h2 className="text-2xl font-bold text-slate-900">{item ? "Редактировать уведомление" : "Создать уведомление"}</h2>
+            <p className="gd-page-kicker text-sm font-medium">Инфоцентр / Уведомления</p>
+            <h2 className="text-2xl font-bold text-[var(--gd-text-strong)]">{item ? "Редактировать уведомление" : "Создать уведомление"}</h2>
           </div>
-          <button onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">✕</button>
+          <button onClick={onClose} className="gd-button px-3 py-2">✕</button>
         </div>
-        <div className="h-[calc(100%-156px)] overflow-y-auto bg-slate-50 px-7 py-6">
+        <div className="h-[calc(100%-156px)] overflow-y-auto bg-[var(--gd-surface-muted)] px-7 py-6">
           {error && <ErrorText text={error} />}
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="gd-card p-5">
             <Field label="Заголовок уведомления *">
-              <input value={form.title || ""} onChange={(event) => setForm({ ...form, title: event.target.value })} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100" />
+              <input value={form.title || ""} onChange={(event) => setForm({ ...form, title: event.target.value })} className="gd-input" />
             </Field>
             <Field label="Текст уведомления *">
               <InfocenterRichTextEditor value={form.body_html || ""} onChange={(html) => setForm({ ...form, body_html: html, body: stripHtml(html) })} />
             </Field>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Категория">
-                <select value={form.category || notificationCategories[0]} onChange={(event) => setForm({ ...form, category: event.target.value })} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+                <select value={form.category || notificationCategories[0]} onChange={(event) => setForm({ ...form, category: event.target.value })} className="gd-input">
                   {notificationCategories.map((item) => <option key={item}>{item}</option>)}
                 </select>
               </Field>
               <Field label="Дата отправки">
-                <input type="datetime-local" min={publicationMinDateTime} value={toLocalInput(form.scheduled_at)} onChange={(event) => setForm({ ...form, scheduled_at: fromLocalInput(event.target.value) })} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm" />
+                <input type="datetime-local" min={publicationMinDateTime} value={toLocalInput(form.scheduled_at)} onChange={(event) => setForm({ ...form, scheduled_at: fromLocalInput(event.target.value) })} className="gd-input" />
               </Field>
             </div>
             <NotificationAudiencePicker
@@ -578,11 +591,11 @@ function NotificationDrawer({
             <ChannelPicker channels={form.channels || []} allowed={portalChannels} onChange={(channels) => setForm({ ...form, channels })} />
           </section>
         </div>
-        <div className="flex flex-wrap justify-end gap-3 border-t border-slate-100 bg-white px-7 py-4">
-          <div className="mr-auto text-sm font-medium text-slate-500">{valid ? "Готово к отправке" : "Заполните обязательные поля"}</div>
-          <button onClick={onClose} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700">Отмена</button>
-          <button disabled={saving || !valid} onClick={() => void save("draft")} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-45">Сохранить как черновик</button>
-          <button disabled={!valid} onClick={() => setPreviewOpen(true)} className="rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-45">Предпросмотр</button>
+        <div className="flex flex-wrap justify-end gap-3 border-t border-[var(--gd-border)] bg-[var(--gd-surface)] px-7 py-4">
+          <div className="mr-auto text-sm font-medium text-[var(--gd-muted)]">{valid ? "Готово к отправке" : "Заполните обязательные поля"}</div>
+          <button onClick={onClose} className="gd-button">Отмена</button>
+          <button disabled={saving || !valid} onClick={() => void save("draft")} className="gd-button">Сохранить как черновик</button>
+          <button disabled={!valid} onClick={() => setPreviewOpen(true)} className="gd-button gd-button-primary">Предпросмотр</button>
           
         </div>
       </aside>
@@ -689,13 +702,13 @@ function NotificationAudiencePicker({
 
   return (
     <Field label="Аудитория *">
-      <select value={audienceType} onChange={(event) => setAudience(event.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100">
+      <select value={audienceType} onChange={(event) => setAudience(event.target.value)} className="gd-input">
         {notificationAudienceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
       {audienceType === "individual_owners" && (
-        <div className="relative mt-3 flex min-h-14 flex-wrap items-center gap-2 rounded-xl border border-slate-300 bg-white p-2 pr-44">
-          {selectedOwners.map((target) => <span key={selectedKey(target)} className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700">{targetLabel(target, owners)}<button type="button" onClick={() => onChange(selectedOwners.filter((item) => selectedKey(item) !== selectedKey(target)))} className="text-slate-400 hover:text-red-500">×</button></span>)}
-          {missingOwners.map((value) => <span key={value} className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{value}<button type="button" onClick={() => onMissingOwnersChange(missingOwners.filter((item) => item !== value))} className="text-red-400 hover:text-red-700">×</button></span>)}
+        <div className="relative mt-3 flex min-h-14 flex-wrap items-center gap-2 rounded-[var(--gd-radius-sm)] border border-[var(--gd-border)] bg-[var(--gd-surface)] p-2 pr-44">
+          {selectedOwners.map((target) => <span key={selectedKey(target)} className="gd-status-pill gd-status-slate flex items-center gap-2">{targetLabel(target, owners)}<button type="button" onClick={() => onChange(selectedOwners.filter((item) => selectedKey(item) !== selectedKey(target)))} className="text-[var(--gd-muted)] hover:text-[var(--gd-danger)]">×</button></span>)}
+          {missingOwners.map((value) => <span key={value} className="gd-status-pill gd-status-red flex items-center gap-2">{value}<button type="button" onClick={() => onMissingOwnersChange(missingOwners.filter((item) => item !== value))} className="text-[var(--gd-danger)]">×</button></span>)}
           <input
             value={manual}
             onChange={(event) => {
@@ -712,30 +725,30 @@ function NotificationAudiencePicker({
             className="min-w-44 flex-1 border-0 bg-transparent px-2 py-2 text-sm outline-none"
             placeholder="Имя, email, телефон или номер объекта"
           />
-          <button type="button" onClick={() => setOpen((value) => !value)} className="absolute right-2 top-2 rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Выбрать из списка⌄</button>
+          <button type="button" onClick={() => setOpen((value) => !value)} className="gd-button absolute right-2 top-2 min-h-0 px-4 py-2">Выбрать из списка⌄</button>
           {open && (
-            <div className="absolute right-0 top-14 z-30 w-96 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
-              <p className="mb-2 text-sm font-bold text-slate-900">Собственники:</p>
+            <div className="absolute right-0 top-14 z-30 w-96 rounded-[var(--gd-radius-md)] border border-[var(--gd-border)] bg-[var(--gd-surface)] p-3 shadow-xl">
+              <p className="mb-2 text-sm font-bold text-[var(--gd-text-strong)]">Собственники:</p>
               <div className="max-h-[320px] overflow-y-auto pr-1">
-                {searchLoading && <p className="px-3 py-2 text-sm text-slate-500">Поиск...</p>}
+                {searchLoading && <p className="px-3 py-2 text-sm text-[var(--gd-muted)]">Поиск...</p>}
                 {ownerOptions.map((owner) => {
                   const target = { type: "user" as const, value: owner.user_id };
                   const ownerSelected = selected.has(selectedKey(target));
                   return (
-                    <button key={owner.user_id} type="button" disabled={ownerSelected} onClick={() => { addOwner(owner); setManual(""); setOpen(false); }} className={`block w-full rounded-lg px-3 py-2 text-left text-sm ${ownerSelected ? "cursor-not-allowed text-slate-400" : "text-slate-700 hover:bg-blue-50"}`}>
+                    <button key={owner.user_id} type="button" disabled={ownerSelected} onClick={() => { addOwner(owner); setManual(""); setOpen(false); }} className={`block w-full rounded-lg px-3 py-2 text-left text-sm ${ownerSelected ? "cursor-not-allowed text-[var(--gd-muted)]" : "text-[var(--gd-text)] hover:bg-[var(--gd-primary-soft)]"}`}>
                       {owner.label}
                     </button>
                   );
                 })}
-                {!searchLoading && ownerOptions.length === 0 && <p className="px-3 py-2 text-sm text-red-600">Собственник не найден в БД</p>}
+                {!searchLoading && ownerOptions.length === 0 && <p className="px-3 py-2 text-sm text-[var(--gd-danger)]">Собственник не найден в БД</p>}
               </div>
             </div>
           )}
         </div>
       )}
-      {missingOwners.length > 0 && <p className="mt-2 text-sm text-red-600">Собственник не найден в БД: {missingOwners.join(", ")}</p>}
-      {duplicateMessage && <p className="mt-2 text-sm text-amber-600">{duplicateMessage}</p>}
-      {searchError && <p className="mt-2 text-sm text-red-600">{searchError}</p>}
+      {missingOwners.length > 0 && <p className="mt-2 text-sm text-[var(--gd-danger)]">Собственник не найден в БД: {missingOwners.join(", ")}</p>}
+      {duplicateMessage && <p className="mt-2 text-sm text-[var(--gd-warning)]">{duplicateMessage}</p>}
+      {searchError && <p className="mt-2 text-sm text-[var(--gd-danger)]">{searchError}</p>}
     </Field>
   );
 }
@@ -760,27 +773,27 @@ function NotificationPreview({
   const validOwners = (form.targets || []).filter((target) => target.type === "user" && target.value).length;
   return (
     <Modal title="Предпросмотр уведомления" onClose={onClose} wide>
-      <article className="rounded-3xl border border-slate-200 bg-white p-5">
+      <article className="gd-card">
         <Pill>Уведомление</Pill>
-        <h2 className="mt-4 text-3xl font-bold">{form.title}</h2>
+        <h2 className="mt-4 text-3xl font-bold text-[var(--gd-text-strong)]">{form.title}</h2>
         <div className="infocenter-document-content mt-5" dangerouslySetInnerHTML={{ __html: form.body_html || "" }} />
-        <div className="mt-5 grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm md:grid-cols-2">
+        <div className="gd-muted-panel mt-5 grid gap-3 p-4 text-sm md:grid-cols-2">
           <Meta label="Аудитория" value={audienceLabelByKey(audienceType)} />
           {audienceType === "individual_owners" && <Meta label="Выбрано собственников" value={String(validOwners)} />}
           <Meta label="Каналы" value={enabledChannels(form).map(channelLabel).join(", ") || "Не выбраны"} />
           <Meta label="Дата отправки" value={form.scheduled_at ? formatAstanaDateTime(form.scheduled_at) : "сразу после публикации"} />
         </div>
         {missingOwners.length > 0 && (
-          <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p className="gd-alert gd-alert-danger mt-4">
             Не найдены в БД: {missingOwners.join(", ")}. Им уведомление не будет отправлено.
           </p>
         )}
 
-        <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-4">
+        <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-[var(--gd-border)] pt-4">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+            className="gd-button"
           >
             Назад к редактированию
           </button>
@@ -789,7 +802,7 @@ function NotificationPreview({
             type="button"
             disabled={saving || !valid}
             onClick={onSend}
-            className="rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-45"
+            className="gd-button gd-button-primary"
           >
             Отправить уведомление
           </button>
@@ -806,9 +819,9 @@ function NotificationDetails({ item, onClose, onEdit, onReport }: { item: Commun
     <Modal title="Просмотр уведомления" onClose={onClose} wide>
       <article>
         <StatusBadge status={notificationStatus(item)} />
-        <h2 className="mt-4 text-3xl font-bold">{item.title}</h2>
+        <h2 className="mt-4 text-3xl font-bold text-[var(--gd-text-strong)]">{item.title}</h2>
         <div className="infocenter-document-content mt-5" dangerouslySetInnerHTML={{ __html: item.body_html || item.body }} />
-        <div className="mt-5 grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm md:grid-cols-2">
+        <div className="gd-muted-panel mt-5 grid gap-3 p-4 text-sm md:grid-cols-2">
           <Meta label="Аудитория" value={targetSummary(item)} />
           <Meta label="Каналы" value={enabledChannels(item).map(channelLabel).join(", ")} />
           <Meta label="Дата отправки" value={item.sent_at || item.scheduled_at ? formatAstanaDateTime(item.sent_at || item.scheduled_at || "") : "сразу после публикации"} />
@@ -818,9 +831,9 @@ function NotificationDetails({ item, onClose, onEdit, onReport }: { item: Commun
         </div>
       </article>
       <div className="mt-5 flex justify-end gap-2">
-        {item.status !== "deleted" && <button onClick={onEdit} className="rounded-xl border px-4 py-2 text-sm font-semibold text-slate-700">Редактировать</button>}
-        <button onClick={onReport} className="rounded-xl border px-4 py-2 text-sm font-semibold text-slate-700">Отчёт о доставке и прочтении</button>
-        <button onClick={onClose} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Закрыть</button>
+        {item.status !== "deleted" && <button onClick={onEdit} className="gd-button">Редактировать</button>}
+        <button onClick={onReport} className="gd-button">Отчёт о доставке и прочтении</button>
+        <button onClick={onClose} className="gd-button gd-button-primary">Закрыть</button>
       </div>
     </Modal>
   );
@@ -857,7 +870,7 @@ function NotificationReport({ item, onClose }: { item: CommunicationNotification
 
   return (
     <Modal title="Отчёт о доставке и прочтении" onClose={onClose} wide>
-      <h3 className="text-xl font-bold">{item.title}</h3>
+      <h3 className="text-xl font-bold text-[var(--gd-text-strong)]">{item.title}</h3>
       <div className="mt-4 grid gap-3 md:grid-cols-4">
         <Stat label="Получателей" value={String(stats.recipients)} />
         <Stat label="Доставлено" value={`${stats.delivered}/${stats.recipients}`} />
@@ -865,36 +878,46 @@ function NotificationReport({ item, onClose }: { item: CommunicationNotification
         <Stat label="Ошибки" value={String(stats.errors)} />
       </div>
       <div className="mt-5 grid gap-3 md:grid-cols-[1fr_160px_160px_140px]">
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Поиск по получателю или объекту" className="rounded-xl border px-3 py-2 text-sm" />
-        <select value={channel} onChange={(event) => setChannel(event.target.value)} className="rounded-xl border px-3 py-2 text-sm"><option value="all">Все каналы</option><option value="portal">Портал</option><option value="whatsapp">WhatsApp</option><option value="sms">SMS</option></select>
-        <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-xl border px-3 py-2 text-sm"><option value="all">Все статусы</option><option value="read">Прочитано</option><option value="delivered">Доставлено</option><option value="sent">Отправлено</option><option value="failed">Ошибка</option></select>
-        <button onClick={exportCSV} className="rounded-xl border px-3 py-2 text-sm font-semibold">Экспорт CSV</button>
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Поиск по получателю или объекту" className="gd-input" />
+        <select value={channel} onChange={(event) => setChannel(event.target.value)} className="gd-input"><option value="all">Все каналы</option><option value="portal">Портал</option><option value="whatsapp">WhatsApp</option><option value="sms">SMS</option></select>
+        <select value={status} onChange={(event) => setStatus(event.target.value)} className="gd-input"><option value="all">Все статусы</option><option value="read">Прочитано</option><option value="delivered">Доставлено</option><option value="sent">Отправлено</option><option value="failed">Ошибка</option></select>
+        <button onClick={exportCSV} className="gd-button">Экспорт CSV</button>
       </div>
       {error && <ErrorText text={error} />}
-      <section className="mt-5 overflow-hidden rounded-2xl border">
-        <div className="grid grid-cols-[1fr_0.8fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] gap-3 bg-slate-50 px-4 py-3 text-xs font-bold text-slate-500">
+      <section className="mt-5 overflow-hidden rounded-[var(--gd-radius-md)] border border-[var(--gd-border)]">
+        <div className="grid grid-cols-[1fr_0.8fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] gap-3 bg-[var(--gd-surface-muted)] px-4 py-3 text-xs font-bold text-[var(--gd-muted)]">
           <span>Получатель</span><span>Объект</span><span>Портал</span><span>WhatsApp</span><span>SMS</span><span>Итог</span><span>Дата прочтения</span>
         </div>
-        {rows.map((row) => <div key={row.userID} className="grid grid-cols-[1fr_0.8fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] gap-3 border-t px-4 py-3 text-sm"><span>{row.recipient}</span><span>{row.object || "Не указан"}</span><span>{channelStatusLabel(row.channels.portal?.status)}</span><span>{channelStatusLabel(row.channels.whatsapp?.status)}</span><span>{channelStatusLabel(row.channels.sms?.status)}</span><span><StatusBadge status={finalRecipientStatus(row)} /></span><span>{row.readAt ? formatAstanaDateTime(row.readAt) : "—"}</span></div>)}
+        {rows.map((row) => <div key={row.userID} className="grid grid-cols-[1fr_0.8fr_0.8fr_0.8fr_0.8fr_0.8fr_1fr] gap-3 border-t border-[var(--gd-border)] px-4 py-3 text-sm"><span>{row.recipient}</span><span>{row.object || "Не указан"}</span><span>{channelStatusLabel(row.channels.portal?.status)}</span><span>{channelStatusLabel(row.channels.whatsapp?.status)}</span><span>{channelStatusLabel(row.channels.sms?.status)}</span><span><StatusBadge status={finalRecipientStatus(row)} /></span><span>{row.readAt ? formatAstanaDateTime(row.readAt) : "—"}</span></div>)}
       </section>
     </Modal>
   );
 }
 
 function Pill({ children }: { children: ReactNode }) {
-  return <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">{children}</span>;
+  return <span className="gd-status-pill gd-status-blue">{children}</span>;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-semibold text-slate-500">{label}</p><p className="mt-1 text-2xl font-black">{value}</p></div>;
+  return <div className="gd-muted-panel p-4"><p className="text-xs font-semibold text-[var(--gd-muted)]">{label}</p><p className="mt-1 text-2xl font-black text-[var(--gd-text-strong)]">{value}</p></div>;
 }
 
 function Meta({ label, value }: { label: string; value: string }) {
-  return <span className="block"><b className="text-slate-900">{label}:</b> {value}</span>;
+  return <span className="block"><b className="text-[var(--gd-text-strong)]">{label}:</b> {value}</span>;
 }
 
 function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
-  return <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/50 p-4"><section className={`overflow-hidden rounded-3xl bg-white shadow-2xl ${wide ? "w-full max-w-6xl" : "w-full max-w-lg"}`}><div className="flex items-center justify-between gap-3 border-b border-slate-100 px-6 py-4"><h2 className="text-2xl font-bold">{title}</h2><button onClick={onClose} className="rounded-full border border-slate-200 px-3 py-2 text-slate-500 hover:bg-slate-50">✕</button></div><div className="max-h-[72vh] overflow-y-auto px-6 py-5">{children}</div></section></div>;
+  return (
+    <div className="gd-modal-overlay z-[70]">
+      <section className={`gd-modal-panel ${wide ? "max-w-6xl" : "max-w-lg"}`}>
+        <div className="gd-modal-header">
+          <h2 className="text-2xl font-bold text-[var(--gd-text-strong)]">{title}</h2>
+          <button onClick={onClose} className="gd-button">Закрыть</button>
+        </div>
+        <div className="gd-modal-body max-h-[72vh] overflow-y-auto">{children}</div>
+      </section>
+    </div>
+  );
 }
 
 type ReportRow = {
@@ -1122,14 +1145,14 @@ function OwnerNotifications({ activeRole, refreshCommunicationUnreadCounts }: Ca
   }
 
   return (
-    <main className="min-h-full text-slate-900">
-      <div className="mx-auto max-w-5xl">
+    <main className="gd-infocenter-page min-h-full">
+      <div className="w-full">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-4xl font-black tracking-tight">Уведомления</h1>
-            <p className="mt-2 text-sm text-slate-500">Полученные уведомления, адресованные вам.</p>
+            <h1 className="gd-page-title">Уведомления</h1>
+            <p className="gd-page-description mt-2 text-sm">Полученные уведомления, адресованные вам.</p>
           </div>
-          <button onClick={() => void load()} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          <button onClick={() => void load()} className="gd-button">
             Обновить
           </button>
         </div>
@@ -1149,7 +1172,7 @@ function OwnerNotifications({ activeRole, refreshCommunicationUnreadCounts }: Ca
         />
 
         {error && <ErrorText text={error} />}
-        {loading && <p className="mb-4 rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-600">Загрузка...</p>}
+        {loading && <p className="gd-muted-panel mb-4 px-4 py-3 text-sm">Загрузка...</p>}
 
         <section className="space-y-3">
           {shownItems.map((item) => (
@@ -1161,7 +1184,7 @@ function OwnerNotifications({ activeRole, refreshCommunicationUnreadCounts }: Ca
           <div className="mt-5 flex justify-center">
             <button
               onClick={() => setVisibleCount((value) => value + 6)}
-              className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="gd-button"
             >
               Показать ещё
             </button>
@@ -1188,14 +1211,12 @@ function OwnerViewerToolbar({
 }) {
   return (
     <div className="mb-5 space-y-3">
-      <div className="flex flex-wrap gap-2">
+      <div className="gd-tabs">
         {ownerFilters.map((item) => (
           <button
             key={item.value}
             onClick={() => onFilter(item.value)}
-            className={`rounded-xl px-4 py-2 text-sm font-semibold ${
-              filter === item.value ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            }`}
+            className={`gd-tab ${filter === item.value ? "gd-tab-active" : ""}`}
           >
             {item.label}
           </button>
@@ -1204,7 +1225,7 @@ function OwnerViewerToolbar({
       <input
         value={search}
         onChange={(event) => onSearch(event.target.value)}
-        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+        className="gd-input"
         placeholder={placeholder}
       />
     </div>
@@ -1577,26 +1598,26 @@ function NotificationCard({ item, onOpen }: { item: CommunicationNotification; o
   return (
     <article
       onClick={onOpen}
-      className={`rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:shadow-md ${
+      className={`gd-card transition hover:border-[var(--gd-primary)] ${
         onOpen ? "cursor-pointer" : ""
       }`}
     >
       <div className="flex items-center gap-4">
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-semibold">
-            <span className="text-slate-500">{formatAstanaDateTime(item.sent_at || item.created_at)}</span>
-            {item.category && <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">{item.category}</span>}
-            {item.category === "Аварийное" && <span className="rounded-full bg-red-50 px-2 py-1 text-red-700">Важное</span>}
+            <span className="text-[var(--gd-muted)]">{formatAstanaDateTime(item.sent_at || item.created_at)}</span>
+            {item.category && <span className="gd-status-pill gd-status-blue">{item.category}</span>}
+            {item.category === "Аварийное" && <span className="gd-status-pill gd-status-red">Важное</span>}
             {item.read_at ? (
-              <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">Прочитано</span>
+              <span className="gd-status-pill gd-status-slate">Прочитано</span>
             ) : (
-              <span className="rounded-full bg-red-600 px-2 py-1 text-white">Новое</span>
+              <span className="gd-status-pill gd-status-red">Новое</span>
             )}
           </div>
-          <h2 className="truncate text-lg font-bold text-slate-900">{item.title}</h2>
-          <p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{bodyText}</p>
+          <h2 className="truncate text-lg font-bold text-[var(--gd-text-strong)]">{item.title}</h2>
+          <p className="mt-1 line-clamp-2 text-sm leading-6 text-[var(--gd-muted-strong)]">{bodyText}</p>
         </div>
-        {onOpen && <span className="shrink-0 text-2xl text-slate-300">›</span>}
+        {onOpen && <span className="shrink-0 text-2xl text-[var(--gd-muted)]">›</span>}
       </div>
     </article>
   );
@@ -1607,18 +1628,18 @@ function OwnerNotificationDetails({ item, onClose }: { item: CommunicationNotifi
     <Modal title="Уведомление" onClose={onClose} wide>
       <article>
         <div className="flex flex-wrap gap-2">
-          {item.category && <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">{item.category}</span>}
-          {item.category === "Аварийное" && <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-bold text-red-700">Важное</span>}
-          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">
+          {item.category && <span className="gd-status-pill gd-status-blue">{item.category}</span>}
+          {item.category === "Аварийное" && <span className="gd-status-pill gd-status-red">Важное</span>}
+          <span className="gd-status-pill gd-status-slate">
             {item.read_at ? "Прочитано" : "Новое"}
           </span>
         </div>
-        <p className="mt-4 text-sm text-slate-500">{formatAstanaDateTime(item.sent_at || item.created_at)}</p>
-        <h2 className="mt-2 text-3xl font-bold text-slate-900">{item.title}</h2>
+        <p className="mt-4 text-sm text-[var(--gd-muted)]">{formatAstanaDateTime(item.sent_at || item.created_at)}</p>
+        <h2 className="mt-2 text-3xl font-bold text-[var(--gd-text-strong)]">{item.title}</h2>
         <div className="infocenter-document-content mt-5" dangerouslySetInnerHTML={{ __html: item.body_html || item.body }} />
       </article>
       <div className="mt-5 flex justify-end">
-        <button onClick={onClose} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Закрыть</button>
+        <button onClick={onClose} className="gd-button gd-button-primary">Закрыть</button>
       </div>
     </Modal>
   );
@@ -1634,12 +1655,13 @@ function FilterBar({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap gap-2">
+    <div className="gd-tabs mb-6">
       {items.map((item) => (
         <button
           key={item.value}
+          type="button"
           onClick={() => onChange(item.value)}
-          className={`rounded-xl px-4 py-2 text-sm font-semibold ${value === item.value ? "bg-blue-600 text-white" : "border bg-white text-slate-600"}`}
+          className={`gd-tab ${value === item.value ? "gd-tab-active" : ""}`}
         >
           {item.label}
         </button>
@@ -1650,9 +1672,11 @@ function FilterBar({
 
 function Header({ title, text }: { title: string; text: string }) {
   return (
-    <div className="mb-6">
-      <h1 className="text-3xl font-bold">{title}</h1>
-      <p className="mt-2 text-slate-500">{text}</p>
+    <div className="gd-page-header">
+      <div>
+        <h1 className="gd-page-title">{title}</h1>
+        <p className="gd-page-description mt-2 text-sm">{text}</p>
+      </div>
     </div>
   );
 }
@@ -1660,18 +1684,18 @@ function Header({ title, text }: { title: string; text: string }) {
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="mt-4 block">
-      <span className="mb-2 block text-sm font-semibold text-slate-600">{label}</span>
+      <span className="gd-label">{label}</span>
       {children}
     </label>
   );
 }
 
 function EmptyState({ text }: { text: string }) {
-  return <div className="rounded-2xl border bg-white p-6 text-sm text-slate-500 shadow-sm">{text}</div>;
+  return <div className="gd-empty-state text-sm">{text}</div>;
 }
 
 function ErrorText({ text }: { text: string }) {
-  return <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700">{text}</p>;
+  return <p className="gd-alert gd-alert-danger mt-3">{text}</p>;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -1693,7 +1717,23 @@ function StatusBadge({ status }: { status: string }) {
     created: "Создано",
     queued: "В очереди",
   };
-  return <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">{labels[status] || status}</span>;
+  return <span className={`gd-status-pill ${statusBadgeToneClass(status)}`}>{labels[status] || status}</span>;
+}
+
+function statusBadgeToneClass(status: string) {
+  if (status === "sent" || status === "delivered" || status === "read" || status === "published") {
+    return "gd-status-emerald";
+  }
+  if (status === "scheduled" || status === "sending" || status === "queued" || status === "created") {
+    return "gd-status-blue";
+  }
+  if (status === "failed" || status === "deleted" || status === "channel_not_connected") {
+    return "gd-status-red";
+  }
+  if (status === "partially_delivered" || status === "partially_read") {
+    return "gd-status-amber";
+  }
+  return "gd-status-slate";
 }
 
 function importanceLabel(value: CommunicationPost["importance"]) {

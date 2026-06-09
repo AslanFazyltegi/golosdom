@@ -47,9 +47,23 @@ import type {
 
 type WizardStep = 1 | 2 | 3;
 type ConstructorStage = "category" | "wizard";
+type ConstructorFilters = {
+  search: string;
+  category: string;
+  status: string;
+  date: string;
+  meeting: string;
+};
 const DEFAULT_OPTIONS = ["Да", "Нет", "Воздержался"];
 const DEFAULT_VOTING_CATEGORY: VotingCategory = "general";
 const MIN_VOTING_DAYS = 7;
+const DEFAULT_CONSTRUCTOR_FILTERS: ConstructorFilters = {
+  search: "",
+  category: "all",
+  status: "all",
+  date: "all",
+  meeting: "all",
+};
 
 const VOTING_CATEGORY_OPTIONS: Array<{
   value: VotingCategory;
@@ -701,6 +715,8 @@ function VotingPublishedPage({ isChairman }: { isChairman: boolean }) {
   const [votings, setVotings] = useState<Voting[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [filters, setFilters] = useState<ConstructorFilters>(DEFAULT_CONSTRUCTOR_FILTERS);
+  const visibleVotings = useMemo(() => filterConstructorVotings(votings, filters), [filters, votings]);
 
   async function load() {
     try {
@@ -739,18 +755,26 @@ function VotingPublishedPage({ isChairman }: { isChairman: boolean }) {
 
   return (
     <>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Опубликованные</h1>
-        <Button onClick={load}>Обновить</Button>
-      </div>
+      <AppPageHeader
+        title="Опубликованные"
+        actions={<Button onClick={load}>Обновить</Button>}
+      />
+      <VotingConstructorToolbar
+        votings={votings}
+        filters={filters}
+        onChange={setFilters}
+      />
       {error && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {loading ? (
         <p>Загрузка...</p>
-      ) : votings.length === 0 ? (
-        <Placeholder title="" text="Опубликованных опросных листов пока нет." />
+      ) : visibleVotings.length === 0 ? (
+        <Placeholder
+          title=""
+          text={votings.length === 0 ? "Опубликованных опросных листов пока нет." : "Ничего не найдено."}
+        />
       ) : (
         <div className="grid gap-4">
-          {votings.map((voting) => (
+          {visibleVotings.map((voting) => (
             <PublishedVotingCard
               key={voting.id}
               voting={voting}
@@ -809,6 +833,8 @@ function VotingStatusPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshToken, setRefreshToken] = useState(0);
+  const [filters, setFilters] = useState<ConstructorFilters>(DEFAULT_CONSTRUCTOR_FILTERS);
+  const visibleVotings = useMemo(() => filterConstructorVotings(votings, filters), [filters, votings]);
 
   async function load() {
     try {
@@ -848,18 +874,23 @@ function VotingStatusPage({
 
   return (
     <>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold">{title}</h1>
-        <Button onClick={load}>Обновить</Button>
-      </div>
+      <AppPageHeader
+        title={title}
+        actions={<Button onClick={load}>Обновить</Button>}
+      />
+      <VotingConstructorToolbar
+        votings={votings}
+        filters={filters}
+        onChange={setFilters}
+      />
       {error && <p className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {loading ? (
         <p>Загрузка...</p>
-      ) : votings.length === 0 ? (
-        <Placeholder title="" text={emptyText} />
+      ) : visibleVotings.length === 0 ? (
+        <Placeholder title="" text={votings.length === 0 ? emptyText : "Ничего не найдено."} />
       ) : (
         <div className="grid gap-4">
-          {votings.map((voting) => (
+          {visibleVotings.map((voting) => (
             <VotingCard
               key={voting.id}
               voting={voting}
@@ -874,6 +905,100 @@ function VotingStatusPage({
         </div>
       )}
     </>
+  );
+}
+
+function VotingConstructorToolbar({
+  votings,
+  filters,
+  onChange,
+}: {
+  votings: Voting[];
+  filters: ConstructorFilters;
+  onChange: (filters: ConstructorFilters) => void;
+}) {
+  const meetingOptions = useMemo(() => buildConstructorMeetingOptions(votings), [votings]);
+  const statusOptions = useMemo(() => buildConstructorStatusOptions(votings), [votings]);
+  const filtersActive =
+    Boolean(filters.search.trim()) ||
+    filters.category !== "all" ||
+    filters.status !== "all" ||
+    filters.date !== "all" ||
+    filters.meeting !== "all";
+
+  function patch(next: Partial<ConstructorFilters>) {
+    onChange({ ...filters, ...next });
+  }
+
+  return (
+    <section className="gd-filter-panel">
+      <div className="gd-filter-grid">
+        <input
+          value={filters.search}
+          onChange={(event) => patch({ search: event.target.value })}
+          className="gd-input"
+          placeholder="Поиск по названию, категории, собранию, дате, статусу или вопросам"
+        />
+        <select
+          value={filters.category}
+          onChange={(event) => patch({ category: event.target.value })}
+          className="gd-input"
+        >
+          <option value="all">Все категории</option>
+          {VOTING_CATEGORY_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filters.status}
+          onChange={(event) => patch({ status: event.target.value })}
+          className="gd-input"
+        >
+          <option value="all">Все статусы</option>
+          {statusOptions.map((status) => (
+            <option key={status} value={status}>
+              {getVotingStatusLabel(status)}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filters.date}
+          onChange={(event) => patch({ date: event.target.value })}
+          className="gd-input"
+        >
+          <option value="all">Любая дата</option>
+          <option value="today">Сегодня</option>
+          <option value="week">7 дней</option>
+          <option value="month">30 дней</option>
+          <option value="no_date">Без даты</option>
+        </select>
+        <select
+          value={filters.meeting}
+          onChange={(event) => patch({ meeting: event.target.value })}
+          className="gd-input"
+        >
+          <option value="all">Все собрания</option>
+          <option value="none">Без собрания</option>
+          {meetingOptions.map((meeting) => (
+            <option key={meeting.value} value={meeting.value}>
+              {meeting.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {filtersActive && (
+        <div className="gd-filter-actions mt-3">
+          <Button onClick={() => onChange(DEFAULT_CONSTRUCTOR_FILTERS)}>
+            Сбросить фильтры
+          </Button>
+          <span className="text-sm text-[var(--gd-muted)]">
+            Найдено: {filterConstructorVotings(votings, filters).length}
+          </span>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -893,15 +1018,20 @@ function VotingCard({
   refreshToken: number;
 }) {
   return (
-    <section className="rounded-lg border bg-white p-5 shadow-sm">
+    <section className="gd-card transition hover:border-[var(--gd-primary)] hover:shadow-md">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold">{voting.title}</h2>
-          <p className="text-sm text-slate-500">Версия {voting.version || 1}</p>
-          <p className="text-sm text-slate-500">
-            Категория: {getVotingCategoryLabel(voting.category)}
-          </p>
-          {voting.description && <p className="mt-1 text-slate-600">{voting.description}</p>}
+          <div className="mb-2 flex flex-wrap gap-2">
+            <span className="gd-status-pill gd-status-blue">
+              {getVotingCategoryLabel(voting.category)}
+            </span>
+            <span className="gd-status-pill gd-status-slate">
+              {getVotingStatusLabel(voting.status)}
+            </span>
+            <span className="gd-status-pill gd-status-violet">Версия {voting.version || 1}</span>
+          </div>
+          <h2 className="text-xl font-semibold text-[var(--gd-text-strong)]">{voting.title}</h2>
+          {voting.description && <p className="mt-1 text-[var(--gd-muted-strong)]">{voting.description}</p>}
         </div>
         <div className="flex flex-wrap gap-2">{children}</div>
       </div>
@@ -970,14 +1100,19 @@ function PublishedVotingCard({
   }
 
   return (
-    <section className="rounded-lg border bg-white p-5 shadow-sm">
+    <section className="gd-card transition hover:border-[var(--gd-primary)] hover:shadow-md">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold">{voting.title}</h2>
-          <p className="text-sm text-slate-500">Версия {voting.version || 1}</p>
-          <p className="text-sm text-slate-500">
-            Категория: {getVotingCategoryLabel(voting.category)}
-          </p>
+          <div className="mb-2 flex flex-wrap gap-2">
+            <span className="gd-status-pill gd-status-blue">
+              {getVotingCategoryLabel(voting.category)}
+            </span>
+            <span className="gd-status-pill gd-status-slate">
+              {getVotingStatusLabel(voting.status)}
+            </span>
+            <span className="gd-status-pill gd-status-violet">Версия {voting.version || 1}</span>
+          </div>
+          <h2 className="text-xl font-semibold text-[var(--gd-text-strong)]">{voting.title}</h2>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => setExpanded((value) => !value)}>
@@ -995,7 +1130,7 @@ function PublishedVotingCard({
         </div>
       </div>
 
-      <div className="mb-4 grid gap-2 rounded-md bg-slate-50 p-4 text-sm text-slate-700 md:grid-cols-2">
+      <div className="gd-muted-panel mb-4 grid gap-2 p-4 text-sm md:grid-cols-2">
         <p>Дата собрания: {voting.meeting ? formatMeetingDate(voting.meeting.scheduled_at) : "Не указана"}</p>
         <p>Дата публикации: {publishedAt ? formatDate(publishedAt) : "Не указана"}</p>
         <p>Крайний срок завершения: {voting.publication_end_at ? formatDate(voting.publication_end_at) : "Не указан"}</p>
@@ -1007,12 +1142,12 @@ function PublishedVotingCard({
       </div>
 
       {isChairman && stopState.message && (
-        <p className="mb-4 rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+        <p className="gd-alert gd-alert-warning mb-4">
           {stopState.message}
         </p>
       )}
       {voting.status !== "published" && getVotingCompletionReason(voting) && (
-        <p className="mb-4 rounded-md bg-slate-50 p-3 text-sm text-slate-700">
+        <p className="gd-muted-panel mb-4 p-3 text-sm">
           Причина завершения: {getVotingCompletionReason(voting)}
         </p>
       )}
@@ -1069,18 +1204,19 @@ function ConfirmStopModal({
   onConfirm: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
-      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
-        <h2 className="mb-3 text-xl font-semibold">Остановить голосование?</h2>
-        <p className="text-slate-600">
+    <div className="gd-modal-overlay">
+      <div className="gd-modal-panel max-w-lg">
+        <div className="gd-modal-body">
+        <h2 className="mb-3 text-xl font-semibold text-[var(--gd-text-strong)]">Остановить голосование?</h2>
+        <p className="text-[var(--gd-muted-strong)]">
           Вы уверены, что хотите остановить голосование? После остановки собственники больше не смогут голосовать.
         </p>
-        <label className="mt-4 block text-sm font-medium text-slate-700" htmlFor="stop-reason">
+        <label className="mt-4 block text-sm font-medium text-[var(--gd-muted-strong)]" htmlFor="stop-reason">
           Причина остановки
         </label>
         <textarea
           id="stop-reason"
-          className="mt-2 min-h-24 w-full rounded-md border px-3 py-2 text-sm outline-none focus:border-blue-500"
+          className="gd-input mt-2 min-h-24"
           value={reason}
           onChange={(event) => onReasonChange(event.target.value)}
           disabled={submitting}
@@ -1093,6 +1229,7 @@ function ConfirmStopModal({
           <Button variant="primary" onClick={onConfirm} disabled={submitting}>
             Остановить голосование
           </Button>
+        </div>
         </div>
       </div>
     </div>
@@ -1141,7 +1278,7 @@ function VotingApprovalDetails({
   return (
     <div
       className={`mb-4 rounded-md p-4 ${
-        compact ? "bg-amber-50 text-amber-900" : "bg-slate-50 text-slate-700"
+        compact ? "gd-alert gd-alert-warning" : "gd-muted-panel"
       }`}
     >
       <div className="grid gap-1 text-sm">
@@ -1175,7 +1312,7 @@ function PublicationScheduleDetails({ voting }: { voting: Voting }) {
     scheduledEndAt !== null;
 
   return (
-    <div className="mb-4 rounded-md bg-slate-50 p-4 text-sm text-slate-700">
+    <div className="gd-muted-panel mb-4 p-4 text-sm">
       <p className="mb-2 font-medium">Сроки голосования:</p>
       {limits ? (
         <div className="grid gap-1">
@@ -1192,7 +1329,7 @@ function PublicationScheduleDetails({ voting }: { voting: Voting }) {
             </p>
           </div>
           {expired && (
-            <p className="mt-3 rounded-md bg-red-50 p-3 text-red-700">
+            <p className="gd-alert gd-alert-danger mt-3">
               Срок публикации истёк. Минимальная длительность голосования — 7 дней,
               поэтому опрос уже нельзя открыть в пределах допустимого срока.
             </p>
@@ -1202,7 +1339,7 @@ function PublicationScheduleDetails({ voting }: { voting: Voting }) {
         <p>У опросника нет привязанного собрания с датой. Планирование недоступно.</p>
       )}
       {hasScheduledPublication && scheduledStartAt && scheduledEndAt && (
-        <div className="mt-4 border-t border-slate-200 pt-3">
+        <div className="mt-4 border-t border-[var(--gd-border)] pt-3">
           <p className="mb-2 font-medium">Публикация запланирована:</p>
           <div className="grid gap-1">
             <p>Начало голосования: {formatDate(scheduledStartAt)}</p>
@@ -1323,10 +1460,11 @@ function PublicationScheduleModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
-      <div className="w-full max-w-xl rounded-lg bg-white p-6 shadow-xl">
-        <h2 className="mb-4 text-xl font-semibold">Запланировать публикацию</h2>
-        <div className="mb-5 rounded-md bg-slate-50 p-4 text-sm text-slate-700">
+    <div className="gd-modal-overlay">
+      <div className="gd-modal-panel max-w-xl">
+        <div className="gd-modal-body">
+        <h2 className="mb-4 text-xl font-semibold text-[var(--gd-text-strong)]">Запланировать публикацию</h2>
+        <div className="gd-muted-panel mb-5 p-4 text-sm">
           {limits ? (
             <div className="grid gap-1">
               <p>Дата собрания: {formatMeetingDate(limits.meetingDate)}</p>
@@ -1343,11 +1481,11 @@ function PublicationScheduleModal({
         </div>
         <div className="grid gap-4">
           <label className="grid gap-1 text-sm">
-            <span className="text-slate-600">Дата и время начала голосования</span>
+            <span className="text-[var(--gd-muted-strong)]">Дата и время начала голосования</span>
             <input
               type="datetime-local"
               min={publicationMinDateTime}
-              className="rounded-md border p-2"
+              className="gd-input"
               value={startAt}
               onChange={(event) => setStartAt(event.target.value)}
               disabled={!limits || submitting}
@@ -1362,6 +1500,7 @@ function PublicationScheduleModal({
           <Button variant="primary" onClick={submit} disabled={!limits || submitting}>
             Сохранить
           </Button>
+        </div>
         </div>
       </div>
     </div>
@@ -1517,11 +1656,12 @@ function RevisionVoteModal({
   onSubmit: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
-      <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
-        <h2 className="mb-3 text-xl font-semibold">Отправить на доработку</h2>
+    <div className="gd-modal-overlay">
+      <div className="gd-modal-panel max-w-lg">
+        <div className="gd-modal-body">
+        <h2 className="mb-3 text-xl font-semibold text-[var(--gd-text-strong)]">Отправить на доработку</h2>
         {existingRevisionVote ? (
-          <div className="mb-5 rounded-md bg-slate-50 p-4 text-sm text-slate-700">
+          <div className="gd-muted-panel mb-5 p-4 text-sm">
             <p>
               Причина:{" "}
               {existingRevisionVote.reason
@@ -1535,7 +1675,7 @@ function RevisionVoteModal({
         ) : (
           <div className="mb-5 grid gap-3">
             <select
-              className="rounded-md border p-2"
+              className="gd-input"
               value={reason}
               onChange={(event) => onReasonChange(event.target.value)}
             >
@@ -1546,7 +1686,7 @@ function RevisionVoteModal({
               ))}
             </select>
             <textarea
-              className="min-h-28 rounded-md border p-2"
+              className="gd-input min-h-28"
               value={comment}
               onChange={(event) => onCommentChange(event.target.value)}
               placeholder="Комментарий"
@@ -1564,6 +1704,7 @@ function RevisionVoteModal({
           >
             {existingRevisionVote ? "Согласиться с доработкой" : "Отправить замечание"}
           </Button>
+        </div>
         </div>
       </div>
     </div>
@@ -1584,10 +1725,11 @@ function SaveDraftModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4">
-      <div className="max-w-lg rounded-lg bg-white p-6 shadow-xl">
-        <h2 className="mb-3 text-xl font-semibold">Сохранить опросник в черновик?</h2>
-        <p className="mb-6 text-slate-600">
+    <div className="gd-modal-overlay">
+      <div className="gd-modal-panel max-w-lg">
+        <div className="gd-modal-body">
+        <h2 className="mb-3 text-xl font-semibold text-[var(--gd-text-strong)]">Сохранить опросник в черновик?</h2>
+        <p className="mb-6 text-[var(--gd-muted-strong)]">
           Вы добавили вопросы, но не отправили опросник на утверждение. Чтобы не потерять
           данные, сохраните его как черновик.
         </p>
@@ -1596,6 +1738,7 @@ function SaveDraftModal({
           <Button variant="primary" onClick={onSave} disabled={saving}>
             Сохранить в черновик
           </Button>
+        </div>
         </div>
       </div>
     </div>
@@ -1606,7 +1749,7 @@ function MeetingInfo({ meeting }: { meeting: Meeting | NonNullable<Voting["meeti
   const agenda = normalizeAgenda(meeting.agenda);
 
   return (
-    <div className="mb-4 rounded-md bg-slate-50 p-4 text-sm text-slate-700">
+    <div className="gd-muted-panel mb-4 p-4 text-sm">
       <p>Инициатор: {meeting.initiator_name}</p>
       <p>Дата: {formatMeetingDate(meeting.scheduled_at)}</p>
       <p>Место: {meeting.location}</p>
@@ -2019,4 +2162,113 @@ function normalizeAgenda(agenda: unknown) {
   }
 
   return [];
+}
+
+function filterConstructorVotings(votings: Voting[], filters: ConstructorFilters) {
+  const query = normalizeConstructorSearch(filters.search);
+
+  return votings.filter((voting) => {
+    if (query && !buildConstructorVotingSearchText(voting).includes(query)) return false;
+    if (filters.category !== "all" && normalizeVotingCategory(voting.category) !== filters.category) return false;
+    if (filters.status !== "all" && voting.status !== filters.status) return false;
+    if (filters.meeting === "none" && getVotingMeetingID(voting)) return false;
+    if (filters.meeting !== "all" && filters.meeting !== "none" && getVotingMeetingID(voting) !== filters.meeting) return false;
+    if (filters.date !== "all" && !matchesConstructorDateFilter(voting, filters.date)) return false;
+
+    return true;
+  });
+}
+
+function buildConstructorVotingSearchText(voting: Voting) {
+  const meeting = voting.meeting;
+  return normalizeConstructorSearch(
+    [
+      voting.title,
+      voting.description,
+      getVotingCategoryLabel(voting.category),
+      voting.category,
+      getVotingStatusLabel(voting.status),
+      voting.status,
+      voting.created_at ? formatDate(voting.created_at) : "",
+      voting.updated_at ? formatDate(voting.updated_at) : "",
+      voting.published_at ? formatDate(voting.published_at) : "",
+      voting.publication_start_at ? formatDate(voting.publication_start_at) : "",
+      voting.publication_end_at ? formatDate(voting.publication_end_at) : "",
+      meeting?.initiator_name,
+      meeting?.scheduled_at ? formatMeetingDate(meeting.scheduled_at) : "",
+      meeting?.scheduled_at ? formatDate(meeting.scheduled_at) : "",
+      meeting?.location,
+      meeting?.meeting_form,
+      ...normalizeAgenda(meeting?.agenda),
+      ...(voting.questions ?? []).map((question) => question.text),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
+function normalizeConstructorSearch(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function buildConstructorMeetingOptions(votings: Voting[]) {
+  const seen = new Map<string, string>();
+  votings.forEach((voting) => {
+    const id = getVotingMeetingID(voting);
+    if (!id || seen.has(id)) return;
+    const meeting = voting.meeting;
+    const label = [
+      meeting?.scheduled_at ? formatMeetingDate(meeting.scheduled_at) : "",
+      meeting?.location,
+    ]
+      .filter(Boolean)
+      .join(" - ");
+    seen.set(id, label || id);
+  });
+
+  return Array.from(seen.entries())
+    .map(([value, label]) => ({ value, label }))
+    .sort((left, right) => left.label.localeCompare(right.label, "ru"));
+}
+
+function buildConstructorStatusOptions(votings: Voting[]) {
+  return Array.from(new Set(votings.map((voting) => voting.status).filter(Boolean))).sort((left, right) =>
+    getVotingStatusLabel(left).localeCompare(getVotingStatusLabel(right), "ru"),
+  );
+}
+
+function getVotingMeetingID(voting: Voting) {
+  return voting.meeting_id || voting.meeting?.id || "";
+}
+
+function matchesConstructorDateFilter(voting: Voting, filter: string) {
+  const date = getConstructorPrimaryDate(voting);
+  if (filter === "no_date") return !date;
+  if (!date) return false;
+
+  const timestamp = Date.parse(date);
+  if (!Number.isFinite(timestamp)) return false;
+
+  const target = new Date(timestamp);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const targetStart = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime();
+
+  if (filter === "today") return targetStart === todayStart;
+
+  const days = filter === "week" ? 7 : 30;
+  const rangeStart = todayStart - days * 24 * 60 * 60 * 1000;
+  const rangeEnd = todayStart + days * 24 * 60 * 60 * 1000;
+  return targetStart >= rangeStart && targetStart <= rangeEnd;
+}
+
+function getConstructorPrimaryDate(voting: Voting) {
+  return (
+    voting.meeting?.scheduled_at ||
+    voting.publication_start_at ||
+    voting.published_at ||
+    voting.created_at ||
+    voting.updated_at ||
+    ""
+  );
 }

@@ -18,7 +18,7 @@ function fileToDataURL(file: Blob) {
 
 export function InfocenterRichTextEditor({ value, onChange }: Props) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-[var(--gd-radius-md)] border border-[var(--gd-border)] bg-[var(--gd-surface)] shadow-sm">
       <Editor
         tinymceScriptSrc="/tinymce/tinymce.min.js"
         licenseKey="gpl"
@@ -98,6 +98,26 @@ export function InfocenterRichTextEditor({ value, onChange }: Props) {
             ul, ol {
               margin: .75rem 0;
               padding-left: 1.5rem;
+            }
+            ul {
+              list-style: disc outside;
+            }
+            ol {
+              list-style: decimal outside;
+            }
+            ul ul {
+              list-style-type: circle;
+            }
+            ul ul ul {
+              list-style-type: square;
+            }
+            ol ol {
+              list-style-type: lower-alpha;
+            }
+            li {
+              display: list-item;
+              margin: .35rem 0;
+              padding-left: .15rem;
             }
             table {
               border-collapse: collapse;

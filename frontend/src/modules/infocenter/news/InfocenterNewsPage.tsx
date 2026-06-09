@@ -61,14 +61,9 @@ const emptyDoc = {
   content: [{ type: "paragraph" }],
 };
 
-const inputClass =
-  "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100";
+const inputClass = "gd-input";
 
-const drawerButtonClass =
-  "inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45";
-
-const drawerPrimaryButtonClass =
-  `${drawerButtonClass} border-blue-600 bg-blue-600 text-white hover:bg-blue-700`;
+const drawerButtonClass = "gd-button";
 
 const emptyForm = (): InfocenterNewsPayload => ({
   title: "",
@@ -88,15 +83,33 @@ export function InfocenterNewsPage({ activeRole, refreshCommunicationUnreadCount
   const [items, setItems] = useState<InfocenterNews[]>([]);
   const [tab, setTab] = useState<TabValue>("all");
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [audienceFilter, setAudienceFilter] = useState("all");
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(false);
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const [details, setDetails] = useState<InfocenterNews | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
 
+  const visibleItems = useMemo(() => {
+    return [...items]
+      .filter((item) => categoryFilter === "all" || item.category === categoryFilter)
+      .filter((item) => audienceFilter === "all" || item.audience_type === audienceFilter)
+      .sort((first, second) => {
+        const firstDate = dateTimeValue(first.published_at || first.scheduled_at || first.created_at);
+        const secondDate = dateTimeValue(second.published_at || second.scheduled_at || second.created_at);
+        return sortOrder === "newest" ? secondDate - firstDate : firstDate - secondDate;
+      });
+  }, [audienceFilter, categoryFilter, items, sortOrder]);
+
+  const filtersActive = Boolean(search.trim() || categoryFilter !== "all" || audienceFilter !== "all" || sortOrder !== "newest");
+
   async function load() {
     setLoading(true);
     setError("");
+    setSuccess("");
     try {
       setItems(await fetchInfocenterNews({ status: tab, search }));
     } catch (err) {
@@ -119,36 +132,32 @@ export function InfocenterNewsPage({ activeRole, refreshCommunicationUnreadCount
   }
 
   return (
-    <main className="min-h-full text-slate-900">
-      <div className="mx-auto max-w-7xl">
-        <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
+    <main className="gd-infocenter-page min-h-full">
+      <div className="w-full">
+        <div className="gd-page-header">
           <div>
-            <p className="text-sm font-semibold text-blue-600">Инфоцентр</p>
-            <h1 className="mt-1 text-4xl font-black tracking-tight">Новости</h1>
+            <p className="gd-page-kicker text-sm font-semibold">Инфоцентр</p>
+            <h1 className="gd-page-title mt-1">Новости</h1>
           </div>
           <div className="flex gap-2">
-            <button onClick={load} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <button onClick={load} className="gd-button">
               Обновить
             </button>
             <button
               onClick={() => setDrawer({ mode: "create" })}
-              className="rounded-xl border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+              className="gd-button gd-button-primary"
             >
               + Создать новость
             </button>
           </div>
         </div>
 
-        <div className="mb-5 flex flex-wrap gap-2">
+        <div className="gd-tabs mb-5">
           {tabs.map((item) => (
             <button
               key={item.value}
               onClick={() => setTab(item.value)}
-              className={`rounded-2xl px-4 py-2 text-sm font-bold ${
-                tab === item.value
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
+              className={`gd-tab ${tab === item.value ? "gd-tab-active" : ""}`}
             >
               {item.label}
             </button>
@@ -160,21 +169,50 @@ export function InfocenterNewsPage({ activeRole, refreshCommunicationUnreadCount
             event.preventDefault();
             void load();
           }}
-          className="mb-6"
+          className="gd-filter-panel"
         >
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-            placeholder="Поиск по заголовку, описанию и категории..."
-          />
+          <div className="gd-filter-grid">
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="gd-input"
+              placeholder="Поиск по заголовку, описанию и категории..."
+            />
+            <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="gd-input">
+              <option value="all">Все категории</option>
+              {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+            </select>
+            <select value={audienceFilter} onChange={(event) => setAudienceFilter(event.target.value)} className="gd-input">
+              <option value="all">Все аудитории</option>
+              {audiences.map((audience) => <option key={audience.value} value={audience.value}>{audience.label}</option>)}
+            </select>
+            <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as "newest" | "oldest")} className="gd-input">
+              <option value="newest">Сначала новые</option>
+              <option value="oldest">Сначала старые</option>
+            </select>
+            {filtersActive && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  setCategoryFilter("all");
+                  setAudienceFilter("all");
+                  setSortOrder("newest");
+                }}
+                className="gd-button"
+              >
+                Сбросить
+              </button>
+            )}
+          </div>
         </form>
 
         {error && <Message tone="error" text={error} />}
+        {success && <Message tone="success" text={success} />}
         {loading && <Message text="Загрузка..." />}
 
         <section className="space-y-4">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
             <NewsCard
               key={item.id}
               item={item}
@@ -182,14 +220,15 @@ export function InfocenterNewsPage({ activeRole, refreshCommunicationUnreadCount
               onEdit={() => setDrawer({ mode: "edit", item })}
               onConfirm={(action) => setConfirm({ action, item })}
               onAction={async (action) => {
-                await runInfocenterNewsAction(item.id, action);
+                const updated = await runInfocenterNewsAction(item.id, action);
                 await load();
+                setSuccess(newsActionMessage(action, updated.notify_enabled));
               }}
             />
           ))}
-          {items.length === 0 && !loading && (
-            <div className="rounded-3xl border border-slate-200 bg-white p-8 text-sm text-slate-500 shadow-sm">
-              Новости не найдены.
+          {visibleItems.length === 0 && !loading && (
+            <div className="gd-empty-state text-sm">
+              Ничего не найдено.
             </div>
           )}
         </section>
@@ -199,9 +238,10 @@ export function InfocenterNewsPage({ activeRole, refreshCommunicationUnreadCount
         <NewsDrawer
           state={drawer}
           onClose={() => setDrawer(null)}
-          onSaved={async () => {
+          onSaved={async (message) => {
             setDrawer(null);
             await load();
+            setSuccess(message);
           }}
         />
       )}
@@ -307,14 +347,14 @@ function NewsViewer({
   }
 
   return (
-    <main className="min-h-full text-slate-900">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <main className="gd-infocenter-page min-h-full">
+      <div className="w-full">
+        <div className="gd-page-header">
           <div>
-            <h1 className="text-4xl font-black tracking-tight">Новости</h1>
-            <p className="mt-2 text-sm text-slate-500">Опубликованные материалы, доступные вашей аудитории.</p>
+            <h1 className="gd-page-title">Новости</h1>
+            <p className="gd-page-description mt-2 text-sm">Опубликованные материалы, доступные вашей аудитории.</p>
           </div>
-          <button onClick={() => void load()} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          <button onClick={() => void load()} className="gd-button">
             Обновить
           </button>
         </div>
@@ -341,7 +381,7 @@ function NewsViewer({
             <ViewerNewsCard key={item.id} item={item} onOpen={() => void openItem(item)} />
           ))}
           {visibleItems.length === 0 && !loading && (
-            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500 shadow-sm">
+            <div className="gd-empty-state text-sm">
               Доступных новостей пока нет.
             </div>
           )}
@@ -350,7 +390,7 @@ function NewsViewer({
           <div className="mt-5 flex justify-center">
             <button
               onClick={() => setVisibleCount((value) => value + 6)}
-              className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="gd-button"
             >
               Показать ещё
             </button>
@@ -381,15 +421,13 @@ function ViewerToolbar({
     { value: "important", label: "Важные" },
   ];
   return (
-    <div className="mb-5 space-y-3">
-      <div className="flex flex-wrap gap-2">
+    <div className="gd-filter-panel">
+      <div className="gd-tabs">
         {items.map((item) => (
           <button
             key={item.value}
             onClick={() => onFilter(item.value)}
-            className={`rounded-xl px-4 py-2 text-sm font-semibold ${
-              filter === item.value ? "bg-slate-900 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            }`}
+            className={`gd-tab ${filter === item.value ? "gd-tab-active" : ""}`}
           >
             {item.label}
           </button>
@@ -398,7 +436,7 @@ function ViewerToolbar({
       <input
         value={search}
         onChange={(event) => onSearch(event.target.value)}
-        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+        className="gd-input mt-3"
         placeholder={placeholder}
       />
     </div>
@@ -410,7 +448,7 @@ function ViewerNewsCard({ item, onOpen }: { item: InfocenterNews; onOpen: () => 
   return (
     <article
       onClick={onOpen}
-      className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:shadow-md"
+      className="gd-card cursor-pointer transition hover:-translate-y-0.5"
     >
       <div className="flex items-center gap-4">
         <div className="hidden h-20 w-24 shrink-0 overflow-hidden rounded-xl bg-slate-100 sm:block">
@@ -478,7 +516,7 @@ function NewsCard({
   return (
     <article
       onClick={onOpen}
-      className="cursor-pointer rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+      className="gd-card cursor-pointer transition hover:-translate-y-0.5"
     >
       <div className="flex gap-5">
         <div className="hidden h-24 w-32 shrink-0 overflow-hidden rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 sm:block">
@@ -559,7 +597,7 @@ function NewsDrawer({
 }: {
   state: DrawerState;
   onClose: () => void;
-  onSaved: () => Promise<void>;
+  onSaved: (message: string) => Promise<void>;
 }) {
   const item = state?.item;
   const [form, setForm] = useState<InfocenterNewsPayload>(() =>
@@ -604,7 +642,7 @@ function NewsDrawer({
       saved = await uploadPendingFiles(saved, pendingFiles, pendingCoverIndex);
       setCurrent(saved);
       setPendingFiles([]);
-      await onSaved();
+      await onSaved(newsSaveMessage(mode, form.notify_enabled));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось сохранить новость");
     } finally {
@@ -1087,13 +1125,13 @@ function htmlDocumentJSON(html: string) {
 
 function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   return (
-    <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/50 p-4">
-      <section className={`overflow-hidden rounded-3xl bg-white shadow-2xl ${wide ? "w-full max-w-5xl" : "w-full max-w-lg"}`}>
-        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-6 py-4">
-          <h2 className="text-2xl font-bold">{title}</h2>
-          <button onClick={onClose} className="rounded-full border border-slate-200 px-3 py-2 text-slate-500 hover:bg-slate-50">✕</button>
+    <div className="gd-modal-overlay z-[70] grid place-items-center">
+      <section className={`gd-modal-panel ${wide ? "w-full max-w-5xl" : "w-full max-w-lg"}`}>
+        <div className="gd-modal-header">
+          <h2 className="text-2xl font-bold text-[color:var(--gd-text-strong)]">{title}</h2>
+          <button onClick={onClose} className="gd-button px-3 py-2">✕</button>
         </div>
-        <div className="max-h-[68vh] overflow-y-auto px-6 py-5">{children}</div>
+        <div className="gd-modal-body max-h-[68vh] overflow-y-auto">{children}</div>
       </section>
     </div>
   );
@@ -1101,9 +1139,9 @@ function Modal({ title, onClose, children, wide }: { title: string; onClose: () 
 
 function FormBlock({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h3 className="text-lg font-bold text-slate-900">{title}</h3>
-      {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
+    <section className="gd-card">
+      <h3 className="text-lg font-bold text-[color:var(--gd-text-strong)]">{title}</h3>
+      {description && <p className="mt-1 text-sm text-[color:var(--gd-muted)]">{description}</p>}
       {children}
     </section>
   );
@@ -1114,7 +1152,7 @@ function QuickButton({ children, onClick }: { children: ReactNode; onClick: () =
     <button
       type="button"
       onClick={onClick}
-      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+      className="gd-button px-3 py-2 text-xs"
     >
       {children}
     </button>
@@ -1124,7 +1162,7 @@ function QuickButton({ children, onClick }: { children: ReactNode; onClick: () =
 function Field({ label, required = false, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
     <div className="mt-4 block">
-      <span className="mb-2 block text-sm font-semibold text-slate-700">
+      <span className="gd-label">
         {label}
         {required && <span className="text-rose-500"> *</span>}
       </span>
@@ -1133,12 +1171,25 @@ function Field({ label, required = false, children }: { label: string; required?
   );
 }
 
-function Message({ text, tone = "info" }: { text: string; tone?: "info" | "error" }) {
-  return <p className={`mb-4 rounded-xl px-4 py-3 text-sm ${tone === "error" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-600"}`}>{text}</p>;
+function Message({ text, tone = "info" }: { text: string; tone?: "info" | "error" | "success" }) {
+  const className = tone === "error" ? "gd-alert-danger" : tone === "success" ? "gd-alert-success" : "gd-status-slate";
+  return <p className={`gd-alert mb-4 ${className}`}>{text}</p>;
 }
 
 function StatusBadge({ status }: { status: InfocenterNewsStatus }) {
-  return <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">{statusLabel(status)}</span>;
+  return <span className={`gd-status-pill ${newsStatusTone(status)}`}>{statusLabel(status)}</span>;
+}
+
+function newsStatusTone(status: InfocenterNewsStatus) {
+  const classes: Record<InfocenterNewsStatus, string> = {
+    draft: "gd-status-slate",
+    scheduled: "gd-status-amber",
+    published: "gd-status-emerald",
+    hidden: "gd-status-violet",
+    unpublished: "gd-status-red",
+    deleted: "gd-status-red",
+  };
+  return classes[status];
 }
 
 function statusLabel(status: InfocenterNewsStatus) {
@@ -1197,6 +1248,21 @@ function dateLabel(item: InfocenterNews) {
   if (item.status === "scheduled" && item.scheduled_at) return `Запланирована: ${formatAstanaDateTime(item.scheduled_at)}`;
   if (item.published_at) return `Опубликована: ${formatAstanaDateTime(item.published_at)}`;
   return `Создана: ${formatAstanaDateTime(item.created_at)}`;
+}
+
+function dateTimeValue(value?: string | null) {
+  return value ? new Date(value).getTime() : 0;
+}
+
+function newsSaveMessage(mode: "draft" | "publish" | "schedule", notifyEnabled: boolean) {
+  if (mode === "draft") return "Новость сохранена как черновик.";
+  if (mode === "schedule") return "Новость запланирована.";
+  return notifyEnabled ? "Новость опубликована, уведомление отправлено." : "Новость опубликована.";
+}
+
+function newsActionMessage(action: "publish" | "cancel-schedule", notifyEnabled: boolean) {
+  if (action === "cancel-schedule") return "Расписание публикации отменено.";
+  return notifyEnabled ? "Новость опубликована, уведомление отправлено." : "Новость опубликована.";
 }
 
 function toInputDate(value?: string | null) {

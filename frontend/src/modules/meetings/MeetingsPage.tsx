@@ -12,9 +12,25 @@ import {
   getAstanaTodayDateKey,
 } from "@/shared/lib/dateTime";
 import { Placeholder } from "@/shared/ui/Placeholder";
+import {
+  AppBadge,
+  AppButton,
+  AppEmptyState,
+  AppPageHeader,
+} from "@/shared/ui/design-system";
 import { MeetingConfirmationPage } from "@/modules/meetings/MeetingConfirmationPage";
+import type { Meeting } from "@/types/meeting";
 
 type MeetingsListMode = "upcoming" | "active" | "past";
+type MeetingPeriodFilter = "all" | "today" | "week" | "month";
+type MeetingLike = Meeting & {
+  meeting_format?: string | null;
+  meeting_form_label?: string | null;
+  condominium_address?: string | null;
+  building_address?: string | null;
+  address?: string | null;
+  created_at?: string | null;
+};
 
 export function MeetingsPage() {
   return (
@@ -28,9 +44,9 @@ export function MeetingsPage() {
 export function UpcomingMeetingsPage(props: CabinetModuleProps) {
   return (
     <MeetingsListTemplate
+      {...withoutCabinetTitle(props)}
       title="Предстоящие собрания"
       mode="upcoming"
-      {...props}
     />
   );
 }
@@ -38,9 +54,9 @@ export function UpcomingMeetingsPage(props: CabinetModuleProps) {
 export function ActiveMeetingsPage(props: CabinetModuleProps) {
   return (
     <MeetingsListTemplate
+      {...withoutCabinetTitle(props)}
       title="Активные собрания"
       mode="active"
-      {...props}
     />
   );
 }
@@ -48,11 +64,17 @@ export function ActiveMeetingsPage(props: CabinetModuleProps) {
 export function PastMeetingsPage(props: CabinetModuleProps) {
   return (
     <MeetingsListTemplate
+      {...withoutCabinetTitle(props)}
       title="Прошедшие собрания"
       mode="past"
-      {...props}
     />
   );
+}
+
+function withoutCabinetTitle(props: CabinetModuleProps) {
+  const { title, ...rest } = props;
+  void title;
+  return rest;
 }
 
 export function ApprovalMeetingsPage() {
@@ -82,9 +104,13 @@ function MeetingsListTemplate({
   title: string;
   mode: MeetingsListMode;
 }) {
-  const [selectedMeeting, setSelectedMeeting] = useState<any | null>(null);
+  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
+  const [search, setSearch] = useState("");
+  const [formFilter, setFormFilter] = useState("all");
+  const [initiatorFilter, setInitiatorFilter] = useState("all");
+  const [periodFilter, setPeriodFilter] = useState<MeetingPeriodFilter>("all");
 
-  const visibleMeetings = useMemo(() => {
+  const baseMeetings = useMemo(() => {
     const sortedAsc = [...meetings].sort((a, b) =>
       String(a.scheduled_at ?? "").localeCompare(String(b.scheduled_at ?? ""))
     );
@@ -112,7 +138,47 @@ function MeetingsListTemplate({
     return sortedAsc;
   }, [meetings, mode]);
 
-  const handlePrint = (meeting: any) => {
+  const formOptions = useMemo(
+    () => distinctMeetingValues(baseMeetings.map((meeting) => getMeetingFormLabel(meeting))),
+    [baseMeetings],
+  );
+  const initiatorOptions = useMemo(
+    () => distinctMeetingValues(baseMeetings.map((meeting) => meeting.initiator_name)),
+    [baseMeetings],
+  );
+  const filtersActive =
+    Boolean(search.trim()) ||
+    formFilter !== "all" ||
+    initiatorFilter !== "all" ||
+    periodFilter !== "all";
+
+  const visibleMeetings = useMemo(
+    () =>
+      baseMeetings.filter((meeting) => {
+        const calculatedStatus = getMeetingStatusByDate(meeting.scheduled_at);
+        const normalizedSearch = normalizeSearch(search);
+        const form = getMeetingFormLabel(meeting);
+
+        if (normalizedSearch && !buildMeetingSearchText(meeting, calculatedStatus).includes(normalizedSearch)) {
+          return false;
+        }
+        if (formFilter !== "all" && form !== formFilter) return false;
+        if (initiatorFilter !== "all" && meeting.initiator_name !== initiatorFilter) return false;
+        if (periodFilter !== "all" && !matchesMeetingPeriod(meeting.scheduled_at, periodFilter, mode)) return false;
+
+        return true;
+      }),
+    [baseMeetings, formFilter, initiatorFilter, mode, periodFilter, search],
+  );
+
+  function resetFilters() {
+    setSearch("");
+    setFormFilter("all");
+    setInitiatorFilter("all");
+    setPeriodFilter("all");
+  }
+
+  const handlePrint = (meeting: Meeting) => {
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
 
@@ -126,7 +192,7 @@ function MeetingsListTemplate({
     }, 300);
   };
 
-  const handleDownloadPdf = async (meeting: any) => {
+  const handleDownloadPdf = async (meeting: Meeting) => {
     const iframe = document.createElement("iframe");
 
     iframe.style.position = "fixed";
@@ -205,108 +271,140 @@ function MeetingsListTemplate({
 
   return (
     <>
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-slate-900">{title}</h1>
-        <p className="mt-2 text-sm text-slate-500">
-          {mode === "active"
+      <AppPageHeader
+        title={title}
+        description={
+          mode === "active"
             ? "Отображаются собрания, которые состоятся сегодня."
-            : "Собрания отсортированы по ближайшей дате и времени."}
-        </p>
-      </div>
+            : "Собрания отсортированы по ближайшей дате и времени."
+        }
+      />
 
       {meetingError && (
-        <section className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-600">
+        <section className="gd-alert gd-alert-danger mb-4">
           {meetingError}
         </section>
       )}
 
+      <section className="gd-filter-panel">
+        <div className="gd-filter-grid">
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="gd-input"
+            placeholder="Поиск по дате, месту, инициатору, форме, повестке или статусу"
+          />
+          <select
+            value={formFilter}
+            onChange={(event) => setFormFilter(event.target.value)}
+            className="gd-input"
+          >
+            <option value="all">Все формы</option>
+            {formOptions.map((form) => (
+              <option key={form} value={form}>
+                {form}
+              </option>
+            ))}
+          </select>
+          <select
+            value={periodFilter}
+            onChange={(event) => setPeriodFilter(event.target.value as MeetingPeriodFilter)}
+            className="gd-input"
+          >
+            <option value="all">Любой период</option>
+            <option value="today">Сегодня</option>
+            <option value="week">7 дней</option>
+            <option value="month">30 дней</option>
+          </select>
+          <select
+            value={initiatorFilter}
+            onChange={(event) => setInitiatorFilter(event.target.value)}
+            className="gd-input"
+          >
+            <option value="all">Все инициаторы</option>
+            {initiatorOptions.map((initiator) => (
+              <option key={initiator} value={initiator}>
+                {initiator}
+              </option>
+            ))}
+          </select>
+        </div>
+        {filtersActive && (
+          <div className="gd-filter-actions mt-3">
+            <AppButton onClick={resetFilters}>Сбросить фильтры</AppButton>
+            <span className="text-sm text-[var(--gd-muted)]">Найдено: {visibleMeetings.length}</span>
+          </div>
+        )}
+      </section>
+
       {visibleMeetings.length === 0 && (
-        <section className="rounded-2xl border bg-white p-6 shadow-sm">
-          <p className="text-slate-600">Данных по этому разделу пока нет.</p>
-        </section>
+        <AppEmptyState text={filtersActive ? "Ничего не найдено." : "Данных по этому разделу пока нет."} />
       )}
 
-      <div className="grid gap-5">
+      <div className="grid gap-3">
         {visibleMeetings.map((meeting) => {
           const calculatedStatus = getMeetingStatusByDate(meeting.scheduled_at);
 
           return (
             <section
               key={meeting.id}
-              className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:border-blue-300 hover:shadow-md"
+              className="gd-card transition hover:border-[var(--gd-primary)] hover:shadow-md"
             >
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-medium ${getStatusBadgeClass(
-                        calculatedStatus
-                      )}`}
-                    >
+                    <AppBadge tone={getStatusBadgeTone(calculatedStatus)}>
                       {translateStatus(calculatedStatus)}
-                    </span>
-
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-medium ${
-                        isOnlineMeeting(meeting)
-                          ? "bg-blue-50 text-blue-700"
-                          : "bg-slate-100 text-slate-600"
-                      }`}
-                    >
+                    </AppBadge>
+                    <AppBadge tone={isOnlineMeeting(meeting) ? "blue" : "slate"}>
                       {translateMeetingFormat(meeting)}
-                    </span>
-
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                    </AppBadge>
+                    <AppBadge tone="slate">
                       {formatMeetingDateTime(meeting.scheduled_at)}
-                    </span>
+                    </AppBadge>
                   </div>
 
-                  <h2 className="text-xl font-bold text-slate-900">
+                  <h2 className="text-xl font-bold text-[var(--gd-text-strong)]">
                     Общедомовое собрание
                   </h2>
 
-                  <p className="mt-2 text-sm text-slate-600">
+                  <p className="mt-2 text-sm text-[var(--gd-muted-strong)]">
                     <b>Инициатор:</b> {meeting.initiator_name}
                   </p>
 
-                  <p className="mt-1 text-sm text-slate-600">
+                  <p className="mt-1 text-sm text-[var(--gd-muted-strong)]">
                     <b>Место:</b> {meeting.location}
                   </p>
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
+                  <AppButton
                     onClick={() => setSelectedMeeting(meeting)}
-                    className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                   >
                     Подробнее
-                  </button>
+                  </AppButton>
 
-                  <button
-                    type="button"
+                  <AppButton
+                    variant="primary"
                     onClick={() => handlePrint(meeting)}
-                    className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
                   >
                     Печать
-                  </button>
+                  </AppButton>
 
-                  <button
-                    type="button"
+                  <AppButton
                     onClick={() => handleDownloadPdf(meeting)}
-                    className="rounded-xl border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
                   >
                     Скачать PDF
-                  </button>
+                  </AppButton>
                 </div>
               </div>
 
-              <div className="mt-5 rounded-2xl bg-slate-50 p-4">
-                <p className="mb-2 text-sm font-semibold text-slate-800">
+              <div className="gd-muted-panel mt-5 p-4">
+                <p className="mb-2 text-sm font-semibold text-[var(--gd-text-strong)]">
                   Повестка:
                 </p>
 
-                <ul className="space-y-1 text-sm text-slate-600">
+                <ul className="space-y-1 text-sm text-[var(--gd-muted-strong)]">
                   {(meeting.agenda ?? []).slice(0, 3).map((item: string, index: number) => (
                     <li key={`${meeting.id}-agenda-${index}`}>
                       • {item}
@@ -315,7 +413,7 @@ function MeetingsListTemplate({
                 </ul>
 
                 {(meeting.agenda ?? []).length > 3 && (
-                  <p className="mt-2 text-xs text-slate-400">
+                  <p className="mt-2 text-xs text-[var(--gd-muted)]">
                     Ещё пунктов: {(meeting.agenda ?? []).length - 3}
                   </p>
                 )}
@@ -326,25 +424,26 @@ function MeetingsListTemplate({
       </div>
 
       {selectedMeeting && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 p-6">
-          <div className="mx-auto max-w-6xl rounded-3xl bg-slate-100 p-6 shadow-xl">
-            <div className="mb-4 flex justify-end">
-              <button
-                type="button"
+        <div className="gd-modal-overlay">
+          <div className="gd-modal-panel max-w-6xl">
+            <div className="gd-modal-header">
+              <h2 className="text-xl font-bold text-[var(--gd-text-strong)]">Подробнее о собрании</h2>
+              <AppButton
                 onClick={() => setSelectedMeeting(null)}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 Закрыть
-              </button>
+              </AppButton>
             </div>
 
-            <MeetingConfirmationPage
-              meeting={selectedMeeting}
-              mode="preview"
-              creating={false}
-              onBack={() => setSelectedMeeting(null)}
-              onConfirm={() => {}}
-            />
+            <div className="gd-modal-body bg-[var(--gd-surface-muted)]">
+              <MeetingConfirmationPage
+                meeting={selectedMeeting}
+                mode="preview"
+                creating={false}
+                onBack={() => setSelectedMeeting(null)}
+                onConfirm={() => {}}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -352,7 +451,7 @@ function MeetingsListTemplate({
   );
 }
 
-function buildMeetingPrintPageHtml(meeting: any) {
+function buildMeetingPrintPageHtml(meeting: MeetingLike) {
   return `
     <html>
       <head>
@@ -366,7 +465,7 @@ function buildMeetingPrintPageHtml(meeting: any) {
   `;
 }
 
-function buildMeetingPrintDocumentHtml(meeting: any) {
+function buildMeetingPrintDocumentHtml(meeting: MeetingLike) {
   const address = getFormattedAddress(meeting);
   const agenda = Array.isArray(meeting?.agenda) ? meeting.agenda : [];
 
@@ -436,7 +535,7 @@ function buildMeetingPrintDocumentHtml(meeting: any) {
 
       <div class="point">
         <p class="point-title">7. Дата размещения уведомления:</p>
-        <p>${escapeHtml(formatDateOnly(meeting?.created_at))}</p>
+        <p>${escapeHtml(formatDateOnly(meeting.created_at || undefined))}</p>
       </div>
 
       <div class="point">
@@ -546,14 +645,10 @@ function getMeetingStatusByDate(value?: string) {
   return "upcoming";
 }
 
-function getStatusBadgeClass(status: string) {
-  const classes: Record<string, string> = {
-    upcoming: "bg-blue-50 text-blue-700",
-    active: "bg-green-50 text-green-700",
-    past: "bg-slate-100 text-slate-600",
-  };
-
-  return classes[status] ?? "bg-slate-100 text-slate-600";
+function getStatusBadgeTone(status: string): "blue" | "emerald" | "slate" {
+  if (status === "active") return "emerald";
+  if (status === "upcoming") return "blue";
+  return "slate";
 }
 
 function translateStatus(status: string) {
@@ -566,11 +661,11 @@ function translateStatus(status: string) {
   return statuses[status] ?? status ?? "Предстоящий";
 }
 
-function translateMeetingFormat(meeting: any) {
+function translateMeetingFormat(meeting: MeetingLike) {
   return isOnlineMeeting(meeting) ? "Онлайн" : "Оффлайн";
 }
 
-function isOnlineMeeting(meeting: any) {
+function isOnlineMeeting(meeting: MeetingLike) {
   const format =
     meeting?.meeting_format ||
     meeting?.meeting_form ||
@@ -587,7 +682,7 @@ function isOnlineMeeting(meeting: any) {
   );
 }
 
-function getMeetingFormLabel(meeting: any) {
+function getMeetingFormLabel(meeting: MeetingLike) {
   return (
     meeting?.meeting_form_label ||
     meeting?.meeting_format ||
@@ -595,7 +690,62 @@ function getMeetingFormLabel(meeting: any) {
   );
 }
 
-function getFormattedAddress(meeting: any) {
+function distinctMeetingValues(values: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => String(value || "").trim())
+        .filter(Boolean),
+    ),
+  ).sort((left, right) => left.localeCompare(right, "ru"));
+}
+
+function normalizeSearch(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function buildMeetingSearchText(meeting: Meeting, calculatedStatus: string) {
+  return normalizeSearch(
+    [
+      meeting.scheduled_at ? formatMeetingDateTime(meeting.scheduled_at) : "",
+      meeting.scheduled_at ? formatDateOnly(meeting.scheduled_at) : "",
+      meeting.location,
+      meeting.initiator_name,
+      getMeetingFormLabel(meeting),
+      translateMeetingFormat(meeting),
+      translateStatus(calculatedStatus),
+      calculatedStatus,
+      ...(meeting.agenda ?? []),
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
+function matchesMeetingPeriod(value: string, period: MeetingPeriodFilter, mode: MeetingsListMode) {
+  if (period === "all") return true;
+
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return false;
+
+  const date = new Date(time);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const meetingStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+
+  if (period === "today") return meetingStart === todayStart;
+
+  const days = period === "week" ? 7 : 30;
+  if (mode === "past") {
+    const rangeStart = todayStart - days * 24 * 60 * 60 * 1000;
+    return meetingStart >= rangeStart && meetingStart <= todayStart;
+  }
+
+  const rangeEnd = todayStart + days * 24 * 60 * 60 * 1000;
+  return meetingStart >= todayStart && meetingStart <= rangeEnd;
+}
+
+function getFormattedAddress(meeting: MeetingLike) {
   const source =
     meeting?.condominium_address ||
     meeting?.building_address ||

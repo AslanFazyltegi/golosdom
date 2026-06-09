@@ -235,7 +235,7 @@ function OwnerDashboardSummaryPage({
   );
 
   return (
-    <>
+    <div className="gd-dashboard-summary space-y-6">
       <h1 className="mb-6 text-3xl font-bold">Дашборд (сводка)</h1>
 
       {loading && (
@@ -293,7 +293,7 @@ function OwnerDashboardSummaryPage({
           />
         </DashboardSection>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -341,7 +341,7 @@ function ChairmanDashboardSummaryPage({ openModule }: CabinetModuleProps) {
   const tasks = useMemo(() => buildChairmanTasks(data), [data]);
 
   return (
-    <>
+    <div className="gd-dashboard-summary space-y-6">
       <h1 className="mb-6 text-3xl font-bold">Дашборд председателя</h1>
 
       {loading && (
@@ -418,7 +418,7 @@ function ChairmanDashboardSummaryPage({ openModule }: CabinetModuleProps) {
           />
         </DashboardSection>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -528,7 +528,7 @@ function CouncilDashboardSummaryPage({
   }
 
   return (
-    <>
+    <div className="gd-dashboard-summary space-y-6">
       <h1 className="mb-6 text-3xl font-bold">Дашборд совета дома</h1>
 
       {loading && (
@@ -637,7 +637,7 @@ function CouncilDashboardSummaryPage({
           onSubmit={handleRevisionSubmit}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -1485,7 +1485,7 @@ function LegacyDashboardSummaryPage({
   loadVotings,
 }: Pick<CabinetModuleProps, "votings" | "loadVotings">) {
   return (
-    <>
+    <div className="gd-dashboard-summary space-y-6">
       <h1 className="mb-8 text-3xl font-bold">Дашборд (сводка)</h1>
 
       <div className="mb-8 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
@@ -1528,7 +1528,7 @@ function LegacyDashboardSummaryPage({
           />
         </section>
       </div>
-    </>
+    </div>
   );
 }
 

@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
+import {
+  AppButton,
+  AppPageHeader,
+} from "@/shared/ui/design-system";
 
 type SettingsState = {
   language: "ru" | "kk";
@@ -36,20 +40,15 @@ export function SystemSettingsPage({ user }: CabinetModuleProps) {
   }
 
   return (
-    <>
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-950">
-          Настройки системы
-        </h1>
-        <p className="mt-2 text-slate-500">Кабинет пользователя</p>
-      </div>
+    <main className="gd-settings-page min-h-full">
+      <AppPageHeader title="Настройки системы" description="Кабинет пользователя" />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
-        <section className="rounded-2xl border bg-white p-6 shadow-sm md:p-8">
-          <h2 className="mb-5 text-xl font-semibold">Интерфейс</h2>
+        <section className="gd-card md:p-8">
+          <h2 className="mb-5 text-xl font-semibold text-[var(--gd-text-strong)]">Интерфейс</h2>
 
           <div className="mb-6">
-            <p className="mb-3 font-medium">Язык интерфейса</p>
+            <p className="mb-3 font-medium text-[var(--gd-text-strong)]">Язык интерфейса</p>
             <div className="flex flex-wrap gap-2">
               <ChoiceButton
                 active={settings.language === "ru"}
@@ -67,7 +66,7 @@ export function SystemSettingsPage({ user }: CabinetModuleProps) {
           </div>
 
           <div>
-            <p className="mb-3 font-medium">Тема оформления</p>
+            <p className="mb-3 font-medium text-[var(--gd-text-strong)]">Тема оформления</p>
             <div className="flex flex-wrap gap-2">
               <ChoiceButton
                 active={settings.theme === "light"}
@@ -92,8 +91,8 @@ export function SystemSettingsPage({ user }: CabinetModuleProps) {
         </section>
 
         <div className="space-y-6">
-          <section className="rounded-2xl border bg-white p-6 shadow-sm md:p-8">
-            <h2 className="mb-5 text-xl font-semibold">Уведомления</h2>
+          <section className="gd-card md:p-8">
+            <h2 className="mb-5 text-xl font-semibold text-[var(--gd-text-strong)]">Уведомления</h2>
             <ToggleRow
               checked={settings.systemNotifications}
               description="Публикация голосований, изменения статусов, новые сообщения."
@@ -110,40 +109,38 @@ export function SystemSettingsPage({ user }: CabinetModuleProps) {
             />
           </section>
 
-          <section className="rounded-2xl border bg-white p-6 shadow-sm md:p-8">
-            <h2 className="mb-5 text-xl font-semibold">Безопасность</h2>
+          <section className="gd-card md:p-8">
+            <h2 className="mb-5 text-xl font-semibold text-[var(--gd-text-strong)]">Безопасность</h2>
             <div className="flex flex-wrap gap-3">
-              <button
+              <AppButton
                 onClick={() =>
                   showPlaceholder("Функция смены пароля будет добавлена позже.")
                 }
-                className="rounded-xl border px-4 py-2 hover:bg-slate-50"
               >
                 Сменить пароль
-              </button>
-              <button
+              </AppButton>
+              <AppButton
                 onClick={() =>
                   showPlaceholder(
                     "Завершение других сессий будет добавлено позже.",
                   )
                 }
-                className="rounded-xl border px-4 py-2 hover:bg-slate-50"
               >
                 Завершить другие сессии
-              </button>
+              </AppButton>
             </div>
             {message && (
-              <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+              <p className="gd-muted-panel mt-4 p-4 text-sm">
                 {message}
               </p>
             )}
-            <p className="mt-5 text-sm text-slate-500">
+            <p className="mt-5 text-sm text-[var(--gd-muted)]">
               Пользователь: {user.email || "email не указан"}
             </p>
           </section>
         </div>
       </div>
-    </>
+    </main>
   );
 }
 
@@ -172,10 +169,10 @@ function ChoiceButton({
   return (
     <button
       onClick={onClick}
-      className={`rounded-xl border px-4 py-2 text-sm ${
+      className={`gd-button ${
         active
-          ? "border-blue-600 bg-blue-50 font-medium text-blue-700"
-          : "hover:bg-slate-50"
+          ? "gd-button-primary"
+          : ""
       }`}
     >
       {children}
@@ -195,16 +192,16 @@ function ToggleRow({
   onChange: (value: boolean) => void;
 }) {
   return (
-    <label className="mb-4 flex items-center justify-between gap-4 rounded-xl border px-4 py-3">
+    <label className="mb-4 flex items-center justify-between gap-4 rounded-[var(--gd-radius-md)] border border-[var(--gd-border)] bg-[var(--gd-surface)] px-4 py-3">
       <span>
-        <span className="block font-medium">{label}</span>
-        <span className="mt-1 block text-sm text-slate-500">{description}</span>
+        <span className="block font-medium text-[var(--gd-text-strong)]">{label}</span>
+        <span className="mt-1 block text-sm text-[var(--gd-muted)]">{description}</span>
       </span>
       <input
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="h-5 w-5"
+        className="h-5 w-5 accent-[var(--gd-primary)]"
       />
     </label>
   );

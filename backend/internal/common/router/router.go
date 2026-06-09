@@ -65,10 +65,10 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 	communicationsH := communicationsHandler.New(communicationsSvc)
 
 	infocenterNewsRepo := infocenterNews.NewRepository(dbPool)
-	infocenterNewsSvc := infocenterNews.NewService(infocenterNewsRepo)
+	infocenterNewsSvc := infocenterNews.NewService(infocenterNewsRepo, communicationsSvc)
 	infocenterNewsH := infocenterNews.NewHandler(infocenterNewsSvc)
 	infocenterAnnouncementsRepo := infocenterAnnouncements.NewRepository(dbPool)
-	infocenterAnnouncementsSvc := infocenterAnnouncements.NewService(infocenterAnnouncementsRepo)
+	infocenterAnnouncementsSvc := infocenterAnnouncements.NewService(infocenterAnnouncementsRepo, communicationsSvc)
 	infocenterAnnouncementsH := infocenterAnnouncements.NewHandler(infocenterAnnouncementsSvc)
 
 	objectsRepo := objectsRepo.New(dbPool)

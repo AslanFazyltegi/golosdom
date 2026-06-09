@@ -11,15 +11,19 @@ import (
 	"strings"
 	"time"
 
+	communicationsDTO "golosdom-backend/internal/communications/dto"
+	communicationsService "golosdom-backend/internal/communications/service"
+
 	"github.com/microcosm-cc/bluemonday"
 )
 
 type Service struct {
 	repo      *Repository
+	notifier  *communicationsService.Service
 	sanitizer *bluemonday.Policy
 }
 
-func NewService(repo *Repository) *Service {
+func NewService(repo *Repository, notifier ...*communicationsService.Service) *Service {
 	policy := bluemonday.UGCPolicy()
 	documentElements := []string{
 		"p", "br", "h1", "h2", "h3", "h4", "strong", "b", "em", "i", "u", "s",
@@ -48,7 +52,11 @@ func NewService(repo *Repository) *Service {
 	policy.AllowStyles("color", "background-color").Matching(cssColor).OnElements(styleElements...)
 	policy.AllowStyles("font-size").Matching(cssSize).OnElements(styleElements...)
 	policy.AllowStyles("font-family").Matching(cssFamily).OnElements(styleElements...)
-	return &Service{repo: repo, sanitizer: policy}
+	var notificationService *communicationsService.Service
+	if len(notifier) > 0 {
+		notificationService = notifier[0]
+	}
+	return &Service{repo: repo, notifier: notificationService, sanitizer: policy}
 }
 
 func (s *Service) List(ctx context.Context, status string, search string, actorID string) ([]NewsResponse, error) {
@@ -89,7 +97,11 @@ func (s *Service) Create(ctx context.Context, req SaveRequest, actorID string, m
 		}
 		status = "scheduled"
 	}
-	return s.repo.Create(ctx, newID(), prepared, actorID, status)
+	item, err := s.repo.Create(ctx, newID(), prepared, actorID, status)
+	if err != nil {
+		return NewsResponse{}, err
+	}
+	return s.sendPublicationNotification(ctx, item, actorID)
 }
 
 func (s *Service) Update(ctx context.Context, id string, req SaveRequest, actorID string) (NewsResponse, error) {
@@ -101,7 +113,11 @@ func (s *Service) Update(ctx context.Context, id string, req SaveRequest, actorI
 }
 
 func (s *Service) Publish(ctx context.Context, id string, actorID string) (NewsResponse, error) {
-	return s.repo.SetStatus(ctx, id, "published", "published", nil, nil, actorID)
+	item, err := s.repo.SetStatus(ctx, id, "published", "published", nil, nil, actorID)
+	if err != nil {
+		return NewsResponse{}, err
+	}
+	return s.sendPublicationNotification(ctx, item, actorID)
 }
 
 func (s *Service) Schedule(ctx context.Context, id string, req ActionRequest, actorID string) (NewsResponse, error) {
@@ -182,6 +198,28 @@ func (s *Service) SetCover(ctx context.Context, newsID string, imageID string, a
 	return s.repo.SetCover(ctx, newsID, imageID, actorID)
 }
 
+func (s *Service) sendPublicationNotification(ctx context.Context, item NewsResponse, actorID string) (NewsResponse, error) {
+	if item.Status != "published" || !item.NotifyEnabled || s.notifier == nil {
+		return item, nil
+	}
+	category := item.Category
+	_, err := s.notifier.SaveNotification(actorID, communicationsDTO.SaveNotificationRequest{
+		Title:    "Новая новость: " + item.Title,
+		Body:     item.Summary,
+		BodyHTML: item.BodyHTML,
+		Status:   "sent",
+		Category: &category,
+		Targets:  notificationTargets(item.AudienceType),
+		Channels: []communicationsDTO.ChannelRequest{
+			{Channel: "portal", Enabled: true},
+		},
+	}, "infocenter-news-"+item.ID, "send")
+	if err != nil {
+		return item, err
+	}
+	return item, nil
+}
+
 func (s *Service) prepare(req SaveRequest) (SaveRequest, error) {
 	req.Title = strings.TrimSpace(req.Title)
 	req.Summary = strings.TrimSpace(req.Summary)
@@ -227,6 +265,25 @@ func optionalReason(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func notificationTargets(audienceType string) []communicationsDTO.TargetRequest {
+	switch audienceType {
+	case "apartments_commercial":
+		return []communicationsDTO.TargetRequest{
+			{Type: "property_type", Value: "apartment"},
+			{Type: "property_type", Value: "commercial_room"},
+		}
+	case "storage_parking":
+		return []communicationsDTO.TargetRequest{
+			{Type: "property_type", Value: "storage"},
+			{Type: "property_type", Value: "parking"},
+		}
+	case "council_members":
+		return []communicationsDTO.TargetRequest{{Type: "role", Value: "COUNCIL_MEMBER"}}
+	default:
+		return []communicationsDTO.TargetRequest{{Type: "all", Value: ""}}
+	}
 }
 
 func newID() string {
