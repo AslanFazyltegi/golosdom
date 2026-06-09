@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -391,8 +392,12 @@ func (r *Repository) SaveNotification(ctx context.Context, data SaveNotification
 		return model.Notification{}, fmt.Errorf("replace notification channels: %w", err)
 	}
 	if status == "sent" || status == "sending" {
-		if err := createNotificationDeliveries(ctx, tx, item.ID, data.BuildingID, targets, channels); err != nil {
+		recipients, err := createNotificationDeliveries(ctx, tx, item.ID, data.BuildingID, targets, channels)
+		if err != nil {
 			return model.Notification{}, fmt.Errorf("create notification deliveries: %w", err)
+		}
+		if recipients == 0 {
+			return model.Notification{}, errors.New("Не найдено ни одного получателя для выбранной аудитории.")
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -904,10 +909,10 @@ func createPostDeliveries(ctx context.Context, tx pgx.Tx, postID string, buildin
 	return nil
 }
 
-func createNotificationDeliveries(ctx context.Context, tx pgx.Tx, id string, buildingID string, targets []model.Target, channels []model.Channel) error {
+func createNotificationDeliveries(ctx context.Context, tx pgx.Tx, id string, buildingID string, targets []model.Target, channels []model.Channel) (int, error) {
 	users, err := selectTargetUsers(ctx, tx, buildingID, targets)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	for _, userID := range users {
 		for _, channel := range channels {
@@ -923,11 +928,11 @@ func createNotificationDeliveries(ctx context.Context, tx pgx.Tx, id string, bui
 					error_message = EXCLUDED.error_message,
 					updated_at = now()
 			`, fmt.Sprintf("delivery-notification-%s-%s-%s", id, userID, channel.Channel), id, userID, channel.Channel, status, errorMessage); err != nil {
-				return err
+				return 0, err
 			}
 		}
 	}
-	return nil
+	return len(users), nil
 }
 
 func selectTargetUsers(ctx context.Context, tx pgx.Tx, buildingID string, targets []model.Target) ([]string, error) {

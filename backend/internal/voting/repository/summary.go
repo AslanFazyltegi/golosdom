@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"math"
 	"sort"
 	"strings"
@@ -134,7 +135,7 @@ func (r *Repository) SendVotingReminders(ctx context.Context, votingID, actorUse
 		}
 	}
 	if len(targets) == 0 {
-		return 0, nil
+		return 0, errors.New("Нет получателей для напоминания.")
 	}
 
 	tx, err := r.db.Begin(ctx)
@@ -163,6 +164,10 @@ func (r *Repository) SendVotingReminders(ctx context.Context, votingID, actorUse
 		}
 	}
 
+	if err := r.insertVotingReminderCommunicationNotification(ctx, tx, voting, actorUserID, targets, now); err != nil {
+		return 0, err
+	}
+
 	if err := insertVotingActionLog(ctx, tx, votingID, actorUserID, "CHAIRMAN", "reminder_sent", fmt.Sprintf("Отправлено напоминаний: %d", len(targets)), now); err != nil {
 		return 0, err
 	}
@@ -172,6 +177,130 @@ func (r *Repository) SendVotingReminders(ctx context.Context, votingID, actorUse
 	}
 
 	return len(targets), nil
+}
+
+func (r *Repository) insertVotingReminderCommunicationNotification(
+	ctx context.Context,
+	tx pgx.Tx,
+	voting model.Voting,
+	actorUserID string,
+	targets []model.VotingNotVotedOwner,
+	now time.Time,
+) error {
+	authorUserID := strings.TrimSpace(actorUserID)
+	if authorUserID == "" {
+		authorUserID = strings.TrimSpace(voting.CreatedBy)
+	}
+	if authorUserID == "" {
+		return errors.New("Не удалось определить автора напоминания.")
+	}
+
+	buildingID, err := reminderBuildingID(ctx, tx, targets)
+	if err != nil {
+		return err
+	}
+
+	notificationID := fmt.Sprintf("voting-reminder-%s-%d", voting.ID, now.UnixNano())
+	title := "Напоминание о голосовании"
+	body := fmt.Sprintf("Вы ещё не проголосовали по опросному листу: %s.", voting.Title)
+	bodyHTML := "<p>" + html.EscapeString(body) + "</p>"
+	audienceSummary := fmt.Sprintf("Не проголосовавшие собственники: %d", len(targets))
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO communication_notifications (
+			id,
+			building_id,
+			author_user_id,
+			title,
+			body,
+			body_html,
+			status,
+			category,
+			audience_summary,
+			sent_at
+		) VALUES (
+			$1::text,
+			$2::text,
+			$3::text,
+			$4::text,
+			$5::text,
+			$6::text,
+			'sent',
+			'Голосование',
+			$7::text,
+			$8::timestamp
+		)
+	`, notificationID, buildingID, authorUserID, title, body, bodyHTML, audienceSummary, now); err != nil {
+		return fmt.Errorf("create voting reminder notification: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO communication_channels (id, notification_id, channel, enabled)
+		VALUES ($1::text, $2::text, 'portal', true)
+	`, notificationID+"-channel-portal", notificationID); err != nil {
+		return fmt.Errorf("create voting reminder notification channel: %w", err)
+	}
+
+	for index, owner := range targets {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO communication_notification_targets (id, notification_id, target_type, target_value)
+			VALUES ($1::text, $2::text, 'user', $3::text)
+		`, fmt.Sprintf("%s-target-%d", notificationID, index), notificationID, owner.OwnerID); err != nil {
+			return fmt.Errorf("create voting reminder notification target: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO communication_deliveries (
+				id,
+				entity_type,
+				entity_id,
+				user_id,
+				channel,
+				status,
+				sent_at,
+				delivered_at
+			) VALUES (
+				$1::text,
+				'notification',
+				$2::text,
+				$3::text,
+				'portal',
+				'delivered',
+				$4::timestamp,
+				$4::timestamp
+			)
+		`, fmt.Sprintf("delivery-notification-%s-%s-portal", notificationID, owner.OwnerID), notificationID, owner.OwnerID, now); err != nil {
+			return fmt.Errorf("create voting reminder notification delivery: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func reminderBuildingID(ctx context.Context, tx pgx.Tx, targets []model.VotingNotVotedOwner) (string, error) {
+	for _, owner := range targets {
+		var buildingID string
+		err := tx.QueryRow(ctx, `
+			SELECT p.building_id
+			FROM property_owners po
+			JOIN property p ON p.id = po.property_id
+			WHERE po.user_id = $1
+				AND po.status = 'active'
+			ORDER BY p.id
+			LIMIT 1
+		`, owner.OwnerID).Scan(&buildingID)
+		if err == nil {
+			return buildingID, nil
+		}
+		if err != pgx.ErrNoRows {
+			return "", fmt.Errorf("find voting reminder building: %w", err)
+		}
+	}
+
+	var buildingID string
+	if err := tx.QueryRow(ctx, `SELECT id FROM building ORDER BY created_at ASC LIMIT 1`).Scan(&buildingID); err != nil {
+		return "", fmt.Errorf("find primary building for voting reminder: %w", err)
+	}
+	return buildingID, nil
 }
 
 func (r *Repository) listSummaryVotings(ctx context.Context) ([]model.Voting, error) {

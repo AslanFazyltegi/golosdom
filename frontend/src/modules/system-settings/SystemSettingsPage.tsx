@@ -25,7 +25,6 @@ const STORAGE_KEY = "golosdom.systemSettings";
 
 export function SystemSettingsPage({ user }: CabinetModuleProps) {
   const [settings, setSettings] = useState<SettingsState>(loadSettings);
-  const [message, setMessage] = useState("");
 
   function updateSettings(next: Partial<SettingsState>) {
     setSettings((current) => {
@@ -33,10 +32,6 @@ export function SystemSettingsPage({ user }: CabinetModuleProps) {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       return updated;
     });
-  }
-
-  function showPlaceholder(text: string) {
-    setMessage(text);
   }
 
   return (
@@ -113,27 +108,18 @@ export function SystemSettingsPage({ user }: CabinetModuleProps) {
             <h2 className="mb-5 text-xl font-semibold text-[var(--gd-text-strong)]">Безопасность</h2>
             <div className="flex flex-wrap gap-3">
               <AppButton
-                onClick={() =>
-                  showPlaceholder("Функция смены пароля будет добавлена позже.")
-                }
+                disabled
+                title="Смена пароля пока не подключена к backend API."
               >
                 Сменить пароль
               </AppButton>
               <AppButton
-                onClick={() =>
-                  showPlaceholder(
-                    "Завершение других сессий будет добавлено позже.",
-                  )
-                }
+                disabled
+                title="Завершение других сессий пока не подключено к backend API."
               >
                 Завершить другие сессии
               </AppButton>
             </div>
-            {message && (
-              <p className="gd-muted-panel mt-4 p-4 text-sm">
-                {message}
-              </p>
-            )}
             <p className="mt-5 text-sm text-[var(--gd-muted)]">
               Пользователь: {user.email || "email не указан"}
             </p>

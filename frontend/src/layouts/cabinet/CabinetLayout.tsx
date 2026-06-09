@@ -435,16 +435,6 @@ export function CabinetLayout() {
     }
 
     try {
-      console.log("CREATE MEETING PAYLOAD", {
-        initiator_name: meetingInitiators.join(", "),
-        scheduled_at: scheduledAt,
-        location,
-        agenda,
-        meeting_form: options.meetingForm || "offline",
-        status: "upcoming",
-        building_id: buildingID,
-      });
-
       await createMeeting({
         initiator_name: meetingInitiators.join(", "),
         scheduled_at: scheduledAt,

@@ -537,7 +537,9 @@ function NotificationDrawer({
     setError("");
     try {
       if (missingOwners.length > 0) {
-        window.alert(`Собственник "${missingOwners.join(", ")}" не найден в БД. Ему уведомление не будет отправлено.`);
+        setError(`Собственник не найден в БД: ${missingOwners.join(", ")}.`);
+        setSaving(false);
+        return;
       }
       const payload = { ...form, body: stripHtml(form.body_html || ""), body_html: form.body_html || "" };
       if (item) await updateCommunicationNotification(item.id, payload, mode);
