@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import type { User } from "@/types/user";
 import { roleLabel } from "@/shared/lib/cabinetLabels";
 import { AccountMenuItem } from "./AccountMenuItem";
@@ -18,38 +21,51 @@ export function AccountDropdown({
   const fullName = user.full_name?.trim() || "Не указано";
   const phone = user.phone || user.phone_number || "Телефон не указан";
   const initials = getInitials(fullName);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof document === "undefined") return "light";
+    return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+  });
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.dataset.theme = next;
+    window.localStorage.setItem("golosdom-theme", next);
+  }
 
   return (
-    <div className="absolute right-0 z-40 mt-2 w-80 rounded-2xl border bg-white p-2 shadow-lg">
-      <div className="flex gap-3 px-4 pb-3 pt-2">
+    <div className="absolute right-0 z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-3xl border border-[var(--gd-border)] bg-[var(--gd-surface)] p-2 shadow-lg">
+      <div className="flex gap-3 rounded-2xl bg-[var(--gd-surface-muted)] px-4 py-4">
         {user.photo ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={user.photo}
             alt=""
-            className="h-10 w-10 rounded-full object-cover"
+            className="h-12 w-12 rounded-full object-cover"
           />
         ) : (
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--gd-primary)] text-sm font-black text-white">
             {initials}
           </div>
         )}
-        <div>
-          <p className="font-semibold leading-snug text-slate-900">
+        <div className="min-w-0">
+          <p className="truncate font-bold leading-snug text-[var(--gd-text-strong)]">
             {fullName}
           </p>
-          <p className="mt-1 text-sm text-slate-500">{phone}</p>
-        <p className="mt-3 text-sm text-slate-600">
+          <p className="mt-1 truncate text-sm text-[var(--gd-muted)]">
+            {phone}
+          </p>
+        <p className="mt-3 text-sm text-[var(--gd-muted-strong)]">
           Активная роль:{" "}
-          <span className="font-medium text-slate-900">
+          <span className="font-bold text-[var(--gd-text-strong)]">
             {roleLabel(activeRole)}
           </span>
         </p>
         </div>
       </div>
 
-      <div className="mb-2 rounded-xl bg-slate-50 p-2">
-        <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <div className="my-2 rounded-2xl border border-[var(--gd-border)] bg-[var(--gd-surface-muted)] p-2">
+        <p className="px-3 pb-2 text-xs font-black uppercase text-[var(--gd-muted)]">
           Сменить роль
         </p>
         {user.roles.map((role) => {
@@ -61,10 +77,10 @@ export function AccountDropdown({
               onClick={() => {
                 if (!isActive) switchRole(role);
               }}
-              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ${
+              className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
                 isActive
-                  ? "bg-blue-600 font-medium text-white"
-                  : "text-slate-700 hover:bg-white"
+                  ? "bg-[var(--gd-primary)] text-white shadow-sm"
+                  : "text-[var(--gd-muted-strong)] hover:bg-[var(--gd-surface)] hover:text-[var(--gd-text-strong)]"
               }`}
             >
               <span className="w-4 text-center">{isActive ? "✓" : ""}</span>
@@ -74,15 +90,26 @@ export function AccountDropdown({
         })}
       </div>
 
+      <button
+        type="button"
+        onClick={toggleTheme}
+        className="mb-2 flex w-full items-center justify-between rounded-2xl border border-[var(--gd-border)] px-4 py-3 text-left text-sm font-bold text-[var(--gd-text)] transition hover:bg-[var(--gd-surface-muted)]"
+      >
+        <span>{theme === "dark" ? "Темная тема" : "Светлая тема"}</span>
+        <span className="rounded-full bg-[var(--gd-primary-soft)] px-3 py-1 text-xs font-black text-[var(--gd-primary-strong)]">
+          {theme === "dark" ? "Вкл" : "Выкл"}
+        </span>
+      </button>
+
       <AccountMenuItem onClick={() => onOpenModule("profile")}>
         Профиль
       </AccountMenuItem>
 
       <AccountMenuItem onClick={() => onOpenModule("system_settings")}>
-        Настройки системы
+        Настройки
       </AccountMenuItem>
 
-      <div className="my-2 border-t" />
+      <div className="my-2 border-t border-[var(--gd-border)]" />
 
       <AccountMenuItem danger onClick={logout}>
         Выход
@@ -98,5 +125,5 @@ function getInitials(name: string) {
     .map((part) => part[0])
     .join("");
 
-  return initials || "👤";
+  return initials || "GD";
 }

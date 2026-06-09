@@ -14,8 +14,10 @@ export function AccountMenuItem({
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-left hover:bg-slate-50 ${
-        danger ? "text-red-600 hover:bg-red-50" : ""
+      className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-bold transition ${
+        danger
+          ? "text-[var(--gd-danger)] hover:bg-[var(--gd-danger-soft)]"
+          : "text-[var(--gd-text)] hover:bg-[var(--gd-surface-muted)]"
       }`}
     >
       <span>{children}</span>

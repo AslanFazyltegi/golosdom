@@ -3,6 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
 import {
+  AppButton,
+  AppEmptyState,
+  AppPageHeader,
+  AppStatusPill,
+  VotingQuestionCard,
+} from "@/shared/ui/design-system";
+import {
   downloadVotingBlank,
   fetchActiveVotings,
   fetchCompletedVotings,
@@ -110,10 +117,8 @@ export function PastVotingsPage(props: CabinetModuleProps) {
 function OwnerOnly({ title }: { title: string }) {
   return (
     <>
-      <h1 className="mb-6 text-3xl font-bold">{title}</h1>
-      <div className="rounded-lg border bg-white p-5 text-sm text-slate-600 shadow-sm">
-        Раздел онлайн-голосования доступен только собственнику или председателю.
-      </div>
+      <AppPageHeader title={title} />
+      <AppEmptyState text="Раздел онлайн-голосования доступен только собственнику или председателю." />
     </>
   );
 }
@@ -281,20 +286,15 @@ function VotingsList({
 
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-black tracking-tight">{title}</h1>
-          <p className="mt-2 text-sm text-slate-500">{pageDescription}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void load()}
-          disabled={loading}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Обновить
-        </button>
-      </div>
+      <AppPageHeader
+        title={title}
+        description={pageDescription}
+        actions={
+          <AppButton onClick={() => void load()} disabled={loading}>
+            Обновить
+          </AppButton>
+        }
+      />
 
       <VotingToolbar filter={filter} search={search} onFilter={setFilter} onSearch={setSearch} />
 
@@ -306,9 +306,7 @@ function VotingsList({
       {loading ? (
         <p className="text-slate-500">Загрузка...</p>
       ) : visibleVotings.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500 shadow-sm">
-          {filteredEmptyText}
-        </div>
+        <AppEmptyState text={filteredEmptyText} />
       ) : (
         <section className="space-y-3">
           {visibleVotings.map((voting) => (
@@ -376,17 +374,13 @@ function VotingToolbar({
 
   return (
     <div className="mb-5 space-y-3">
-      <div className="flex flex-wrap gap-2">
+      <div className="gd-tabs">
         {items.map((item) => (
           <button
             key={item.value}
             type="button"
             onClick={() => onFilter(item.value)}
-            className={`rounded-xl px-4 py-2 text-sm font-semibold ${
-              filter === item.value
-                ? "bg-slate-900 text-white"
-                : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-            }`}
+            className={`gd-tab ${filter === item.value ? "gd-tab-active" : ""}`}
           >
             {item.label}
           </button>
@@ -395,7 +389,7 @@ function VotingToolbar({
       <input
         value={search}
         onChange={(event) => onSearch(event.target.value)}
-        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+        className="gd-input"
         placeholder="Поиск по голосованиям"
       />
     </div>
@@ -642,9 +636,9 @@ function VotingCard({
   }
 
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:shadow-md">
+    <article className="gd-card transition hover:border-[var(--gd-primary)] hover:shadow-md">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-2xl font-black text-blue-600 sm:h-20 sm:w-20">
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[var(--gd-primary-soft)] text-2xl font-black text-[var(--gd-primary-strong)] sm:h-20 sm:w-20">
           ✓
         </div>
 
@@ -653,7 +647,7 @@ function VotingCard({
             <span className="text-slate-500">
               {primaryDate ? formatAstanaDateTime(primaryDate) : "Дата не указана"}
             </span>
-            <span className="rounded-full bg-blue-50 px-2 py-1 text-blue-700">
+            <span className="gd-status-pill gd-status-blue">
               {getVotingCategoryShortLabel(category)}
             </span>
             <span className={statusBadgeClass(displayStatus.color)}>{displayStatus.label}</span>
@@ -728,7 +722,7 @@ function VotingCard({
       </div>
 
       {expanded && (
-        <div className="mt-4 border-t border-slate-100 pt-4">
+        <div className="mt-4 border-t border-[var(--gd-border)] pt-4">
           <VotingResultsBlock results={results} error={resultsError} />
         </div>
       )}
@@ -748,15 +742,18 @@ function VotingResultsBlock({ results, error }: { results: VotingResult[]; error
   return (
     <div className="grid gap-3">
       {results.map((result, index) => (
-        <div key={result.question_id} className="rounded-md bg-slate-50 p-3 text-sm text-slate-700">
-          <p className="font-medium">
-            Вопрос {index + 1}: {result.question_text}
-          </p>
-          <p className="mt-1">
+        <VotingQuestionCard
+          key={result.question_id}
+          number={index + 1}
+          text={result.question_text}
+          className="shadow-none"
+          mode="details"
+        >
+          <p className="text-sm font-semibold text-[var(--gd-muted-strong)]">
             За: {result.for_count} / Против: {result.against_count} / Воздержались:{" "}
             {result.abstain_count}
           </p>
-        </div>
+        </VotingQuestionCard>
       ))}
     </div>
   );
@@ -986,26 +983,27 @@ function VotingWizard({
         <>
           <div className="grid gap-4">
             {questions.map((question, index) => (
-              <fieldset
+              <VotingQuestionCard
                 key={question.id}
-                className={`rounded-md border p-4 ${
-                  missingQuestionID === question.id ? "border-red-300 bg-red-50/40" : ""
-                }`}
+                number={index + 1}
+                text={question.text}
+                invalid={missingQuestionID === question.id}
+                mode="answer"
               >
-                <legend className="mb-3 font-medium">
-                  {index + 1}. {question.text}
-                </legend>
-                <div className="grid gap-2 sm:grid-cols-3">
-                  {(["for", "against", "abstain"] as VotingAnswerValue[]).map((answerValue) => (
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {(["for", "against", "abstain"] as VotingAnswerValue[]).map((answerValue) => {
+                    const selected = answers[voting.id]?.[question.id] === answerValue;
+
+                    return (
                     <label
                       key={answerValue}
-                      className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border bg-white px-3 py-2 text-sm"
+                      className={`gd-voting-option ${selected ? "gd-voting-option-selected" : ""}`}
                     >
                       <input
                         type="radio"
                         name={`question-${question.id}`}
                         value={answerValue}
-                        checked={answers[voting.id]?.[question.id] === answerValue}
+                        checked={selected}
                         onChange={() =>
                           setAnswers((current) => ({
                             ...current,
@@ -1018,12 +1016,13 @@ function VotingWizard({
                       />
                       <span>{answerLabels[answerValue]}</span>
                     </label>
-                  ))}
+                    );
+                  })}
                 </div>
                 {missingQuestionID === question.id && (
                   <p className="mt-2 text-sm text-red-700">Выберите один вариант ответа.</p>
                 )}
-              </fieldset>
+              </VotingQuestionCard>
             ))}
           </div>
 
@@ -1039,7 +1038,7 @@ function VotingWizard({
         <>
           <div className="grid gap-4">
             {votings.map((item) => (
-              <div key={item.id} className="rounded-md border p-4 text-sm text-slate-700">
+              <div key={item.id} className="gd-card text-sm">
                 <h4 className="font-semibold text-slate-900">{item.title || "Опросный лист"}</h4>
                 <p className="mb-3 text-slate-500">{getVotingCategoryLabel(getVotingCategory(item))}</p>
                 <div className="grid gap-2">
@@ -1055,13 +1054,13 @@ function VotingWizard({
               </div>
             ))}
 
-            <div className="rounded-md border p-4 text-sm text-slate-700">
+            <div className="gd-card text-sm">
               <p className="mb-2 font-medium text-slate-900">Способ подписания</p>
               <div className="flex flex-wrap gap-2">
                 {(["MOCK_MGOV", "MOCK_ECP"] as VotingSignatureMock[]).map((method) => (
                   <label
                     key={method}
-                    className="flex cursor-pointer items-center gap-2 rounded-md border bg-white px-3 py-2 text-sm"
+                    className={`gd-voting-option ${signatureMethod === method ? "gd-voting-option-selected" : ""}`}
                   >
                     <input
                       type="radio"
@@ -1135,14 +1134,16 @@ function MyAnswersModal({ voting, onClose }: { voting: Voting; onClose: () => vo
       ) : (
         <div className="grid gap-3">
           {answers.map((answer, index) => (
-            <div key={answer.question_id} className="rounded-md border p-4">
-              <p className="font-medium">
-                {index + 1}. {answer.question_text}
-              </p>
-              <p className="mt-2 text-sm text-slate-700">
-                Мой ответ: <span className="font-medium">{answerLabels[answer.answer]}</span>
-              </p>
-            </div>
+            <VotingQuestionCard
+              key={answer.question_id}
+              number={index + 1}
+              text={answer.question_text}
+              mode="details"
+            >
+              <AppStatusPill tone="blue">
+                Мой ответ: {answerLabels[answer.answer]}
+              </AppStatusPill>
+            </VotingQuestionCard>
           ))}
         </div>
       )}
@@ -1164,19 +1165,19 @@ function ModalFrame({
   children: ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 p-4">
-      <div className="mx-auto my-6 w-full max-w-3xl rounded-lg bg-white p-5 shadow-xl">
-        <div className="mb-5 flex items-start justify-between gap-3">
-          <h2 className="text-xl font-semibold">{title}</h2>
+    <div className="gd-modal-overlay">
+      <div className="gd-modal-panel max-w-3xl">
+        <div className="gd-modal-header">
+          <h2 className="text-xl font-bold text-[var(--gd-text-strong)]">{title}</h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border px-3 py-1 text-sm text-slate-600 hover:bg-slate-50"
+            className="gd-button"
           >
             Закрыть
           </button>
         </div>
-        {children}
+        <div className="gd-modal-body">{children}</div>
       </div>
     </div>
   );
@@ -1195,15 +1196,15 @@ function Button({
 }) {
   const classes =
     variant === "primary"
-      ? "border border-blue-600 bg-blue-600 text-white hover:border-blue-700 hover:bg-blue-700"
-      : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50";
+      ? "gd-button-primary"
+      : "";
 
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 ${classes}`}
+      className={`gd-button ${classes}`}
     >
       {children}
     </button>
@@ -1212,12 +1213,12 @@ function Button({
 
 function statusBadgeClass(color: StatusBadgeColor) {
   const classes = {
-    blue: "bg-blue-50 text-blue-700",
-    emerald: "bg-emerald-50 text-emerald-700",
-    slate: "bg-slate-100 text-slate-700",
-    amber: "bg-amber-50 text-amber-700",
+    blue: "gd-status-blue",
+    emerald: "gd-status-emerald",
+    slate: "gd-status-slate",
+    amber: "gd-status-amber",
   };
-  return `rounded-full px-3 py-1 text-xs font-medium ${classes[color]}`;
+  return `gd-status-pill ${classes[color]}`;
 }
 
 function getVotingDisplayStatus(voting: Voting, mode: VotingMode): { label: string; color: StatusBadgeColor } {

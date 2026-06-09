@@ -2,11 +2,17 @@ import { moduleMap } from "@/config/module-map";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
 import { Placeholder } from "@/shared/ui/Placeholder";
 
-export function CabinetWorkspace(props: CabinetModuleProps) {
+export function CabinetWorkspace(
+  props: CabinetModuleProps & { sidebarCollapsed?: boolean },
+) {
   const Module = moduleMap[props.activeComponent];
 
   return (
-    <section className="ml-72 h-[calc(100vh-80px)] flex-1 overflow-y-auto p-8">
+    <section
+      className={`h-[calc(100vh-80px)] overflow-y-auto px-4 py-5 transition-all duration-200 sm:px-6 lg:px-8 lg:py-8 ${
+        props.sidebarCollapsed ? "lg:ml-24" : "lg:ml-72"
+      }`}
+    >
       {Module ? (
         <Module {...props} />
       ) : (

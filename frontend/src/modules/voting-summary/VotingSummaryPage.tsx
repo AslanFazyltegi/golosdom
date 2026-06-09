@@ -199,7 +199,7 @@ export function VotingSummaryPage(props: CabinetModuleProps) {
 
   if (!canView) {
     return (
-      <section className="space-y-5 bg-slate-50">
+      <section className="gd-voting-summary space-y-5 bg-slate-50">
         <div className="text-sm font-semibold text-slate-500">
           Кабинет <span className="mx-1">›</span> Голосование <span className="mx-1">›</span> Свод голосований
         </div>
@@ -213,7 +213,7 @@ export function VotingSummaryPage(props: CabinetModuleProps) {
 
   if (detail || detailLoading) {
     return (
-      <section className="space-y-4 bg-slate-50">
+      <section className="gd-voting-summary space-y-4 bg-slate-50">
         {success && <Notice tone="success" text={success} />}
         {error && <Notice tone="error" text={error} />}
         {detailLoading && !detail ? (
@@ -241,7 +241,7 @@ export function VotingSummaryPage(props: CabinetModuleProps) {
   }
 
   return (
-    <section className="space-y-4 bg-slate-50">
+    <section className="gd-voting-summary space-y-4 bg-slate-50">
       <PageHeader
         loading={loading}
         busyAction={busyAction}
@@ -1380,12 +1380,16 @@ function NotificationsTab({
 }) {
   const canSend = isChairman && detail.voting.status === "active";
   const notRead = Math.max(0, detail.notifications.delivered - detail.notifications.read);
-  const cards = [
-    ["Отправлено", detail.notifications.sent, "default" as const],
-    ["Доставлено", detail.notifications.delivered, "good" as const],
-    ["Не прочитали", notRead, "warn" as const],
-    ["Не доставлено", detail.notifications.failed, "bad" as const],
-    ["Нет контактов", detail.notifications.no_contacts, "warn" as const],
+  const cards: Array<{
+    title: string;
+    value: number;
+    tone: "default" | "good" | "warn" | "bad";
+  }> = [
+    { title: "Отправлено", value: detail.notifications.sent, tone: "default" },
+    { title: "Доставлено", value: detail.notifications.delivered, tone: "good" },
+    { title: "Не прочитали", value: notRead, tone: "warn" },
+    { title: "Не доставлено", value: detail.notifications.failed, tone: "bad" },
+    { title: "Нет контактов", value: detail.notifications.no_contacts, tone: "warn" },
   ];
 
   return (
@@ -1393,8 +1397,14 @@ function NotificationsTab({
       <section className="rounded-[22px] border border-slate-200 bg-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
         <h2 className="text-lg font-black text-slate-950">Доставка уведомлений</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {cards.map(([title, value, tone]) => (
-            <MiniKpi key={String(title)} label={String(title)} value={String(value)} hint="по выбранному ОП" tone={tone} />
+          {cards.map((card) => (
+            <MiniKpi
+              key={card.title}
+              label={card.title}
+              value={String(card.value)}
+              hint="по выбранному ОП"
+              tone={card.tone}
+            />
           ))}
         </div>
         <div className="mt-4 overflow-x-auto">

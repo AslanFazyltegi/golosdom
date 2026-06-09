@@ -46,6 +46,8 @@ export function CabinetLayout() {
   const [loading, setLoading] = useState(true);
   const [accountOpen, setAccountOpen] = useState(false);
   const [expandedMenuCodes, setExpandedMenuCodes] = useState<string[]>([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const [activeRole, setActiveRole] = useState("OWNER");
   const [activeComponent, setActiveComponent] = useState("dashboard");
@@ -94,6 +96,22 @@ export function CabinetLayout() {
       );
     }
   }
+
+  useEffect(() => {
+    const storedTheme =
+      typeof window !== "undefined"
+        ? window.localStorage.getItem("golosdom-theme")
+        : null;
+    const prefersDark =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+    document.documentElement.dataset.theme =
+      storedTheme === "dark" || storedTheme === "light"
+        ? storedTheme
+        : prefersDark
+          ? "dark"
+          : "light";
+  }, []);
 
   useEffect(() => {
     const token = getToken();
@@ -337,6 +355,10 @@ export function CabinetLayout() {
 
     setVotingConstructorInitial(null);
     setActiveComponent(component);
+    setAccountOpen(false);
+    if (!item.children || item.children.length === 0) {
+      setSidebarOpen(false);
+    }
 
     if (component.startsWith("meetings")) {
       await loadMeetingsByComponent(component);
@@ -462,23 +484,37 @@ export function CabinetLayout() {
   if (loading) return <main className="p-6">Загрузка...</main>;
   if (!user) return null;
 
+  const activeModuleTitle = getActiveModuleTitle(menu, activeComponent);
+  const buildingTitle = getHeaderBuildingTitle(objects);
+
   return (
-    <main className="h-screen overflow-hidden bg-slate-50 text-slate-800">
+    <main className="gd-app-shell h-screen overflow-hidden">
       <CabinetHeader
         user={user}
         activeRole={activeRole}
+        activeModuleTitle={activeModuleTitle}
+        buildingTitle={buildingTitle}
         accountOpen={accountOpen}
         setAccountOpen={setAccountOpen}
         onOpenModule={openAccountModule}
         switchRole={switchRole}
         logout={logout}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleDesktopSidebar={() => setSidebarCollapsed((value) => !value)}
+        onToggleMobileSidebar={() => {
+          setSidebarCollapsed(false);
+          setSidebarOpen((value) => !value);
+        }}
       />
 
-      <div className="flex h-screen pt-20">
+      <div className="h-screen pt-20">
         <CabinetSidebar
           menu={menu}
           activeComponent={activeComponent}
           expandedMenuCodes={expandedMenuCodes}
+          collapsed={sidebarCollapsed}
+          mobileOpen={sidebarOpen}
+          onCloseMobile={() => setSidebarOpen(false)}
           onOpenItem={openNavigationItem}
         />
 
@@ -527,6 +563,7 @@ export function CabinetLayout() {
           creatingMeeting={creatingMeeting}
           submitMeeting={submitMeeting}
           logout={logout}
+          sidebarCollapsed={sidebarCollapsed}
         />
       </div>
     </main>
@@ -561,6 +598,31 @@ function flattenMenu(menu: NavigationItem[]): NavigationItem[] {
     item,
     ...(item.children ? flattenMenu(item.children) : []),
   ]);
+}
+
+function getActiveModuleTitle(menu: NavigationItem[], activeComponent: string) {
+  const item = flattenMenu(menu).find(
+    (menuItem) => getModuleCode(menuItem) === activeComponent,
+  );
+  if (item?.title) return item.title;
+
+  const accountTitles: Record<string, string> = {
+    profile: "Профиль",
+    system_settings: "Настройки",
+  };
+
+  return accountTitles[activeComponent] || "Кабинет";
+}
+
+function getHeaderBuildingTitle(objects: unknown) {
+  if (!objects || Array.isArray(objects)) return "Golosdom";
+
+  const building = objects as Record<string, unknown>;
+  const name = [building.building_name, building.street, building.house_number]
+    .filter(Boolean)
+    .join(", ");
+
+  return name || "Golosdom";
 }
 
 function syncUserFromProfile(current: User | null, profile: UserProfile) {

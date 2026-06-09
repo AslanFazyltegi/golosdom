@@ -28,6 +28,10 @@ import {
   startOfAstanaDay,
 } from "@/shared/lib/dateTime";
 import { Placeholder } from "@/shared/ui/Placeholder";
+import {
+  AppPageHeader,
+  VotingQuestionCard,
+} from "@/shared/ui/design-system";
 import type { Meeting } from "@/types/meeting";
 import type {
   Voting,
@@ -318,13 +322,14 @@ function VotingWizard({
 
   return (
     <>
-      <div className="mb-6">
-        <p className="text-sm text-slate-500">Конструктор голосования</p>
-        <h1 className="text-3xl font-bold">Создать опросник</h1>
-      </div>
+      <AppPageHeader
+        title="Создать опросник"
+        kicker="Конструктор голосования"
+        description="Соберите вопросы, выберите собрание и проверьте опросный лист перед отправкой."
+      />
 
       {constructorStage === "category" ? (
-        <section className="rounded-lg border bg-white p-6 shadow-sm">
+        <section className="gd-panel">
           <VotingCategoryStep category={category} setCategory={updateCategory} />
           <div className="mt-6 flex flex-wrap gap-3">
             <Button
@@ -337,7 +342,7 @@ function VotingWizard({
           </div>
         </section>
       ) : (
-        <section className="rounded-lg border bg-white p-6 shadow-sm">
+        <section className="gd-panel">
           <div className="mb-8 flex flex-wrap gap-2">
             {["Вопросы", "Данные собрания", "Предпросмотр"].map((label, index) => (
               <span
@@ -494,7 +499,7 @@ function VotingQuestionsStep({
 
   return (
     <div className="grid gap-5">
-      <div className="rounded-lg border bg-white p-5">
+      <div className="gd-card">
         <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">
@@ -504,17 +509,22 @@ function VotingQuestionsStep({
               Добавьте вопросы, которые будут включены в опросный лист.
             </p>
           </div>
-          <div className="rounded-md border bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700">
+          <div className="gd-status-pill gd-status-violet">
             Всего вопросов:{" "}
             {questions.filter((question) => (question.text ?? "").trim()).length}
           </div>
         </div>
 
-        <div className="grid gap-3">
+        <div className="grid gap-4">
           {questions.map((question, index) => (
-            <div key={index} className="rounded-lg border border-slate-200 p-4">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="font-semibold text-slate-900">Вопрос {index + 1}</h3>
+            <div key={index} className="gd-voting-question-card">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="gd-voting-question-number">{index + 1}</span>
+                  <h3 className="font-bold text-[var(--gd-text-strong)]">
+                    Вопрос {index + 1}
+                  </h3>
+                </div>
                 <Button
                   onClick={() =>
                     setQuestions(questions.filter((_, itemIndex) => itemIndex !== index))
@@ -524,7 +534,7 @@ function VotingQuestionsStep({
                 </Button>
               </div>
               <textarea
-                className="min-h-24 w-full rounded-md border border-slate-200 p-3 text-sm outline-none focus:border-violet-500"
+                className="gd-input min-h-32 text-[17px] leading-[1.65]"
                 value={question.text}
                 onChange={(event) =>
                   updateQuestion(index, {
@@ -1623,14 +1633,12 @@ function QuestionList({ questions }: { questions: VotingQuestion[] }) {
   return (
     <div className="grid gap-3">
       {safeQuestions.map((question, index) => (
-        <div
+        <VotingQuestionCard
           key={`${question.id}-${index}`}
-          className="rounded-md border p-4"
-        >
-          <p className="font-medium">
-            {index + 1}. {question.text ?? ""}
-          </p>
-        </div>
+          number={index + 1}
+          text={question.text ?? ""}
+          mode="preview"
+        />
       ))}
     </div>
   );
@@ -1654,10 +1662,10 @@ function Button({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-md border px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50 ${
+      className={`gd-button ${
         variant === "primary"
-          ? "border-blue-600 bg-blue-600 text-white"
-          : "bg-white text-slate-700"
+          ? "gd-button-primary"
+          : ""
       } ${className}`}
     >
       {children}

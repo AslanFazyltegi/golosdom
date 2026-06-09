@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { User } from "@/types/user";
 import { roleLabel } from "@/shared/lib/cabinetLabels";
 import { AccountDropdown } from "./AccountDropdown";
@@ -21,40 +22,74 @@ export function UserAccountArea({
 }) {
   const name = user.full_name?.trim() || user.email || "Пользователь";
   const initials = getInitials(name);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!accountOpen) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!containerRef.current) return;
+      if (containerRef.current.contains(event.target as Node)) return;
+      setAccountOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setAccountOpen(false);
+      }
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [accountOpen, setAccountOpen]);
+
+  function closeAfter(action: () => void) {
+    action();
+    setAccountOpen(false);
+  }
 
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative">
       <button
         onClick={() => setAccountOpen(!accountOpen)}
-        className="flex items-center gap-3 rounded-xl px-3 py-2 hover:bg-slate-50"
+        className="flex items-center gap-3 rounded-2xl border border-[var(--gd-border)] bg-[var(--gd-surface)] px-2 py-2 shadow-sm transition hover:bg-[var(--gd-surface-muted)] sm:px-3"
       >
         {user.photo ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={user.photo}
             alt=""
-            className="h-12 w-12 rounded-full object-cover"
+            className="h-10 w-10 rounded-full object-cover sm:h-11 sm:w-11"
           />
         ) : (
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-600">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--gd-primary-soft)] text-sm font-black text-[var(--gd-primary-strong)] sm:h-11 sm:w-11">
             {initials}
           </div>
         )}
 
-        <div className="min-w-40 text-right">
-          <p className="max-w-56 truncate text-sm font-medium">{name}</p>
-          <p className="text-xs text-slate-500">{roleLabel(activeRole)}</p>
+        <div className="hidden min-w-0 text-right sm:block">
+          <p className="max-w-44 truncate text-sm font-bold text-[var(--gd-text-strong)] lg:max-w-56">
+            {name}
+          </p>
+          <p className="text-xs font-semibold text-[var(--gd-muted)]">
+            {roleLabel(activeRole)}
+          </p>
         </div>
 
-        <span className="text-slate-500">⌄</span>
+        <span className="text-[var(--gd-muted)]">⌄</span>
       </button>
 
       {accountOpen && (
         <AccountDropdown
           activeRole={activeRole}
-          onOpenModule={onOpenModule}
-          switchRole={switchRole}
-          logout={logout}
+          onOpenModule={(code) => closeAfter(() => onOpenModule(code))}
+          switchRole={(role) => closeAfter(() => switchRole(role))}
+          logout={() => closeAfter(logout)}
           user={user}
         />
       )}
@@ -69,5 +104,5 @@ function getInitials(name: string) {
     .map((part) => part[0])
     .join("");
 
-  return initials || "👤";
+  return initials || "GD";
 }

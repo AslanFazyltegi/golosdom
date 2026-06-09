@@ -311,7 +311,7 @@ function ChairmanNotifications({ owners, activeRole }: CabinetModuleProps) {
   }, [activeRole, audience, category, search, sort, tab]);
 
   return (
-    <main className="min-h-screen bg-slate-100 p-6 text-slate-900">
+    <main className="min-h-full text-slate-900">
       <div className="mx-auto max-w-7xl">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -1122,7 +1122,7 @@ function OwnerNotifications({ activeRole, refreshCommunicationUnreadCounts }: Ca
   }
 
   return (
-    <main className="min-h-screen bg-slate-100 p-6 text-slate-900">
+    <main className="min-h-full text-slate-900">
       <div className="mx-auto max-w-5xl">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
