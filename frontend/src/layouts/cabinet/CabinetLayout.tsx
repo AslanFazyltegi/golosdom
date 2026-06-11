@@ -1,22 +1,30 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import { getToken, removeToken } from "@/lib/auth";
 import { createMeeting, fetchMeetings } from "@/lib/meetings";
-import { fetchCommunicationUnreadCounts } from "@/lib/communications";
+import {
+  fetchCommunicationNotificationsForRole,
+  fetchCommunicationUnreadCounts,
+} from "@/lib/communications";
 import { fetchNavigation } from "@/lib/navigation";
 import {
   fetchObjects,
+  fetchPropertyCorrectionRequests,
   fetchPropertyCorrectionRequestCount,
 } from "@/lib/objects";
 import { fetchOwners, type MeetingOwner } from "@/lib/owners";
 import { fetchProfile, updateProfile as saveProfile } from "@/lib/profile";
 import { fetchVotings } from "@/lib/votings";
+import { roleLabel } from "@/shared/lib/cabinetLabels";
 import { addAstanaDays, formatAstanaDateKey } from "@/shared/lib/dateTime";
+import { AppButton } from "@/shared/ui/design-system";
+import type { CommunicationNotification } from "@/types/communications";
 import type { Meeting } from "@/types/meeting";
 import type { NavigationItem } from "@/types/navigation";
+import type { PropertyCorrectionRequest } from "@/types/objects";
 import type { UpdateProfilePayload, UserProfile } from "@/types/profile";
 import type { SubmitMeetingOptions } from "@/shared/types/cabinet";
 import type { User } from "@/types/user";
@@ -48,6 +56,13 @@ export function CabinetLayout() {
   const [expandedMenuCodes, setExpandedMenuCodes] = useState<string[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [cabinetModal, setCabinetModal] = useState<"important" | "help" | null>(
+    null,
+  );
+  const [attentionDetails, setAttentionDetails] =
+    useState<AttentionDetails | null>(null);
+  const [attentionLoading, setAttentionLoading] = useState(false);
+  const [attentionError, setAttentionError] = useState("");
 
   const [activeRole, setActiveRole] = useState("OWNER");
   const [activeComponent, setActiveComponent] = useState("dashboard");
@@ -76,6 +91,21 @@ export function CabinetLayout() {
   const [creatingMeeting, setCreatingMeeting] = useState(false);
 
   const [owners, setOwners] = useState<MeetingOwner[]>([]);
+
+  const baseAttentionItems = useMemo(
+    () =>
+      buildBaseAttentionItems({
+        activeRole,
+        correctionRequestsCount: correctionRequestsBadgeCount,
+        votings,
+      }),
+    [activeRole, correctionRequestsBadgeCount, votings],
+  );
+
+  const detailedAttentionItems = useMemo(
+    () => buildDetailedAttentionItems(baseAttentionItems, attentionDetails),
+    [attentionDetails, baseAttentionItems],
+  );
 
   async function loadMeetingsByComponent(component: string) {
     let period = "";
@@ -371,6 +401,41 @@ export function CabinetLayout() {
     setAccountOpen(false);
   }
 
+  async function openImportantEvents() {
+    setCabinetModal("important");
+    setAttentionError("");
+    setAttentionDetails(null);
+
+    try {
+      setAttentionLoading(true);
+      const [correctionResult, notificationResult] = await Promise.allSettled([
+        loadPendingCorrectionRequests(activeRole),
+        fetchCommunicationNotificationsForRole(resolveNotificationRole(activeRole)),
+      ]);
+
+      setAttentionDetails({
+        correctionRequests:
+          correctionResult.status === "fulfilled" ? correctionResult.value : [],
+        notifications:
+          notificationResult.status === "fulfilled" ? notificationResult.value : [],
+      });
+
+      if (
+        correctionResult.status === "rejected" ||
+        notificationResult.status === "rejected"
+      ) {
+        setAttentionError("Часть важных событий не загрузилась.");
+      }
+    } finally {
+      setAttentionLoading(false);
+    }
+  }
+
+  function openImportantTaskModule(moduleCode: string) {
+    openAccountModule(moduleCode);
+    setCabinetModal(null);
+  }
+
   async function submitMeeting(e?: FormEvent | SubmitMeetingOptions) {
     let options: SubmitMeetingOptions = {};
     if (e && "preventDefault" in e) {
@@ -476,6 +541,33 @@ export function CabinetLayout() {
 
   const activeModuleTitle = getActiveModuleTitle(menu, activeComponent);
   const buildingTitle = getHeaderBuildingTitle(objects);
+  const workspaceModal =
+    cabinetModal === "important" ? (
+      <CabinetWorkspaceModal
+        title="Важные события"
+        onClose={() => setCabinetModal(null)}
+        className="max-w-2xl"
+      >
+        <ImportantEventsContent
+          error={attentionError}
+          items={detailedAttentionItems}
+          loading={attentionLoading}
+          onOpenModule={openImportantTaskModule}
+        />
+      </CabinetWorkspaceModal>
+    ) : cabinetModal === "help" ? (
+      <CabinetWorkspaceModal
+        title="Помощь"
+        onClose={() => setCabinetModal(null)}
+        className="max-w-lg"
+      >
+        <HelpContent
+          activeComponent={activeComponent}
+          activeModuleTitle={activeModuleTitle}
+          activeRole={activeRole}
+        />
+      </CabinetWorkspaceModal>
+    ) : null;
 
   return (
     <main className="gd-app-shell h-screen overflow-hidden">
@@ -487,6 +579,8 @@ export function CabinetLayout() {
         accountOpen={accountOpen}
         setAccountOpen={setAccountOpen}
         onOpenModule={openAccountModule}
+        onOpenHelp={() => setCabinetModal("help")}
+        onOpenImportantEvents={() => void openImportantEvents()}
         switchRole={switchRole}
         logout={logout}
         sidebarCollapsed={sidebarCollapsed}
@@ -554,10 +648,303 @@ export function CabinetLayout() {
           submitMeeting={submitMeeting}
           logout={logout}
           sidebarCollapsed={sidebarCollapsed}
+          overlay={workspaceModal}
         />
       </div>
     </main>
   );
+}
+
+type AttentionItem = {
+  id: string;
+  title: string;
+  description: string;
+  moduleCode: string;
+};
+
+type AttentionDetails = {
+  correctionRequests: PropertyCorrectionRequest[];
+  notifications: CommunicationNotification[];
+};
+
+function CabinetWorkspaceModal({
+  children,
+  className = "",
+  onClose,
+  title,
+}: {
+  children: ReactNode;
+  className?: string;
+  onClose: () => void;
+  title: ReactNode;
+}) {
+  return (
+    <div className="absolute inset-0 z-30 grid place-items-center overflow-y-auto bg-slate-950/40 p-4 backdrop-blur-sm">
+      <section
+        className={`gd-modal-panel ${className}`}
+        style={{ maxHeight: "calc(100% - 2rem)" }}
+      >
+        <div className="gd-modal-header">
+          <h2 className="text-xl font-bold text-[var(--gd-text-strong)]">
+            {title}
+          </h2>
+          <AppButton variant="secondary" onClick={onClose}>
+            Закрыть
+          </AppButton>
+        </div>
+        <div className="gd-modal-body">{children}</div>
+      </section>
+    </div>
+  );
+}
+
+function ImportantEventsContent({
+  error,
+  items,
+  loading,
+  onOpenModule,
+}: {
+  error: string;
+  items: AttentionItem[];
+  loading: boolean;
+  onOpenModule: (moduleCode: string) => void;
+}) {
+  if (loading && items.length === 0) {
+    return (
+      <p className="text-sm font-semibold text-[var(--gd-muted)]">
+        Загрузка...
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {error && <p className="gd-alert-danger text-sm">{error}</p>}
+      {items.length === 0 ? (
+        <p className="text-sm font-semibold text-[var(--gd-muted)]">
+          Важных событий нет
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onOpenModule(item.moduleCode)}
+              className="w-full rounded-2xl border border-[var(--gd-border)] bg-[var(--gd-surface-muted)] px-4 py-3 text-left transition hover:bg-[var(--gd-surface)]"
+            >
+              <span className="block text-sm font-bold text-[var(--gd-text-strong)]">
+                {item.title}
+              </span>
+              <span className="mt-1 block text-sm text-[var(--gd-muted-strong)]">
+                {item.description}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {loading && items.length > 0 && (
+        <p className="text-xs font-semibold text-[var(--gd-muted)]">
+          Обновляем данные...
+        </p>
+      )}
+    </div>
+  );
+}
+
+function HelpContent({
+  activeComponent,
+  activeModuleTitle,
+  activeRole,
+}: {
+  activeComponent: string;
+  activeModuleTitle: string;
+  activeRole: string;
+}) {
+  const text = helpTextForRole(activeRole);
+
+  return (
+    <div className="space-y-3 text-sm text-[var(--gd-muted-strong)]">
+      <p>
+        Текущий кабинет:{" "}
+        <span className="font-bold text-[var(--gd-text-strong)]">
+          {roleLabel(activeRole)}
+        </span>
+        .
+      </p>
+      <p>
+        Раздел:{" "}
+        <span className="font-bold text-[var(--gd-text-strong)]">
+          {activeModuleTitle}
+        </span>
+        .
+      </p>
+      <p>{text}</p>
+      <p>
+        Используйте левое меню для перехода между разделами. Доступные действия
+        зависят от роли и текущего статуса записей в разделе.
+      </p>
+      {activeComponent === "dashboard" && (
+        <p>На дашборде собраны ключевые показатели и быстрые переходы.</p>
+      )}
+    </div>
+  );
+}
+
+function buildBaseAttentionItems({
+  activeRole,
+  correctionRequestsCount,
+  votings,
+}: {
+  activeRole: string;
+  correctionRequestsCount: number;
+  votings: Voting[];
+}) {
+  const items: AttentionItem[] = [];
+  if (!isChairmanRole(activeRole)) return items;
+
+  const revisionVotings = votings.filter(
+    (voting) => voting.status === "revision_required",
+  );
+  const pendingPublicationVotings = votings.filter(
+    (voting) => voting.status === "pending_publish",
+  );
+
+  for (const voting of revisionVotings) {
+    items.push({
+      id: `revision-${voting.id}`,
+      title: voting.title || "Опросник на доработке",
+      description: "Опросник на доработке",
+      moduleCode: "voting_constructor_revision",
+    });
+  }
+
+  for (const voting of pendingPublicationVotings) {
+    items.push({
+      id: `pending-publication-${voting.id}`,
+      title: voting.title || "Опросник ожидает публикации",
+      description: "Опросник ожидает публикации",
+      moduleCode: "voting_constructor_pending_publication",
+    });
+  }
+
+  if (correctionRequestsCount > 0) {
+    items.push({
+      id: "correction-requests",
+      title: `Заявки на корректировку: ${correctionRequestsCount}`,
+      description: "Ожидают обработки",
+      moduleCode: "my_building",
+    });
+  }
+
+  return items;
+}
+
+function buildDetailedAttentionItems(
+  baseItems: AttentionItem[],
+  details: AttentionDetails | null,
+) {
+  if (!details) return baseItems;
+
+  const items = baseItems.filter((item) => item.id !== "correction-requests");
+  const correctionItems = details.correctionRequests
+    .filter(isPendingCorrectionRequest)
+    .map((request) => ({
+      id: `correction-${request.id}`,
+      title: correctionRequestTitle(request),
+      description: "Заявка на корректировку ожидает обработки",
+      moduleCode: "my_building",
+    }));
+  const notificationItems = details.notifications
+    .filter(isProblemNotification)
+    .map((notification) => ({
+      id: `notification-${notification.id}`,
+      title: notification.title || "Уведомление",
+      description: notificationAttentionDescription(notification),
+      moduleCode: "communication_notifications",
+    }));
+
+  return [...items, ...correctionItems, ...notificationItems];
+}
+
+async function loadPendingCorrectionRequests(activeRole: string) {
+  if (!isChairmanRole(activeRole)) return [];
+
+  const data = await fetchPropertyCorrectionRequests();
+  return data.requests.filter(isPendingCorrectionRequest);
+}
+
+function isChairmanRole(role: string) {
+  return role.trim().toUpperCase() === "CHAIRMAN";
+}
+
+function isPendingCorrectionRequest(request: PropertyCorrectionRequest) {
+  return (
+    request.status === "pending" ||
+    (!request.processedAt && request.status !== "processed")
+  );
+}
+
+function correctionRequestTitle(request: PropertyCorrectionRequest) {
+  const property = [request.propertyType, request.propertyNumber]
+    .filter(Boolean)
+    .join(" ");
+  return property
+    ? `Заявка на корректировку: ${property}`
+    : "Заявка на корректировку";
+}
+
+function isProblemNotification(notification: CommunicationNotification) {
+  return (
+    notification.status === "failed" ||
+    unsentNotificationStatuses.has(notification.status) ||
+    (notification.delivery_stats?.errors ?? 0) > 0
+  );
+}
+
+function notificationAttentionDescription(notification: CommunicationNotification) {
+  const errors = notification.delivery_stats?.errors ?? 0;
+  if (errors > 0) return `Ошибки отправки: ${errors}`;
+  return `Неотправленное уведомление: ${notificationStatusLabel(
+    notification.status,
+  )}`;
+}
+
+const unsentNotificationStatuses = new Set(["draft", "scheduled", "sending"]);
+
+function notificationStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    draft: "черновик",
+    scheduled: "запланировано",
+    sending: "отправляется",
+    failed: "ошибка отправки",
+  };
+
+  return labels[status] || status;
+}
+
+function resolveNotificationRole(activeRole: string) {
+  return activeRole === "COUNCIL" ? "COUNCIL_MEMBER" : activeRole;
+}
+
+function helpTextForRole(activeRole: string) {
+  const normalized = activeRole.trim().toUpperCase();
+  const texts: Record<string, string> = {
+    OWNER:
+      "В кабинете собственника доступны ваши объекты, голосования, собрания и сообщения Инфоцентра.",
+    CHAIRMAN:
+      "В кабинете председателя доступны управление домом, опросники, собрания, Инфоцентр и обработка заявок.",
+    COUNCIL_MEMBER:
+      "В кабинете члена совета дома доступны рассмотрение опросников, голосования, собрания и публикации Инфоцентра.",
+    AUDITOR:
+      "В кабинете ревизора доступны разделы проверки и просмотра данных, открытые для вашей роли.",
+    REVISION_MEMBER:
+      "В кабинете ревизионной комиссии доступны разделы проверки и просмотра данных, открытые для вашей роли.",
+    REVISION_COMMISSION_MEMBER:
+      "В кабинете ревизионной комиссии доступны разделы проверки и просмотра данных, открытые для вашей роли.",
+  };
+
+  return texts[normalized] || "В кабинете доступны разделы, назначенные вашей роли.";
 }
 
 function getModuleCode(item?: NavigationItem) {

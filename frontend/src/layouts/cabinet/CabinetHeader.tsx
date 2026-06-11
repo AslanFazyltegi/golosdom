@@ -8,6 +8,8 @@ export function CabinetHeader({
   activeModuleTitle,
   buildingTitle,
   logout,
+  onOpenHelp,
+  onOpenImportantEvents,
   onToggleDesktopSidebar,
   onToggleMobileSidebar,
   onOpenModule,
@@ -21,6 +23,8 @@ export function CabinetHeader({
   activeModuleTitle: string;
   buildingTitle: string;
   logout: () => void;
+  onOpenHelp: () => void;
+  onOpenImportantEvents: () => void;
   onToggleDesktopSidebar: () => void;
   onToggleMobileSidebar: () => void;
   onOpenModule: (code: string) => void;
@@ -62,27 +66,29 @@ export function CabinetHeader({
       <div className="flex items-center gap-2">
         <button
           type="button"
+          onClick={onOpenImportantEvents}
           className="hidden h-11 w-11 items-center justify-center rounded-xl border border-[var(--gd-border)] bg-[var(--gd-surface)] text-sm font-black text-[var(--gd-muted-strong)] transition hover:bg-[var(--gd-surface-muted)] sm:flex"
-          aria-label="Уведомления"
+          aria-label="Важные события"
         >
           !
         </button>
         <button
           type="button"
+          onClick={onOpenHelp}
           className="hidden h-11 w-11 items-center justify-center rounded-xl border border-[var(--gd-border)] bg-[var(--gd-surface)] text-sm font-black text-[var(--gd-muted-strong)] transition hover:bg-[var(--gd-surface-muted)] sm:flex"
           aria-label="Помощь"
         >
           ?
         </button>
-      <UserAccountArea
-        accountOpen={accountOpen}
-        activeRole={activeRole}
-        logout={logout}
-        onOpenModule={onOpenModule}
-        setAccountOpen={setAccountOpen}
-        switchRole={switchRole}
-        user={user}
-      />
+        <UserAccountArea
+          accountOpen={accountOpen}
+          activeRole={activeRole}
+          logout={logout}
+          onOpenModule={onOpenModule}
+          setAccountOpen={setAccountOpen}
+          switchRole={switchRole}
+          user={user}
+        />
       </div>
     </header>
   );
