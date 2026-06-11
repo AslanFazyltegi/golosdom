@@ -17,6 +17,11 @@ import {
 } from "@/lib/objects";
 import { fetchOwners, type MeetingOwner } from "@/lib/owners";
 import { fetchProfile, updateProfile as saveProfile } from "@/lib/profile";
+import {
+  SYSTEM_SETTINGS_CHANGED_EVENT,
+  startSystemSettingsSync,
+  systemNotificationsEnabled,
+} from "@/lib/system-settings";
 import { fetchVotings } from "@/lib/votings";
 import { roleLabel } from "@/shared/lib/cabinetLabels";
 import { addAstanaDays, formatAstanaDateKey } from "@/shared/lib/dateTime";
@@ -127,21 +132,29 @@ export function CabinetLayout() {
     }
   }
 
+  useEffect(() => startSystemSettingsSync(), []);
+
   useEffect(() => {
-    const storedTheme =
-      typeof window !== "undefined"
-        ? window.localStorage.getItem("golosdom-theme")
-        : null;
-    const prefersDark =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-    document.documentElement.dataset.theme =
-      storedTheme === "dark" || storedTheme === "light"
-        ? storedTheme
-        : prefersDark
-          ? "dark"
-          : "light";
-  }, []);
+    function handleSystemSettingsChange() {
+      if (!systemNotificationsEnabled()) {
+        setMenu((current) => clearCommunicationUnreadCounts(current));
+        return;
+      }
+
+      void refreshCommunicationUnreadCounts();
+    }
+
+    window.addEventListener(
+      SYSTEM_SETTINGS_CHANGED_EVENT,
+      handleSystemSettingsChange,
+    );
+
+    return () =>
+      window.removeEventListener(
+        SYSTEM_SETTINGS_CHANGED_EVENT,
+        handleSystemSettingsChange,
+      );
+  }, [activeRole]);
 
   useEffect(() => {
     const token = getToken();
@@ -169,9 +182,9 @@ export function CabinetLayout() {
 
         const menuData = await fetchNavigation(role);
         const baseMenu =
-          role === "OWNER"
+          role === "OWNER" && systemNotificationsEnabled()
             ? await withCommunicationUnreadCounts(menuData)
-            : menuData;
+            : clearCommunicationUnreadCounts(menuData);
         setMenu(baseMenu);
 
         const defaultItem =
@@ -251,7 +264,11 @@ export function CabinetLayout() {
   }
 
   async function refreshCommunicationUnreadCounts() {
-    if (activeRole !== "OWNER") return;
+    if (activeRole !== "OWNER" || !systemNotificationsEnabled()) {
+      setMenu((current) => clearCommunicationUnreadCounts(current));
+      return;
+    }
+
     try {
       const counts = await fetchCommunicationUnreadCounts();
       setMenu((current) => applyCommunicationUnreadCounts(current, counts));
@@ -323,7 +340,9 @@ export function CabinetLayout() {
 
     const menuData = await fetchNavigation(role);
     const baseMenu =
-      role === "OWNER" ? await withCommunicationUnreadCounts(menuData) : menuData;
+      role === "OWNER" && systemNotificationsEnabled()
+        ? await withCommunicationUnreadCounts(menuData)
+        : clearCommunicationUnreadCounts(menuData);
     setMenu(baseMenu);
 
     const defaultItem = menuData.find((item) => item.is_default) || menuData[0];
@@ -408,9 +427,12 @@ export function CabinetLayout() {
 
     try {
       setAttentionLoading(true);
+      const notificationRequest = systemNotificationsEnabled()
+        ? fetchCommunicationNotificationsForRole(resolveNotificationRole(activeRole))
+        : Promise.resolve([]);
       const [correctionResult, notificationResult] = await Promise.allSettled([
         loadPendingCorrectionRequests(activeRole),
-        fetchCommunicationNotificationsForRole(resolveNotificationRole(activeRole)),
+        notificationRequest,
       ]);
 
       setAttentionDetails({
@@ -1062,11 +1084,28 @@ function applyCommunicationUnreadCounts(
   };
   return menu.map((item) => ({
     ...item,
-    unread_count: codeToCount[item.code] || 0,
+    unread_count:
+      item.code in codeToCount ? codeToCount[item.code] || 0 : item.unread_count,
     children: item.children
       ? applyCommunicationUnreadCounts(item.children, counts)
       : item.children,
   }));
+}
+
+function clearCommunicationUnreadCounts(menu: NavigationItem[]): NavigationItem[] {
+  return menu.map((item) => ({
+    ...item,
+    unread_count: isCommunicationItem(item)
+      ? 0
+      : item.unread_count,
+    children: item.children
+      ? clearCommunicationUnreadCounts(item.children)
+      : item.children,
+  }));
+}
+
+function isCommunicationItem(item: NavigationItem) {
+  return item.code.startsWith("communication_") || item.code === "notifications";
 }
 
 async function loadCorrectionRequestsBadgeCount(role: string) {

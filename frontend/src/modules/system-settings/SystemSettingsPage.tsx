@@ -1,42 +1,125 @@
 "use client";
 
 import { useState } from "react";
+import type { FormEvent } from "react";
+import {
+  changePassword,
+  endOtherSessions,
+  loadSystemSettings,
+  saveSystemSettings,
+  type SystemSettingsState,
+} from "@/lib/system-settings";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
 import {
   AppButton,
   AppPageHeader,
 } from "@/shared/ui/design-system";
 
-type SettingsState = {
-  language: "ru" | "kk";
-  theme: "light" | "dark" | "system";
-  systemNotifications: boolean;
-  emailNotifications: boolean;
+type PasswordForm = {
+  current_password: string;
+  new_password: string;
+  repeat_password: string;
 };
 
-const DEFAULT_SETTINGS: SettingsState = {
-  language: "ru",
-  theme: "light",
-  systemNotifications: true,
-  emailNotifications: false,
+const EMPTY_PASSWORD_FORM: PasswordForm = {
+  current_password: "",
+  new_password: "",
+  repeat_password: "",
 };
-
-const STORAGE_KEY = "golosdom.systemSettings";
 
 export function SystemSettingsPage({ user }: CabinetModuleProps) {
-  const [settings, setSettings] = useState<SettingsState>(loadSettings);
+  const [settings, setSettings] =
+    useState<SystemSettingsState>(loadSystemSettings);
+  const [notice, setNotice] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [passwordForm, setPasswordForm] =
+    useState<PasswordForm>(EMPTY_PASSWORD_FORM);
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [endingSessions, setEndingSessions] = useState(false);
 
-  function updateSettings(next: Partial<SettingsState>) {
-    setSettings((current) => {
-      const updated = { ...current, ...next };
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
+  function updateSettings(next: Partial<SystemSettingsState>) {
+    const updated = saveSystemSettings({ ...settings, ...next });
+    setSettings(updated);
+    setNotice("Настройки сохранены");
+    setActionError("");
+  }
+
+  function openPasswordModal() {
+    setPasswordForm(EMPTY_PASSWORD_FORM);
+    setActionError("");
+    setNotice("");
+    setPasswordOpen(true);
+  }
+
+  async function submitPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setActionError("");
+    setNotice("");
+
+    if (
+      !passwordForm.current_password ||
+      !passwordForm.new_password ||
+      !passwordForm.repeat_password
+    ) {
+      setActionError("Заполните все поля смены пароля.");
+      return;
+    }
+
+    if (passwordForm.new_password.length < 8) {
+      setActionError("Новый пароль должен быть не короче 8 символов.");
+      return;
+    }
+
+    if (passwordForm.new_password !== passwordForm.repeat_password) {
+      setActionError("Новый пароль и повтор должны совпадать.");
+      return;
+    }
+
+    try {
+      setPasswordSaving(true);
+      await changePassword(passwordForm);
+      setPasswordOpen(false);
+      setPasswordForm(EMPTY_PASSWORD_FORM);
+      setNotice("Пароль изменён");
+    } catch (err) {
+      setActionError(
+        err instanceof Error ? err.message : "Не удалось изменить пароль",
+      );
+    } finally {
+      setPasswordSaving(false);
+    }
+  }
+
+  async function finishOtherSessions() {
+    setActionError("");
+    setNotice("");
+
+    try {
+      setEndingSessions(true);
+      await endOtherSessions();
+      setNotice("Другие сеансы завершены");
+    } catch (err) {
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Не удалось завершить другие сеансы",
+      );
+    } finally {
+      setEndingSessions(false);
+    }
   }
 
   return (
     <main className="gd-settings-page min-h-full">
       <AppPageHeader title="Настройки системы" description="Кабинет пользователя" />
+
+      {notice && (
+        <section className="gd-alert gd-alert-success mb-6">{notice}</section>
+      )}
+      {actionError && (
+        <section className="gd-alert gd-alert-danger mb-6">{actionError}</section>
+      )}
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
         <section className="gd-card md:p-8">
@@ -90,7 +173,7 @@ export function SystemSettingsPage({ user }: CabinetModuleProps) {
             <h2 className="mb-5 text-xl font-semibold text-[var(--gd-text-strong)]">Уведомления</h2>
             <ToggleRow
               checked={settings.systemNotifications}
-              description="Публикация голосований, изменения статусов, новые сообщения."
+              description="Публикация голосований, изменения статусов, новые сообщения внутри кабинета."
               label="Системные уведомления"
               onChange={(value) =>
                 updateSettings({ systemNotifications: value })
@@ -108,16 +191,15 @@ export function SystemSettingsPage({ user }: CabinetModuleProps) {
             <h2 className="mb-5 text-xl font-semibold text-[var(--gd-text-strong)]">Безопасность</h2>
             <div className="flex flex-wrap gap-3">
               <AppButton
-                disabled
-                title="Смена пароля пока не подключена к backend API."
+                onClick={openPasswordModal}
               >
                 Сменить пароль
               </AppButton>
               <AppButton
-                disabled
-                title="Завершение других сессий пока не подключено к backend API."
+                disabled={endingSessions}
+                onClick={() => void finishOtherSessions()}
               >
-                Завершить другие сессии
+                {endingSessions ? "Завершение..." : "Завершить другие сессии"}
               </AppButton>
             </div>
             <p className="mt-5 text-sm text-[var(--gd-muted)]">
@@ -126,21 +208,77 @@ export function SystemSettingsPage({ user }: CabinetModuleProps) {
           </section>
         </div>
       </div>
+
+      {passwordOpen && (
+        <div className="gd-modal-overlay">
+          <form onSubmit={submitPassword} className="gd-modal-panel max-w-lg">
+            <div className="gd-modal-header">
+              <div>
+                <h2 className="text-xl font-semibold text-[var(--gd-text-strong)]">
+                  Сменить пароль
+                </h2>
+                <p className="mt-1 text-sm text-[var(--gd-muted)]">
+                  Новый пароль должен содержать минимум 8 символов.
+                </p>
+              </div>
+            </div>
+
+            <div className="gd-modal-body grid grid-cols-1 gap-4">
+              <PasswordInput
+                label="Текущий пароль"
+                value={passwordForm.current_password}
+                onChange={(value) =>
+                  setPasswordForm((current) => ({
+                    ...current,
+                    current_password: value,
+                  }))
+                }
+              />
+              <PasswordInput
+                label="Новый пароль"
+                value={passwordForm.new_password}
+                onChange={(value) =>
+                  setPasswordForm((current) => ({
+                    ...current,
+                    new_password: value,
+                  }))
+                }
+              />
+              <PasswordInput
+                label="Повтор нового пароля"
+                value={passwordForm.repeat_password}
+                onChange={(value) =>
+                  setPasswordForm((current) => ({
+                    ...current,
+                    repeat_password: value,
+                  }))
+                }
+              />
+              {actionError && (
+                <p className="gd-alert gd-alert-danger">{actionError}</p>
+              )}
+            </div>
+
+            <div className="gd-modal-footer">
+              <AppButton
+                type="button"
+                onClick={() => {
+                  setPasswordOpen(false);
+                  setPasswordForm(EMPTY_PASSWORD_FORM);
+                  setActionError("");
+                }}
+              >
+                Отмена
+              </AppButton>
+              <AppButton type="submit" disabled={passwordSaving} variant="primary">
+                {passwordSaving ? "Сохранение..." : "Сохранить"}
+              </AppButton>
+            </div>
+          </form>
+        </div>
+      )}
     </main>
   );
-}
-
-function loadSettings() {
-  if (typeof window === "undefined") return DEFAULT_SETTINGS;
-
-  const raw = window.localStorage.getItem(STORAGE_KEY);
-  if (!raw) return DEFAULT_SETTINGS;
-
-  try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } as SettingsState;
-  } catch {
-    return DEFAULT_SETTINGS;
-  }
 }
 
 function ChoiceButton({
@@ -163,6 +301,28 @@ function ChoiceButton({
     >
       {children}
     </button>
+  );
+}
+
+function PasswordInput({
+  label,
+  onChange,
+  value,
+}: {
+  label: string;
+  onChange: (value: string) => void;
+  value: string;
+}) {
+  return (
+    <label className="block">
+      <span className="gd-label">{label}</span>
+      <input
+        type="password"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="gd-input mt-2"
+      />
+    </label>
   );
 }
 

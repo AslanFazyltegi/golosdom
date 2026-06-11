@@ -1,6 +1,9 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { useRef, useState } from "react";
+import type { ChangeEvent, FormEvent, RefObject } from "react";
+import { apiAssetUrl } from "@/lib/api";
+import { uploadProfilePhoto } from "@/lib/profile";
 import { roleLabel } from "@/shared/lib/cabinetLabels";
 import type { CabinetModuleProps } from "@/shared/types/cabinet";
 import {
@@ -33,6 +36,10 @@ export function ProfilePage({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [success, setSuccess] = useState("");
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const objectUrlRef = useRef("");
+  const [selectedPhoto, setSelectedPhoto] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState(photo);
 
   async function submitProfile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -41,7 +48,16 @@ export function ProfilePage({
     setSuccess("");
 
     try {
-      await updateProfile(form);
+      let photoPath = form.photo;
+      if (selectedPhoto) {
+        const uploaded = await uploadProfilePhoto(selectedPhoto);
+        photoPath = uploaded.photo;
+      }
+
+      await updateProfile({ ...form, photo: photoPath });
+      clearObjectUrl();
+      setSelectedPhoto(null);
+      setPhotoPreview(photoPath);
       setEditing(false);
       setSuccess("Личные данные обновлены.");
     } catch (err) {
@@ -51,6 +67,43 @@ export function ProfilePage({
     } finally {
       setSaving(false);
     }
+  }
+
+  function selectPhoto(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    setSaveError("");
+    setSuccess("");
+
+    if (!file) return;
+
+    if (!isAllowedPhoto(file)) {
+      setSaveError("Допустимые форматы фото: jpg, jpeg, png, webp.");
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setSaveError("Размер фото не должен превышать 2 МБ.");
+      return;
+    }
+
+    clearObjectUrl();
+    const previewUrl = URL.createObjectURL(file);
+    objectUrlRef.current = previewUrl;
+    setSelectedPhoto(file);
+    setPhotoPreview(previewUrl);
+  }
+
+  function resetPhotoDraft(nextPhoto: string) {
+    clearObjectUrl();
+    setSelectedPhoto(null);
+    setPhotoPreview(nextPhoto);
+  }
+
+  function clearObjectUrl() {
+    if (!objectUrlRef.current) return;
+    URL.revokeObjectURL(objectUrlRef.current);
+    objectUrlRef.current = "";
   }
 
   return (
@@ -91,6 +144,7 @@ export function ProfilePage({
                     profileUser?.photo || user.photo || "",
                   ),
                 );
+                resetPhotoDraft(profileUser?.photo || user.photo || "");
                 setSaveError("");
                 setSuccess("");
                 setEditing(true);
@@ -270,11 +324,20 @@ export function ProfilePage({
                 value={form.phone}
                 onChange={(value) => setForm((current) => ({ ...current, phone: value }))}
               />
-              <TextInput
-                label="Фото"
-                value={form.photo}
-                placeholder="URL или путь к фото"
-                onChange={(value) => setForm((current) => ({ ...current, photo: value }))}
+              <PhotoInput
+                fileInputRef={fileInputRef}
+                name={form.full_name || fullName}
+                photo={photoPreview}
+                onPick={() => fileInputRef.current?.click()}
+                onRemove={() => {
+                  setSaveError("");
+                  setSuccess("");
+                  clearObjectUrl();
+                  setSelectedPhoto(null);
+                  setPhotoPreview("");
+                  setForm((current) => ({ ...current, photo: "" }));
+                }}
+                onSelect={selectPhoto}
               />
 
             {saveError && (
@@ -290,6 +353,7 @@ export function ProfilePage({
                 onClick={() => {
                   setEditing(false);
                   setSaveError("");
+                  resetPhotoDraft(form.photo);
                 }}
               >
                 Отмена
@@ -356,6 +420,53 @@ function ReadOnlyInput({ label, value }: { label: string; value: string }) {
   );
 }
 
+function PhotoInput({
+  fileInputRef,
+  name,
+  onPick,
+  onRemove,
+  onSelect,
+  photo,
+}: {
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  name: string;
+  onPick: () => void;
+  onRemove: () => void;
+  onSelect: (event: ChangeEvent<HTMLInputElement>) => void;
+  photo: string;
+}) {
+  return (
+    <div className="rounded-[var(--gd-radius-md)] border border-[var(--gd-border)] bg-[var(--gd-surface)] p-4">
+      <span className="gd-label">Фото</span>
+      <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-center">
+        <Avatar name={name} photo={photo} size="large" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap gap-2">
+            <AppButton type="button" onClick={onPick}>
+              Выбрать фото
+            </AppButton>
+            {photo && (
+              <AppButton type="button" variant="danger" onClick={onRemove}>
+                Удалить фото
+              </AppButton>
+            )}
+          </div>
+          <p className="mt-2 text-sm text-[var(--gd-muted)]">
+            Допустимые форматы: jpg, jpeg, png, webp.
+          </p>
+        </div>
+      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+        className="hidden"
+        onChange={onSelect}
+      />
+    </div>
+  );
+}
+
 function Avatar({
   name,
   photo,
@@ -372,7 +483,7 @@ function Avatar({
 
   if (photo) {
     // eslint-disable-next-line @next/next/no-img-element
-    return <img src={photo} alt="" className={className} />;
+    return <img src={apiAssetUrl(photo)} alt="" className={className} />;
   }
 
   return (
@@ -402,6 +513,17 @@ function buildFormState(
     phone: phone || "",
     photo: photo || "",
   };
+}
+
+function isAllowedPhoto(file: File) {
+  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+  const allowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
+  const name = file.name.toLowerCase();
+
+  return (
+    allowedTypes.includes(file.type) ||
+    allowedExtensions.some((extension) => name.endsWith(extension))
+  );
 }
 
 function formatBuilding(building: ProfileBuilding) {

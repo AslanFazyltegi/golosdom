@@ -1,12 +1,16 @@
 import { getToken } from "./auth";
 
-const API_BASE_URL = "http://localhost:8080";
+export const API_BASE_URL = "http://localhost:8080";
 
 export async function apiFetch(path: string, options: RequestInit = {}) {
   const token = typeof window !== "undefined" ? getToken() : null;
 
   const headers = new Headers(options.headers || {});
-  headers.set("Content-Type", "application/json");
+  const hasFormDataBody =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (!hasFormDataBody && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
 
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
@@ -26,9 +30,19 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
     const message =
       typeof data === "object" && data?.error
         ? data.error
-        : "Request failed";
+        : typeof data === "string" && data.trim()
+          ? data.trim()
+          : "Request failed";
     throw new Error(message);
   }
 
   return data;
+}
+
+export function apiAssetUrl(path?: string | null) {
+  if (!path) return "";
+  if (/^https?:\/\//i.test(path) || path.startsWith("data:")) return path;
+  if (!path.startsWith("/")) return path;
+
+  return `${API_BASE_URL}${path}`;
 }

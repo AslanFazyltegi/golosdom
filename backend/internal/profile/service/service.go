@@ -13,6 +13,8 @@ type Service struct {
 	repo *repository.Repository
 }
 
+const maxProfilePhotoLength = 2048
+
 func New(repo *repository.Repository) *Service {
 	return &Service{repo: repo}
 }
@@ -78,7 +80,7 @@ func (s *Service) UpdateProfile(
 		phone = user.Phone
 	}
 
-	photo, err := normalizeOptional(req.Photo, 2048, "Фото")
+	photo, err := normalizeOptional(req.Photo, maxProfilePhotoLength, "Фото")
 	if err != nil {
 		return dto.ProfileResponse{}, err
 	}
@@ -91,6 +93,59 @@ func (s *Service) UpdateProfile(
 	}
 
 	return s.GetProfile(ctx, userID, activeRole)
+}
+
+func (s *Service) ChangePassword(
+	ctx context.Context,
+	userID string,
+	req dto.ChangePasswordRequest,
+) error {
+	currentPassword := strings.TrimSpace(req.CurrentPassword)
+	newPassword := strings.TrimSpace(req.NewPassword)
+	repeatPassword := strings.TrimSpace(req.RepeatPassword)
+
+	if currentPassword == "" || newPassword == "" {
+		return errors.New("Заполните все поля смены пароля")
+	}
+
+	if len([]rune(newPassword)) < 8 {
+		return errors.New("Новый пароль должен быть не короче 8 символов")
+	}
+
+	if repeatPassword != "" && newPassword != repeatPassword {
+		return errors.New("Новый пароль и повтор должны совпадать")
+	}
+
+	storedPassword, err := s.repo.GetPassword(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	if storedPassword != currentPassword {
+		return errors.New("Текущий пароль указан неверно")
+	}
+
+	return s.repo.UpdatePassword(ctx, userID, newPassword)
+}
+
+func (s *Service) UpdatePhoto(ctx context.Context, userID string, photo string) error {
+	normalized := strings.TrimSpace(photo)
+	if normalized == "" {
+		return s.repo.UpdatePhoto(ctx, userID, nil)
+	}
+	if len([]rune(normalized)) > maxProfilePhotoLength {
+		return errors.New("Фото слишком длинный")
+	}
+
+	return s.repo.UpdatePhoto(ctx, userID, &normalized)
+}
+
+func (s *Service) EndOtherSessions(ctx context.Context, userID string) error {
+	if strings.TrimSpace(userID) == "" {
+		return errors.New("Пользователь не определён")
+	}
+
+	return nil
 }
 
 func normalizeOptional(value *string, maxLength int, label string) (*string, error) {

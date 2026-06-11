@@ -14,6 +14,12 @@ type UpdateProfileRequest struct {
 	Photo    *string `json:"photo"`
 }
 
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+	RepeatPassword  string `json:"repeat_password"`
+}
+
 type ChairmanResponse struct {
 	ID       *string `json:"id"`
 	FullName *string `json:"full_name"`

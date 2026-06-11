@@ -130,6 +130,7 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 	mux.HandleFunc("/api/v1/infocenter/announcements", authMiddleware(authSvc, infocenterAnnouncementsH.Announcements))
 	mux.HandleFunc("/api/v1/infocenter/announcements/", authMiddleware(authSvc, infocenterAnnouncementsH.AnnouncementsByID))
 	mux.Handle("/uploads/news/", http.StripPrefix("/uploads/news/", http.FileServer(http.Dir("uploads/news"))))
+	mux.Handle("/uploads/profile/", http.StripPrefix("/uploads/profile/", http.FileServer(http.Dir("uploads/profile"))))
 
 	mux.HandleFunc("/api/v1/auth/register", authH.Register)
 	mux.HandleFunc("/api/v1/auth/login", authH.Login)
@@ -140,6 +141,27 @@ func New(dbPool *pgxpool.Pool) http.Handler {
 		authMiddleware(
 			authSvc,
 			profileH.Get,
+		),
+	)
+	mux.HandleFunc(
+		"/api/v1/profile/photo",
+		authMiddleware(
+			authSvc,
+			profileH.UploadPhoto,
+		),
+	)
+	mux.HandleFunc(
+		"/api/v1/profile/password",
+		authMiddleware(
+			authSvc,
+			profileH.ChangePassword,
+		),
+	)
+	mux.HandleFunc(
+		"/api/v1/profile/sessions/end-others",
+		authMiddleware(
+			authSvc,
+			profileH.EndOtherSessions,
 		),
 	)
 

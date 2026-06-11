@@ -83,6 +83,47 @@ func (r *Repository) UpdateUser(
 	return err
 }
 
+func (r *Repository) UpdatePhoto(
+	ctx context.Context,
+	userID string,
+	photo *string,
+) error {
+	_, err := r.db.Exec(
+		ctx,
+		`UPDATE users SET photo = $2 WHERE id = $1`,
+		userID,
+		photo,
+	)
+
+	return err
+}
+
+func (r *Repository) GetPassword(ctx context.Context, userID string) (string, error) {
+	var password string
+	err := r.db.QueryRow(
+		ctx,
+		`SELECT password FROM users WHERE id = $1`,
+		userID,
+	).Scan(&password)
+
+	return password, err
+}
+
+func (r *Repository) UpdatePassword(
+	ctx context.Context,
+	userID string,
+	password string,
+) error {
+	_, err := r.db.Exec(
+		ctx,
+		`UPDATE users SET password = $2 WHERE id = $1`,
+		userID,
+		password,
+	)
+
+	return err
+}
+
 func (r *Repository) GetRoles(ctx context.Context, userID string) ([]string, error) {
 	rows, err := r.db.Query(
 		ctx,

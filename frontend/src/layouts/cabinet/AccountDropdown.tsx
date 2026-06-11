@@ -1,6 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import {
+  loadSystemSettings,
+  saveSystemSettings,
+  SYSTEM_SETTINGS_CHANGED_EVENT,
+} from "@/lib/system-settings";
+import { apiAssetUrl } from "@/lib/api";
 import type { User } from "@/types/user";
 import { roleLabel } from "@/shared/lib/cabinetLabels";
 import { AccountMenuItem } from "./AccountMenuItem";
@@ -22,15 +28,25 @@ export function AccountDropdown({
   const phone = user.phone || user.phone_number || "Телефон не указан";
   const initials = getInitials(fullName);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
-    if (typeof document === "undefined") return "light";
-    return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+    if (typeof window === "undefined") return "light";
+    return getCurrentTheme();
   });
 
+  useEffect(() => {
+    function syncTheme() {
+      setTheme(getCurrentTheme());
+    }
+
+    window.addEventListener(SYSTEM_SETTINGS_CHANGED_EVENT, syncTheme);
+    return () =>
+      window.removeEventListener(SYSTEM_SETTINGS_CHANGED_EVENT, syncTheme);
+  }, []);
+
   function toggleTheme() {
+    const currentSettings = loadSystemSettings();
     const next = theme === "dark" ? "light" : "dark";
+    saveSystemSettings({ ...currentSettings, theme: next });
     setTheme(next);
-    document.documentElement.dataset.theme = next;
-    window.localStorage.setItem("golosdom-theme", next);
   }
 
   return (
@@ -39,7 +55,7 @@ export function AccountDropdown({
         {user.photo ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={user.photo}
+            src={apiAssetUrl(user.photo)}
             alt=""
             className="h-12 w-12 rounded-full object-cover"
           />
@@ -126,4 +142,8 @@ function getInitials(name: string) {
     .join("");
 
   return initials || "GD";
+}
+
+function getCurrentTheme(): "light" | "dark" {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
 }

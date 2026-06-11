@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { apiAssetUrl } from "@/lib/api";
 import type { User } from "@/types/user";
 import { roleLabel } from "@/shared/lib/cabinetLabels";
 import { AccountDropdown } from "./AccountDropdown";
@@ -62,7 +63,7 @@ export function UserAccountArea({
         {user.photo ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={user.photo}
+            src={apiAssetUrl(user.photo)}
             alt=""
             className="h-10 w-10 rounded-full object-cover sm:h-11 sm:w-11"
           />
