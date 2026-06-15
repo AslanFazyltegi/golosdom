@@ -20,7 +20,7 @@ export function AccountDropdown({
 }: {
   activeRole: string;
   onOpenModule: (code: string) => void;
-  switchRole: (role: string) => void;
+  switchRole: (role: string) => void | Promise<void>;
   logout: () => void;
   user: User;
 }) {
@@ -91,7 +91,7 @@ export function AccountDropdown({
             <button
               key={role}
               onClick={() => {
-                if (!isActive) switchRole(role);
+                if (!isActive) void switchRole(role);
               }}
               className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition ${
                 isActive

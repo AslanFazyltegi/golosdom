@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiAssetUrl } from "@/lib/api";
 import type { User } from "@/types/user";
 import { roleLabel } from "@/shared/lib/cabinetLabels";
@@ -25,6 +25,12 @@ export function UserAccountArea({
   const initials = getInitials(name);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  const [displayRole, setDisplayRole] = useState(activeRole);
+
+    useEffect(() => {
+      setDisplayRole(activeRole);
+    }, [activeRole]);
+
   useEffect(() => {
     if (!accountOpen) return;
 
@@ -49,10 +55,28 @@ export function UserAccountArea({
     };
   }, [accountOpen, setAccountOpen]);
 
-  function closeAfter(action: () => void) {
-    action();
+async function closeAfter(action: () => void | Promise<void>) {
+  await action();
+  setAccountOpen(false);
+}
+
+async function handleRoleSwitch(role: string) {
+  if (role === displayRole) {
     setAccountOpen(false);
+    return;
   }
+
+  const previousRole = displayRole;
+  setDisplayRole(role);
+  setAccountOpen(false);
+
+  try {
+    await switchRole(role);
+  } catch (error) {
+    setDisplayRole(previousRole);
+    throw error;
+  }
+}
 
   return (
     <div ref={containerRef} className="relative">
@@ -78,7 +102,7 @@ export function UserAccountArea({
             {name}
           </p>
           <p className="text-xs font-semibold text-[var(--gd-muted)]">
-            {roleLabel(activeRole)}
+            {roleLabel(displayRole)}
           </p>
         </div>
 
@@ -87,10 +111,10 @@ export function UserAccountArea({
 
       {accountOpen && (
         <AccountDropdown
-          activeRole={activeRole}
-          onOpenModule={(code) => closeAfter(() => onOpenModule(code))}
-          switchRole={(role) => closeAfter(() => switchRole(role))}
-          logout={() => closeAfter(logout)}
+          activeRole={displayRole}
+          onOpenModule={(code) => void closeAfter(() => onOpenModule(code))}
+          switchRole={(role) => void handleRoleSwitch(role)}
+          logout={() => void closeAfter(logout)}
           user={user}
         />
       )}

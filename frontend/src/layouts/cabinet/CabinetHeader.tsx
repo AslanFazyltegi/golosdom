@@ -29,7 +29,7 @@ export function CabinetHeader({
   onOpenModule: (code: string) => void;
   sidebarCollapsed: boolean;
   setAccountOpen: (value: boolean) => void;
-  switchRole: (role: string) => void;
+  switchRole: (role: string) => void | Promise<void>;
   user: User;
 }) {
   return (
@@ -78,15 +78,16 @@ export function CabinetHeader({
         >
           ?
         </button>
-        <UserAccountArea
-          accountOpen={accountOpen}
-          activeRole={activeRole}
-          logout={logout}
-          onOpenModule={onOpenModule}
-          setAccountOpen={setAccountOpen}
-          switchRole={switchRole}
-          user={user}
-        />
+          <UserAccountArea
+            key={activeRole}
+            accountOpen={accountOpen}
+            activeRole={activeRole}
+            logout={logout}
+            onOpenModule={onOpenModule}
+            setAccountOpen={setAccountOpen}
+            switchRole={switchRole}
+            user={user}
+          />
       </div>
     </header>
   );
