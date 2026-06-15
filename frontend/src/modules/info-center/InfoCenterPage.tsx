@@ -1559,7 +1559,7 @@ function PostCard({
             <StatusBadge status={post.status} />
             {post.is_pinned && <span className="rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700">Закреплено</span>}
             {post.importance !== "normal" && <span className="rounded-full bg-red-50 px-2 py-1 text-xs text-red-700">{importanceLabel(post.importance)}</span>}
-            {!post.read_at && !canManage && <span className="rounded-full bg-red-600 px-2 py-1 text-xs text-white">Новое</span>}
+            {!post.read_at && !canManage && <span className="rounded-full bg-[var(--gd-accent)] px-2 py-1 text-xs text-white">Новое</span>}
           </div>
           <h2 className="text-xl font-semibold">{post.title}</h2>
           <p className="mt-1 text-sm text-slate-500">{formatAstanaDateTime(post.publish_at || post.created_at)}</p>
@@ -1693,7 +1693,12 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function EmptyState({ text }: { text: string }) {
-  return <div className="gd-empty-state text-sm">{text}</div>;
+  return (
+    <div className="gd-empty-state text-sm">
+      <span className="gd-icon-box mb-4">i</span>
+      {text}
+    </div>
+  );
 }
 
 function ErrorText({ text }: { text: string }) {
@@ -1746,7 +1751,7 @@ function importanceLabel(value: CommunicationPost["importance"]) {
 
 function channelLabel(value: string) {
   const labels: Record<string, string> = {
-    portal: "Портал Golosdom",
+    portal: "Портал Bizdin Ui",
     whatsapp: "WhatsApp",
     telegram: "Telegram",
     sms: "SMS",

@@ -1,5 +1,4 @@
 import type { User } from "@/types/user";
-import { LogoArea } from "./LogoArea";
 import { UserAccountArea } from "./UserAccountArea";
 
 export function CabinetHeader({
@@ -34,12 +33,12 @@ export function CabinetHeader({
   user: User;
 }) {
   return (
-    <header className="fixed left-0 right-0 top-0 z-40 flex h-20 items-center justify-between border-b border-[var(--gd-border)] bg-[var(--gd-header)] px-4 shadow-sm backdrop-blur-xl sm:px-6 lg:px-8">
+    <header className="fixed left-0 right-0 top-0 z-40 flex h-16 items-center justify-between border-b border-[var(--gd-border)] bg-[var(--gd-header)] px-4 shadow-sm backdrop-blur-xl sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
           onClick={onToggleMobileSidebar}
-          className="flex h-11 w-11 items-center justify-center rounded-xl border border-[var(--gd-border)] bg-[var(--gd-surface)] text-lg font-bold text-[var(--gd-text)] lg:hidden"
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--gd-border)] bg-[var(--gd-surface)] text-lg font-bold text-[var(--gd-text)] lg:hidden"
           aria-label="Открыть меню"
         >
           ☰
@@ -47,17 +46,16 @@ export function CabinetHeader({
         <button
           type="button"
           onClick={onToggleDesktopSidebar}
-          className="hidden h-11 w-11 items-center justify-center rounded-xl border border-[var(--gd-border)] bg-[var(--gd-surface)] text-lg font-bold text-[var(--gd-text)] transition hover:bg-[var(--gd-surface-muted)] lg:flex"
+          className="hidden h-10 w-10 items-center justify-center rounded-xl border border-[var(--gd-border)] bg-[var(--gd-surface)] text-lg font-bold text-[var(--gd-text)] transition hover:bg-[var(--gd-primary-faint)] hover:text-[var(--gd-primary)] lg:flex"
           aria-label={sidebarCollapsed ? "Развернуть меню" : "Свернуть меню"}
         >
           {sidebarCollapsed ? "›" : "‹"}
         </button>
-        <LogoArea />
-        <div className="hidden min-w-0 sm:block">
-          <p className="truncate text-xs font-bold uppercase text-[var(--gd-muted)]">
+        <div className="min-w-0">
+          <p className="hidden truncate text-xs font-bold uppercase text-[var(--gd-muted)] sm:block">
             {buildingTitle}
           </p>
-          <h1 className="truncate text-lg font-extrabold leading-tight text-[var(--gd-text-strong)] lg:text-xl">
+          <h1 className="truncate text-base font-bold leading-tight text-[var(--gd-text-strong)] sm:text-lg">
             {activeModuleTitle}
           </h1>
         </div>
@@ -67,7 +65,7 @@ export function CabinetHeader({
         <button
           type="button"
           onClick={onOpenImportantEvents}
-          className="hidden h-11 w-11 items-center justify-center rounded-xl border border-[var(--gd-border)] bg-[var(--gd-surface)] text-sm font-black text-[var(--gd-muted-strong)] transition hover:bg-[var(--gd-surface-muted)] sm:flex"
+          className="hidden h-10 w-10 items-center justify-center rounded-xl border border-[var(--gd-border)] bg-[var(--gd-surface)] text-sm font-black text-[var(--gd-muted-strong)] transition hover:bg-[var(--gd-primary-faint)] hover:text-[var(--gd-primary)] sm:flex"
           aria-label="Важные события"
         >
           !
@@ -75,7 +73,7 @@ export function CabinetHeader({
         <button
           type="button"
           onClick={onOpenHelp}
-          className="hidden h-11 w-11 items-center justify-center rounded-xl border border-[var(--gd-border)] bg-[var(--gd-surface)] text-sm font-black text-[var(--gd-muted-strong)] transition hover:bg-[var(--gd-surface-muted)] sm:flex"
+          className="hidden h-10 w-10 items-center justify-center rounded-xl border border-[var(--gd-border)] bg-[var(--gd-surface)] text-sm font-black text-[var(--gd-muted-strong)] transition hover:bg-[var(--gd-primary-faint)] hover:text-[var(--gd-primary)] sm:flex"
           aria-label="Помощь"
         >
           ?

@@ -325,7 +325,7 @@ function translateValue(value: string, language: InterfaceLanguage) {
 }
 
 const KK_TRANSLATIONS: Record<string, string> = {
-  "Golosdom": "Golosdom",
+  "Bizdin Ui": "Bizdin Ui",
   "единый кабинет дома": "үйдің бірыңғай кабинеті",
   "Кабинет": "Кабинет",
   "Кабинет пользователя": "Пайдаланушы кабинеті",

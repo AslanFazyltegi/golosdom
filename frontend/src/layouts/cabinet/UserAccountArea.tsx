@@ -58,17 +58,17 @@ export function UserAccountArea({
     <div ref={containerRef} className="relative">
       <button
         onClick={() => setAccountOpen(!accountOpen)}
-        className="flex items-center gap-3 rounded-2xl border border-[var(--gd-border)] bg-[var(--gd-surface)] px-2 py-2 shadow-sm transition hover:bg-[var(--gd-surface-muted)] sm:px-3"
+        className="flex h-10 items-center gap-2 rounded-xl border border-[var(--gd-border)] bg-[var(--gd-surface)] px-2 shadow-sm transition hover:bg-[var(--gd-primary-faint)] sm:px-3"
       >
         {user.photo ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={apiAssetUrl(user.photo)}
             alt=""
-            className="h-10 w-10 rounded-full object-cover sm:h-11 sm:w-11"
+            className="h-9 w-9 rounded-full object-cover"
           />
         ) : (
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--gd-primary-soft)] text-sm font-black text-[var(--gd-primary-strong)] sm:h-11 sm:w-11">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--gd-primary-soft)] text-sm font-black text-[var(--gd-primary)]">
             {initials}
           </div>
         )}

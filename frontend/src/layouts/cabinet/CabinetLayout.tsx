@@ -37,6 +37,7 @@ import type { Voting } from "@/types/voting";
 import { CabinetHeader } from "./CabinetHeader";
 import { CabinetSidebar } from "./CabinetSidebar";
 import { CabinetWorkspace } from "./CabinetWorkspace";
+import { MobileBottomNav } from "./MobileBottomNav";
 
 declare global {
   interface Window {
@@ -558,7 +559,26 @@ export function CabinetLayout() {
     router.push("/login");
   }
 
-  if (loading) return <main className="p-6">Загрузка...</main>;
+  if (loading) {
+    return (
+      <main className="gd-app-shell min-h-screen p-6">
+        <section className="gd-card mx-auto mt-16 max-w-xl p-6">
+          <div className="flex items-center gap-4">
+            <div className="gd-skeleton h-12 w-12 rounded-full" />
+            <div className="flex-1 space-y-3">
+              <div className="gd-skeleton h-4 w-2/3" />
+              <div className="gd-skeleton h-3 w-1/2" />
+            </div>
+          </div>
+          <div className="mt-6 space-y-3">
+            <div className="gd-skeleton h-16" />
+            <div className="gd-skeleton h-16" />
+            <div className="gd-skeleton h-16" />
+          </div>
+        </section>
+      </main>
+    );
+  }
   if (!user) return null;
 
   const activeModuleTitle = getActiveModuleTitle(menu, activeComponent);
@@ -613,7 +633,7 @@ export function CabinetLayout() {
         }}
       />
 
-      <div className="h-screen pt-20">
+      <div className="h-screen pt-16">
         <CabinetSidebar
           menu={menu}
           activeComponent={activeComponent}
@@ -671,6 +691,12 @@ export function CabinetLayout() {
           logout={logout}
           sidebarCollapsed={sidebarCollapsed}
           overlay={workspaceModal}
+        />
+        <MobileBottomNav
+          activeComponent={activeComponent}
+          menu={menu}
+          onOpenItem={(item) => void openNavigationItem(item)}
+          onOpenModule={openAccountModule}
         />
       </div>
     </main>
@@ -1014,14 +1040,14 @@ function getActiveModuleTitle(menu: NavigationItem[], activeComponent: string) {
 }
 
 function getHeaderBuildingTitle(objects: unknown) {
-  if (!objects || Array.isArray(objects)) return "Golosdom";
+  if (!objects || Array.isArray(objects)) return "Bizdin Ui";
 
   const building = objects as Record<string, unknown>;
   const name = [building.building_name, building.street, building.house_number]
     .filter(Boolean)
     .join(", ");
 
-  return name || "Golosdom";
+  return name || "Bizdin Ui";
 }
 
 function syncUserFromProfile(current: User | null, profile: UserProfile) {

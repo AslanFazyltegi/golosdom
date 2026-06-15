@@ -14,6 +14,7 @@ import {
   fetchMyInfocenterNews,
   infocenterNewsMediaUrl,
 } from "@/lib/infocenter-news";
+import { fetchMeetings } from "@/lib/meetings";
 import { fetchPropertyCorrectionRequests } from "@/lib/objects";
 import {
   fetchActiveVotings,
@@ -27,7 +28,8 @@ import type { CabinetModuleProps } from "@/shared/types/cabinet";
 import type { CommunicationNotification } from "@/types/communications";
 import type { InfocenterAnnouncement } from "@/types/infocenter-announcement";
 import type { InfocenterNews, InfocenterNewsImage } from "@/types/infocenter-news";
-import type { PropertyCorrectionRequest } from "@/types/objects";
+import type { PropertyCorrectionRequest, PropertyObject } from "@/types/objects";
+import type { Meeting } from "@/types/meeting";
 import type { Voting, VotingApprovalReview, VotingApprovalVote } from "@/types/voting";
 
 type OwnerDashboardData = {
@@ -35,6 +37,7 @@ type OwnerDashboardData = {
   news: InfocenterNews[];
   announcements: InfocenterAnnouncement[];
   notifications: CommunicationNotification[];
+  upcomingMeetings: Meeting[];
 };
 
 const emptyOwnerDashboardData: OwnerDashboardData = {
@@ -42,6 +45,7 @@ const emptyOwnerDashboardData: OwnerDashboardData = {
   news: [],
   announcements: [],
   notifications: [],
+  upcomingMeetings: [],
 };
 
 type BuildingDashboardStatistics = {
@@ -95,6 +99,13 @@ type LatestPublication = {
   date?: string | null;
   text: string;
   moduleCode: string;
+};
+
+type DashboardObject = {
+  title: string;
+  type: string;
+  area: string;
+  status: string;
 };
 
 const emptyChairmanDashboardData: ChairmanDashboardData = {
@@ -161,6 +172,7 @@ function OwnerDashboardSummaryPage({
   activeRole,
   objects,
   openModule,
+  user,
 }: CabinetModuleProps) {
   const [data, setData] = useState<OwnerDashboardData>(emptyOwnerDashboardData);
   const [loading, setLoading] = useState(true);
@@ -178,16 +190,18 @@ function OwnerDashboardSummaryPage({
         fetchMyInfocenterNews(),
         fetchMyInfocenterAnnouncements(),
         fetchCommunicationNotificationsForRole(activeRole),
+        fetchMeetings("upcoming"),
       ]);
 
       if (cancelled) return;
 
-      const [activeVotings, news, announcements, notifications] = results;
+      const [activeVotings, news, announcements, notifications, upcomingMeetings] = results;
       setData({
         activeVotings: settledArray(activeVotings),
         news: settledArray(news),
         announcements: settledArray(announcements),
         notifications: settledArray(notifications),
+        upcomingMeetings: settledArray(upcomingMeetings),
       });
 
       const failed = results.some((result) => result.status === "rejected");
@@ -233,21 +247,83 @@ function OwnerDashboardSummaryPage({
       ).slice(0, 3),
     [data.notifications],
   );
+  const publishedNewsCount = data.news.filter(
+    (item) => item.status === "published" && item.is_visible,
+  ).length;
+  const activeAnnouncementsCount = data.announcements.filter(isActiveAnnouncement).length;
+  const visibleNotificationsCount = data.notifications.filter(
+    (item) => item.status !== "hidden" && item.status !== "deleted",
+  ).length;
+  const ownerName = getFirstName(user.full_name || user.email || "Пользователь");
+  const buildingTitle = dashboardBuildingTitle(objects);
+  const primaryObject = buildDashboardObject(objects);
+  const nextMeeting =
+    [...data.upcomingMeetings].sort(
+      (left, right) => dateTimeValue(left.scheduled_at) - dateTimeValue(right.scheduled_at),
+    )[0] ?? null;
 
   return (
     <div className="gd-dashboard-summary space-y-6">
-      <h1 className="mb-6 text-3xl font-bold">Дашборд (сводка)</h1>
+      <div className="gd-page-header">
+        <div>
+          <p className="gd-page-kicker text-sm font-bold">{buildingTitle}</p>
+          <h1 className="gd-page-title">Добро пожаловать, {ownerName}!</h1>
+          <p className="gd-page-description mt-2 text-sm">
+            Главное по дому: голосования, новости, объявления и уведомления.
+          </p>
+        </div>
+      </div>
 
       {loading && (
-        <p className="mb-5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm">
-          Загрузка данных...
-        </p>
+        <DashboardLoading />
       )}
       {error && (
         <p className="mb-5 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
           {error}
         </p>
       )}
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <SummaryActionCard
+          title="Активные голосования"
+          value={activeVotings.length}
+          caption="Доступно сейчас"
+          onClick={() => openModule("votings_active")}
+        />
+        <SummaryActionCard
+          title="Новости"
+          value={publishedNewsCount}
+          caption="Опубликовано"
+          onClick={() => openModule("communication_news")}
+        />
+        <SummaryActionCard
+          title="Объявления"
+          value={activeAnnouncementsCount}
+          caption="Актуальные"
+          onClick={() => openModule("communication_announcements")}
+        />
+        <SummaryActionCard
+          title="Уведомления"
+          value={visibleNotificationsCount}
+          caption="В ленте"
+          onClick={() => openModule("communication_notifications")}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.05fr)_minmax(260px,0.95fr)_minmax(260px,0.95fr)]">
+        <OwnerActiveVotingCard
+          voting={activeVotings[0] ?? null}
+          onOpen={() => openModule("votings_active")}
+        />
+        <OwnerObjectCard
+          object={primaryObject}
+          onOpen={() => openModule("my_properties")}
+        />
+        <OwnerMeetingCard
+          meeting={nextMeeting}
+          onOpen={() => openModule("meetings_upcoming")}
+        />
+      </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <DashboardSection
@@ -345,9 +421,7 @@ function ChairmanDashboardSummaryPage({ openModule }: CabinetModuleProps) {
       <h1 className="mb-6 text-3xl font-bold">Дашборд председателя</h1>
 
       {loading && (
-        <p className="mb-5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm">
-          Загрузка данных...
-        </p>
+        <DashboardLoading />
       )}
       {error && (
         <p className="mb-5 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -532,9 +606,7 @@ function CouncilDashboardSummaryPage({
       <h1 className="mb-6 text-3xl font-bold">Дашборд совета дома</h1>
 
       {loading && (
-        <p className="mb-5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm">
-          Загрузка данных...
-        </p>
+        <DashboardLoading />
       )}
       {error && (
         <p className="mb-5 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -754,6 +826,153 @@ function DashboardSection({
   );
 }
 
+function DashboardLoading() {
+  return (
+    <div className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-4">
+      <div className="gd-skeleton h-28 md:col-span-2" />
+      <div className="gd-skeleton h-28" />
+      <div className="gd-skeleton h-28" />
+    </div>
+  );
+}
+
+function OwnerActiveVotingCard({
+  voting,
+  onOpen,
+}: {
+  voting: Voting | null;
+  onOpen: () => void;
+}) {
+  if (!voting) {
+    return (
+      <section className="gd-card min-h-[190px]">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <h2 className="text-base font-bold text-[var(--gd-text-strong)]">Активное голосование</h2>
+          <span className="gd-icon-box gd-icon-box-success">✓</span>
+        </div>
+        <p className="text-sm text-[var(--gd-muted)]">Активных опросных листов сейчас нет.</p>
+        <button type="button" onClick={onOpen} className="gd-button mt-5">
+          Открыть раздел
+        </button>
+      </section>
+    );
+  }
+
+  const progress = votingProgressPercent(voting);
+  const voted = isNumber(voting.voted_owners_count) ? voting.voted_owners_count : null;
+  const total = isNumber(voting.total_owners_count) ? voting.total_owners_count : null;
+
+  return (
+    <section className="gd-card min-h-[190px]">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-bold text-[var(--gd-text-strong)]">Активное голосование</h2>
+          {voting.publication_end_at && (
+            <span className="gd-status-pill gd-status-emerald mt-3">
+              До окончания {daysLeftLabel(voting.publication_end_at) || "идёт голосование"}
+            </span>
+          )}
+        </div>
+        <span className="gd-icon-box gd-icon-box-success">✓</span>
+      </div>
+
+      <h3 className="line-clamp-2 font-bold text-[var(--gd-text-strong)]">
+        {voting.title || "Опросный лист"}
+      </h3>
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--gd-border-soft)]">
+        <div
+          className="h-full rounded-full bg-[var(--gd-accent)]"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-3 text-xs font-bold text-[var(--gd-muted)]">
+        <span>
+          {voted !== null && total !== null ? `Проголосовали ${voted} из ${total}` : "Идёт сбор голосов"}
+        </span>
+        <span>{progress}%</span>
+      </div>
+      <button type="button" onClick={onOpen} className="gd-button gd-button-primary mt-5 w-full">
+        Проголосовать
+      </button>
+    </section>
+  );
+}
+
+function OwnerObjectCard({
+  object,
+  onOpen,
+}: {
+  object: DashboardObject | null;
+  onOpen: () => void;
+}) {
+  return (
+    <section className="gd-card min-h-[190px]">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <h2 className="text-base font-bold text-[var(--gd-text-strong)]">Мой объект</h2>
+        <span className="gd-icon-box">▦</span>
+      </div>
+      {object ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-bold text-[var(--gd-text-strong)]">{object.title}</h3>
+            {object.status && <span className="gd-status-pill gd-status-emerald">{object.status}</span>}
+          </div>
+          <p className="mt-3 text-sm font-semibold text-[var(--gd-muted-strong)]">
+            {object.type}
+          </p>
+          <p className="mt-1 text-sm text-[var(--gd-muted)]">
+            {object.area}
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-[var(--gd-muted)]">
+          Объекты появятся после привязки имущества.
+        </p>
+      )}
+      <button type="button" onClick={onOpen} className="gd-button mt-5">
+        Подробнее →
+      </button>
+    </section>
+  );
+}
+
+function OwnerMeetingCard({
+  meeting,
+  onOpen,
+}: {
+  meeting: Meeting | null;
+  onOpen: () => void;
+}) {
+  return (
+    <section className="gd-card min-h-[190px]">
+      <div className="mb-4 flex items-start justify-between gap-4">
+        <h2 className="text-base font-bold text-[var(--gd-text-strong)]">Следующее собрание</h2>
+        <span className="gd-icon-box">□</span>
+      </div>
+      {meeting ? (
+        <>
+          <h3 className="font-bold text-[var(--gd-text-strong)]">
+            {formatAstanaDateTime(meeting.scheduled_at)}
+          </h3>
+          <p className="mt-3 line-clamp-2 text-sm font-semibold text-[var(--gd-muted-strong)]">
+            {meeting.agenda?.[0] || "Общедомовое собрание"}
+          </p>
+          <p className="mt-1 line-clamp-2 text-sm text-[var(--gd-muted)]">
+            {meeting.location}
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-[var(--gd-muted)]">
+          Предстоящих собраний пока нет.
+        </p>
+      )}
+      <button type="button" onClick={onOpen} className="gd-button mt-5">
+        Подробнее →
+      </button>
+    </section>
+  );
+}
+
 function ActiveVotingList({
   votings,
   onOpen,
@@ -818,11 +1037,16 @@ function SummaryActionCard({
   onClick?: () => void;
 }) {
   const content = (
-    <>
-      <p className="text-sm font-semibold text-slate-500">{title}</p>
-      <p className="mt-3 text-3xl font-bold text-slate-900">{value}</p>
-      <p className="mt-2 text-sm text-slate-500">{caption}</p>
-    </>
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-slate-500">{title}</p>
+        <p className="mt-3 text-3xl font-bold text-slate-900">{value}</p>
+        <p className="mt-2 text-sm text-slate-500">{caption}</p>
+      </div>
+      <span className="gd-icon-box gd-icon-box-success text-base">
+        {summaryCardIcon(title)}
+      </span>
+    </div>
   );
   const className =
     "rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-blue-200 hover:bg-blue-50/30";
@@ -836,6 +1060,17 @@ function SummaryActionCard({
   }
 
   return <div className={className}>{content}</div>;
+}
+
+function summaryCardIcon(title: string) {
+  const normalized = title.toLowerCase();
+  if (normalized.includes("голос")) return "✓";
+  if (normalized.includes("новост")) return "N";
+  if (normalized.includes("объяв")) return "!";
+  if (normalized.includes("уведом")) return "•";
+  if (normalized.includes("запрос")) return "?";
+  if (normalized.includes("доработ")) return "!";
+  return "i";
 }
 
 function ChairmanTasksList({
@@ -1456,7 +1691,7 @@ function NotificationsList({
               className={`rounded-full px-2 py-1 ${
                 item.read_at
                   ? "bg-slate-100 text-slate-600"
-                  : "bg-red-600 text-white"
+                  : "bg-[var(--gd-accent)] text-white"
               }`}
             >
               {item.read_at ? "Прочитано" : "Не прочитано"}
@@ -1474,7 +1709,8 @@ function NotificationsList({
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <div className="rounded-xl bg-slate-50 px-4 py-6 text-sm text-slate-500">
+    <div className="gd-empty-state text-sm">
+      <span className="gd-icon-box mb-4">i</span>
       {text}
     </div>
   );
@@ -1784,6 +2020,59 @@ function sortByDateDesc<T>(
   return [...items].sort(
     (left, right) => dateTimeValue(getDate(right)) - dateTimeValue(getDate(left)),
   );
+}
+
+function getFirstName(value: string) {
+  return value.trim().split(/\s+/).filter(Boolean)[0] || "пользователь";
+}
+
+function votingProgressPercent(voting: Voting) {
+  const total = voting.total_owners_count;
+  const voted = voting.voted_owners_count;
+  if (!isNumber(total) || total <= 0 || !isNumber(voted)) return 0;
+  return Math.max(0, Math.min(100, Math.round((voted / total) * 100)));
+}
+
+function buildDashboardObject(objects: unknown): DashboardObject | null {
+  if (!Array.isArray(objects)) return null;
+
+  const item = (objects as PropertyObject[]).find((property) => property.status === "active")
+    ?? (objects as PropertyObject[])[0];
+  if (!item) return null;
+
+  const type = dashboardPropertyTypeLabel(item.property_type);
+  return {
+    title: `${type} №${item.number}`,
+    type,
+    area: isNumber(item.area) ? `${item.area} м²` : "Площадь не указана",
+    status: dashboardStatusLabel(item.status),
+  };
+}
+
+function dashboardPropertyTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    apartment: "Квартира",
+    commercial_room: "Нежилое помещение",
+    parking: "Паркинг",
+    storage: "Кладовая",
+  };
+  return labels[String(type || "").trim().toLowerCase()] || "Объект";
+}
+
+function dashboardStatusLabel(status: string) {
+  if (status === "active") return "Основной";
+  return status || "";
+}
+
+function dashboardBuildingTitle(objects: unknown) {
+  if (!objects || Array.isArray(objects)) return "Bizdin Ui";
+
+  const building = objects as Record<string, unknown>;
+  const title = [building.building_name, building.street, building.house_number]
+    .filter(Boolean)
+    .join(", ");
+
+  return title || "Цифровой кабинет ОСИ";
 }
 
 function dateTimeValue(value?: string | null) {

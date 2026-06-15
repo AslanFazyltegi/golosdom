@@ -1,4 +1,5 @@
 import type { NavigationItem } from "@/types/navigation";
+import { BizdinLogo } from "@/shared/ui/brand";
 import { ChildMenuItem } from "./ChildMenuItem";
 import { ParentMenuItem } from "./ParentMenuItem";
 
@@ -30,34 +31,20 @@ export function CabinetSidebar({
         />
       )}
       <aside
-        className={`fixed left-0 top-20 z-40 h-[calc(100vh-80px)] overflow-hidden border-r border-[var(--gd-border)] bg-[var(--gd-sidebar)] shadow-lg transition-all duration-200 lg:translate-x-0 ${
+        className={`fixed left-0 top-16 z-40 h-[calc(100vh-64px)] overflow-hidden border-r border-[var(--gd-border)] bg-[var(--gd-sidebar)] shadow-lg transition-all duration-200 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
-        } ${collapsed ? "w-24" : "w-80 lg:w-72"}`}
+        } ${
+          collapsed
+            ? "w-[min(18rem,calc(100vw-2rem))] lg:w-[var(--gd-sidebar-collapsed-width)]"
+            : "w-[min(18rem,calc(100vw-2rem))] lg:w-[var(--gd-sidebar-width)]"
+        }`}
       >
-        <div className="flex h-full flex-col p-4">
-          <div
-            className={`mb-4 rounded-2xl border border-[var(--gd-border)] bg-[var(--gd-sidebar-accent)] p-4 ${
-              collapsed ? "hidden lg:block" : ""
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[var(--gd-primary)] font-black text-white">
-                G
-              </div>
-              {!collapsed && (
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-black text-[var(--gd-text-strong)]">
-                    Golosdom
-                  </p>
-                  <p className="truncate text-xs font-semibold text-[var(--gd-muted)]">
-                    единый кабинет дома
-                  </p>
-                </div>
-              )}
-            </div>
+        <div className="flex h-full flex-col">
+          <div className="flex h-16 items-center px-5">
+            <BizdinLogo compact={collapsed} markSize={collapsed ? "sm" : "md"} />
           </div>
 
-          <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
+          <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-3">
             {menu.map((item) => {
               const isExpanded = expandedMenuCodes.includes(item.code);
               const hasChildren = Boolean(item.children && item.children.length > 0);
@@ -108,10 +95,13 @@ export function CabinetSidebar({
           </nav>
 
           {!collapsed && (
-            <div className="mt-4 rounded-2xl border border-[var(--gd-border)] bg-[var(--gd-surface-muted)] p-4 text-sm">
+            <div className="mx-3 mb-3 rounded-2xl border border-[var(--gd-border)] bg-[var(--gd-surface-muted)] p-4 text-sm">
               <p className="font-bold text-[var(--gd-text-strong)]">Поддержка</p>
               <p className="mt-1 text-xs leading-5 text-[var(--gd-muted)]">
                 Вопросы по кабинетам, голосованиям и профилю.
+              </p>
+              <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--gd-muted)]">
+                Bizdin Ui
               </p>
             </div>
           )}

@@ -466,7 +466,7 @@ function ViewerNewsCard({ item, onOpen }: { item: InfocenterNews; onOpen: () => 
             {item.read_at ? (
               <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">Прочитано</span>
             ) : (
-              <span className="rounded-full bg-red-600 px-2 py-1 text-white">Новое</span>
+              <span className="rounded-full bg-[var(--gd-accent)] px-2 py-1 text-white">Новое</span>
             )}
           </div>
           <h2 className="truncate text-lg font-bold text-slate-900">{item.title}</h2>

@@ -221,14 +221,17 @@ export function AppEmptyState({
   text,
   action,
   className,
+  icon = "i",
 }: {
   title?: ReactNode;
   text: ReactNode;
   action?: ReactNode;
   className?: string;
+  icon?: ReactNode;
 }) {
   return (
     <div className={cx("gd-empty-state", className)}>
+      <span className="gd-icon-box mb-4">{icon}</span>
       {title && <h2 className="text-lg font-bold text-[var(--gd-text-strong)]">{title}</h2>}
       <p className={cx(Boolean(title) && "mt-2", "text-sm")}>{text}</p>
       {action && <div className="mt-4">{action}</div>}

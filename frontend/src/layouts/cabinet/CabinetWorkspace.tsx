@@ -11,8 +11,10 @@ export function CabinetWorkspace(
 
   return (
     <section
-      className={`relative h-[calc(100vh-80px)] overflow-y-auto px-4 py-5 transition-all duration-200 sm:px-6 lg:px-8 lg:py-8 ${
-        sidebarCollapsed ? "lg:ml-24" : "lg:ml-72"
+      className={`relative h-[calc(100vh-64px)] overflow-y-auto px-4 pb-24 pt-4 transition-all duration-200 sm:px-6 lg:pb-8 lg:pt-6 ${
+        sidebarCollapsed
+          ? "lg:ml-[var(--gd-sidebar-collapsed-width)]"
+          : "lg:ml-[var(--gd-sidebar-width)]"
       }`}
     >
       {Module ? (

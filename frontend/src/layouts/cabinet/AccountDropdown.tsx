@@ -50,8 +50,8 @@ export function AccountDropdown({
   }
 
   return (
-    <div className="absolute right-0 z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-3xl border border-[var(--gd-border)] bg-[var(--gd-surface)] p-2 shadow-lg">
-      <div className="flex gap-3 rounded-2xl bg-[var(--gd-surface-muted)] px-4 py-4">
+    <div className="absolute right-0 z-50 mt-3 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-[var(--gd-radius-xl)] border border-[var(--gd-border)] bg-[var(--gd-surface)] p-2 shadow-lg">
+      <div className="flex gap-3 rounded-[var(--gd-radius-lg)] bg-[var(--gd-surface-muted)] px-4 py-4">
         {user.photo ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -71,16 +71,16 @@ export function AccountDropdown({
           <p className="mt-1 truncate text-sm text-[var(--gd-muted)]">
             {phone}
           </p>
-        <p className="mt-3 text-sm text-[var(--gd-muted-strong)]">
-          Активная роль:{" "}
-          <span className="font-bold text-[var(--gd-text-strong)]">
-            {roleLabel(activeRole)}
-          </span>
-        </p>
+          <p className="mt-3 text-sm text-[var(--gd-muted-strong)]">
+            Активная роль:{" "}
+            <span className="font-bold text-[var(--gd-text-strong)]">
+              {roleLabel(activeRole)}
+            </span>
+          </p>
         </div>
       </div>
 
-      <div className="my-2 rounded-2xl border border-[var(--gd-border)] bg-[var(--gd-surface-muted)] p-2">
+      <div className="my-2 rounded-[var(--gd-radius-lg)] border border-[var(--gd-border)] bg-[var(--gd-surface-muted)] p-2">
         <p className="px-3 pb-2 text-xs font-black uppercase text-[var(--gd-muted)]">
           Сменить роль
         </p>
@@ -109,10 +109,10 @@ export function AccountDropdown({
       <button
         type="button"
         onClick={toggleTheme}
-        className="mb-2 flex w-full items-center justify-between rounded-2xl border border-[var(--gd-border)] px-4 py-3 text-left text-sm font-bold text-[var(--gd-text)] transition hover:bg-[var(--gd-surface-muted)]"
+        className="mb-2 flex w-full items-center justify-between rounded-[var(--gd-radius-lg)] border border-[var(--gd-border)] px-4 py-3 text-left text-sm font-bold text-[var(--gd-text)] transition hover:bg-[var(--gd-primary-faint)]"
       >
         <span>{theme === "dark" ? "Темная тема" : "Светлая тема"}</span>
-        <span className="rounded-full bg-[var(--gd-primary-soft)] px-3 py-1 text-xs font-black text-[var(--gd-primary-strong)]">
+        <span className="rounded-full bg-[var(--gd-primary-soft)] px-3 py-1 text-xs font-black text-[var(--gd-primary)]">
           {theme === "dark" ? "Вкл" : "Выкл"}
         </span>
       </button>

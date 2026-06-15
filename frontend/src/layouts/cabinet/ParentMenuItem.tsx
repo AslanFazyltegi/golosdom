@@ -23,19 +23,16 @@ export function ParentMenuItem({
       onClick={onClick}
       title={collapsed ? text : undefined}
       aria-expanded={hasChildren ? expanded : undefined}
-      className={`group relative flex w-full items-center justify-between gap-2 rounded-2xl px-3 py-3 text-left text-sm font-bold transition duration-200 ${
+      className={`group relative flex h-10 w-full items-center justify-between gap-2 rounded-[10px] px-3 text-left text-[13px] font-bold transition duration-200 ${
         active
-          ? "bg-[var(--gd-primary-soft)] text-[var(--gd-primary-strong)] shadow-sm"
-          : "text-[var(--gd-muted-strong)] hover:bg-[var(--gd-surface-muted)] hover:text-[var(--gd-text-strong)]"
+          ? "bg-[var(--gd-primary-soft)] text-[var(--gd-primary)]"
+          : "text-[var(--gd-muted)] hover:bg-[var(--gd-primary-faint)] hover:text-[var(--gd-primary)]"
       } ${collapsed ? "lg:justify-center lg:px-2" : ""}`}
     >
-      {active && (
-        <span className="absolute left-0 top-1/2 h-8 w-1 -translate-y-1/2 rounded-r-full bg-[var(--gd-primary)]" />
-      )}
       <span
-        className={`flex min-w-0 items-center gap-3 ${collapsed ? "lg:justify-center" : ""}`}
+        className={`flex min-w-0 items-center gap-2.5 ${collapsed ? "lg:justify-center" : ""}`}
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[var(--gd-surface)] text-lg shadow-sm">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--gd-surface)] text-base">
           {icon}
         </span>
         <span className={`min-w-0 truncate ${collapsed ? "lg:hidden" : ""}`}>
@@ -43,7 +40,7 @@ export function ParentMenuItem({
         </span>
         {typeof unreadCount === "number" && unreadCount > 0 && (
           <span
-            className={`rounded-full bg-red-600 px-2 py-0.5 text-xs font-black text-white ${
+            className={`inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--gd-accent)] px-1.5 text-[11px] font-black text-white ${
               collapsed ? "lg:absolute lg:right-1 lg:top-1" : ""
             }`}
           >

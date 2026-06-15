@@ -384,7 +384,7 @@ export function MyBuildingPage({
             >
               Запросы на корректировку
               {correctionRequestsPendingCount > 0 && (
-                <span className="absolute -right-2 -top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-rose-500 px-1.5 text-xs font-bold text-white shadow">
+                <span className="absolute -right-2 -top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-[var(--gd-accent)] px-1.5 text-xs font-bold text-white shadow">
                   {correctionRequestsPendingCount}
                 </span>
               )}
@@ -696,6 +696,8 @@ function OwnerObjectsView({
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState("");
+  const [objectQuery, setObjectQuery] = useState("");
+  const [objectTypeFilter, setObjectTypeFilter] = useState("all");
 
   useEffect(() => {
     let cancelled = false;
@@ -757,12 +759,43 @@ function OwnerObjectsView({
   }
 
   const ownerObjects = data.properties;
+  const filteredOwnerObjects = ownerObjects.filter((item) => {
+    const query = objectQuery.trim().toLowerCase();
+    const searchable = [
+      item.title,
+      item.typeLabel,
+      item.number,
+      item.building.fullAddress,
+      item.statusLabel,
+      item.ercAccount,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    if (query && !searchable.includes(query)) return false;
+    if (objectTypeFilter !== "all" && item.type !== objectTypeFilter) return false;
+    return true;
+  });
+  const ownerObjectTypes = Array.from(
+    new Map(ownerObjects.map((item) => [item.type, item.typeLabel])).entries(),
+  );
 
   return (
-    <div className="space-y-7 pb-8 text-[var(--gd-text)]">
+    <div className="space-y-5 pb-8 text-[var(--gd-text)]">
       <AppPageHeader
         title="Мои объекты"
-        description="Здесь отображаются все объекты недвижимости, которыми вы владеете в данном ЖК."
+        description="Имущество, привязанное к вашему кабинету."
+        actions={
+          <AppButton
+            type="button"
+            variant="primary"
+            disabled
+            title="Добавление объекта выполняется через председателя ОСИ"
+          >
+            Добавить объект
+          </AppButton>
+        }
       />
 
       {toast && (
@@ -771,32 +804,65 @@ function OwnerObjectsView({
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <OwnerSummaryCard label="Всего объектов" value={data.summary.totalObjects} />
-        <OwnerSummaryCard label="Активных объектов" value={data.summary.activeObjects} />
-        <OwnerSummaryCard label="Лицевых счетов" value={data.summary.ercAccounts} />
-        <OwnerSummaryCard label="Активных голосований" value={data.summary.activeVotings} />
-      </div>
+      <section className="gd-filter-panel">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <input
+            className="gd-input max-w-xl"
+            value={objectQuery}
+            onChange={(event) => setObjectQuery(event.target.value)}
+            placeholder="Поиск по объектам"
+          />
+          <div className="flex gap-2 overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => setObjectTypeFilter("all")}
+              className={`gd-tab whitespace-nowrap ${objectTypeFilter === "all" ? "gd-tab-active" : ""}`}
+            >
+              Все ({ownerObjects.length})
+            </button>
+            {ownerObjectTypes.map(([type, label]) => {
+              const count = ownerObjects.filter((item) => item.type === type).length;
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setObjectTypeFilter(type)}
+                  className={`gd-tab whitespace-nowrap ${objectTypeFilter === type ? "gd-tab-active" : ""}`}
+                >
+                  {label} ({count})
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </section>
 
-      {ownerObjects.length === 0 ? (
+      {filteredOwnerObjects.length === 0 ? (
         <section className="gd-empty-state">
+          <span className="gd-icon-box mb-4">▦</span>
           <h2 className="text-xl font-bold text-[var(--gd-text-strong)]">У вас пока нет привязанных объектов недвижимости.</h2>
           <p className="mt-3 text-[var(--gd-muted)]">
             Если вы считаете, что это ошибка, обратитесь к председателю ОСИ.
           </p>
         </section>
       ) : (
-        <div className="space-y-5">
-          {ownerObjects.map((item) => (
-            <OwnerPropertyCard
-              key={item.id}
-              property={item}
-              onDetails={() => setDetailsProperty(item)}
-              onRequest={() => openRequest(item)}
-              onVotings={() => openModule("votings_active")}
-            />
-          ))}
-        </div>
+        <>
+          <OwnerPropertiesTable
+            properties={filteredOwnerObjects}
+            onDetails={setDetailsProperty}
+          />
+          <div className="space-y-4 lg:hidden">
+            {filteredOwnerObjects.map((item) => (
+              <OwnerPropertyCard
+                key={item.id}
+                property={item}
+                onDetails={() => setDetailsProperty(item)}
+                onRequest={() => openRequest(item)}
+                onVotings={() => openModule("votings_active")}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       <section className="gd-card flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -907,11 +973,66 @@ function OwnerObjectsView({
   );
 }
 
-function OwnerSummaryCard({ label, value }: { label: string; value: number }) {
+function OwnerPropertiesTable({
+  properties,
+  onDetails,
+}: {
+  properties: MyProperty[];
+  onDetails: (property: MyProperty) => void;
+}) {
   return (
-    <section className="gd-card flex min-h-32 flex-col justify-between">
-      <p className="text-sm font-semibold text-[var(--gd-muted)]">{label}</p>
-      <p className="mt-3 text-4xl font-bold text-[var(--gd-text-strong)]">{value}</p>
+    <section className="gd-card hidden p-0 lg:block">
+      <div className="gd-responsive-table border-0 shadow-none">
+        <table className="min-w-[860px]">
+          <thead>
+            <tr>
+              <th>Объект</th>
+              <th>Тип</th>
+              <th>Площадь</th>
+              <th>Адрес</th>
+              <th>Статус</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            {properties.map((property) => (
+              <tr key={property.id}>
+                <td>
+                  <div className="flex items-center gap-3">
+                    <span className="gd-icon-box h-10 w-10 text-base">▦</span>
+                    <div className="min-w-0">
+                      <p className="font-bold text-[var(--gd-text-strong)]">{property.title}</p>
+                      {property.ercAccount && (
+                        <p className="mt-1 text-xs text-[var(--gd-muted)]">
+                          ЛС {property.ercAccount}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </td>
+                <td className="font-semibold">{property.typeLabel}</td>
+                <td>{property.area === null ? "-" : `${formatArea(property.area)} м²`}</td>
+                <td className="max-w-xs">{property.building.fullAddress}</td>
+                <td>
+                  <span className={`rounded-full px-3 py-1 text-xs font-bold ${propertyBadgeClass(property.status)}`}>
+                    {property.statusLabel}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    onClick={() => onDetails(property)}
+                    className="gd-button h-9 min-h-9 px-3"
+                    aria-label={`Открыть ${property.title}`}
+                  >
+                    ⋮
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
